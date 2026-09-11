@@ -9,6 +9,8 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
+    // Prisma 7 supports Neon pooled connections for migrations. Use the same
+    // endpoint already verified by the Express runtime.
     url: process.env["DATABASE_URL"],
   },
 });
