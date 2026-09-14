@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { normalizeActivityOffers, normalizeFlightOffers } from '../src/services/travel/amadeus-provider.ts';
+import { createAmadeusTravelProvider, normalizeAccommodationOffers, normalizeActivityOffers, normalizeFlightOffers } from '../src/services/travel/amadeus-provider.ts';
 
 const fetchedAt = '2026-09-10T00:00:00.000Z';
 
@@ -30,7 +30,60 @@ test('Amadeus activity offers normalize price, source, rating, and safe referenc
   assert.equal(result[0].referenceUrl, 'https://example.com/book');
 });
 
+test('Amadeus hotel offers normalize price, room details, availability, and source labels', () => {
+  const result = normalizeAccommodationOffers({ data: [{
+    available: true,
+    hotel: { hotelId: 'CEB123', name: 'Harbor Test Hotel' },
+    offers: [{
+      id: 'room-1', checkInDate: '2026-10-01', checkOutDate: '2026-10-04',
+      room: { description: { text: '  Deluxe   sea-view room  ' } },
+      price: { currency: 'PHP', total: '7500.40' },
+      policies: { cancellations: [{ description: { text: 'Free cancellation before arrival.' } }] },
+    }],
+  }] }, { destination: 'Cordova, Cebu, Philippines', nights: 3 }, fetchedAt, false);
+
+  assert.deepEqual(result[0], {
+    id: 'amadeus:CEB123:room-1', hotelId: 'CEB123', offerId: 'room-1', name: 'Harbor Test Hotel',
+    address: 'Cordova, Cebu, Philippines', checkInDate: '2026-10-01', checkOutDate: '2026-10-04',
+    nightlyRate: 2500, total: 7500, currency: 'PHP', roomDescription: 'Deluxe sea-view room',
+    cancellationPolicy: 'Free cancellation before arrival.', available: true, isLive: false,
+    source: 'amadeus', fetchedAt,
+  });
+});
+
+test('shared Amadeus provider authenticates once before hotel inventory and offer searches', async () => {
+  const requestedUrls: string[] = [];
+  const fakeFetch = async (input: string | URL | Request): Promise<Response> => {
+    const url = String(input);
+    requestedUrls.push(url);
+    if (url.endsWith('/v1/security/oauth2/token')) return Response.json({ access_token: 'test-token' });
+    if (url.includes('/hotels/by-geocode?')) return Response.json({ data: [{ hotelId: 'CEB123' }] });
+    if (url.includes('/v3/shopping/hotel-offers?')) return Response.json({ data: [{
+      available: true, hotel: { hotelId: 'CEB123', name: 'Harbor Test Hotel' },
+      offers: [{ id: 'room-1', checkInDate: '2026-10-01', checkOutDate: '2026-10-04', price: { currency: 'PHP', total: '7500' } }],
+    }] });
+    return new Response(null, { status: 404 });
+  };
+  const provider = await createAmadeusTravelProvider({
+    AMADEUS_API_KEY: 'client-id', AMADEUS_API_SECRET: 'client-secret', AMADEUS_ENV: 'test',
+  }, fakeFetch as typeof fetch);
+  assert.ok(provider);
+
+  const result = await provider.searchAccommodations({
+    destination: 'Cordova, Cebu, Philippines', latitude: 10.25, longitude: 123.95,
+    checkInDate: '2026-10-01', checkOutDate: '2026-10-04', adults: 3, nights: 3,
+  }, fetchedAt);
+
+  assert.equal(requestedUrls.filter((url) => url.endsWith('/v1/security/oauth2/token')).length, 1);
+  assert.match(requestedUrls[1], /hotels\/by-geocode\?/);
+  assert.match(requestedUrls[2], /roomQuantity=2/);
+  assert.equal(result.accommodations[0].hotelId, 'CEB123');
+  assert.equal(result.inventoryAvailable, true);
+  assert.equal(result.hotelsFound, true);
+});
+
 test('normalizers discard malformed prices instead of inventing values', () => {
   assert.deepEqual(normalizeFlightOffers({ data: [{ id: 'bad', price: { total: 'unknown' }, itineraries: [] }] }, fetchedAt, false), []);
   assert.deepEqual(normalizeActivityOffers({ data: [{ id: 'bad', name: 'Unknown', price: { amount: 'call us' } }] }, 'Cebu', fetchedAt, false), []);
+  assert.deepEqual(normalizeAccommodationOffers({ data: [{ hotel: { hotelId: 'bad', name: 'Unknown' }, offers: [{ id: 'bad', price: { total: 'call us' } }] }] }, { destination: 'Cebu', nights: 2 }, fetchedAt, false), []);
 });

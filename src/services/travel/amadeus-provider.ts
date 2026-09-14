@@ -31,6 +31,25 @@ export interface ActivityOption {
   isLive: boolean;
 }
 
+export interface AccommodationOffer {
+  id: string;
+  hotelId: string;
+  offerId: string;
+  name: string;
+  address: string;
+  checkInDate: string;
+  checkOutDate: string;
+  nightlyRate: number;
+  total: number;
+  currency: string;
+  roomDescription: string;
+  cancellationPolicy: string;
+  available: boolean;
+  isLive: boolean;
+  source: 'amadeus';
+  fetchedAt: string;
+}
+
 export interface FlightSearchInput {
   origin: string;
   destination: string;
@@ -45,10 +64,27 @@ export interface ActivitySearchInput {
   longitude: number;
 }
 
+export interface AccommodationSearchInput {
+  destination: string;
+  latitude: number;
+  longitude: number;
+  checkInDate: string;
+  checkOutDate: string;
+  adults: number;
+  nights: number;
+}
+
+export interface AccommodationSearchResult {
+  accommodations: AccommodationOffer[];
+  inventoryAvailable: boolean;
+  hotelsFound: boolean;
+}
+
 export interface TravelProvider {
   readonly name: string;
   searchFlights(input: FlightSearchInput, fetchedAt: string): Promise<FlightOption[]>;
   searchActivities(input: ActivitySearchInput, fetchedAt: string): Promise<ActivityOption[]>;
+  searchAccommodations(input: AccommodationSearchInput, fetchedAt: string): Promise<AccommodationSearchResult>;
 }
 
 type FetchImplementation = typeof fetch;
@@ -145,6 +181,48 @@ export function normalizeActivityOffers(payload: unknown, destination: string, f
   });
 }
 
+export function normalizeAccommodationOffers(
+  payload: unknown,
+  input: Pick<AccommodationSearchInput, 'destination' | 'nights'>,
+  fetchedAt: string,
+  isLive: boolean,
+): AccommodationOffer[] {
+  return array(object(payload)?.data).flatMap((rawHotel): AccommodationOffer[] => {
+    const hotelResult = object(rawHotel);
+    const hotel = object(hotelResult?.hotel);
+    const offer = object(array(hotelResult?.offers)[0]);
+    const price = object(offer?.price);
+    const room = object(offer?.room);
+    const description = object(room?.description);
+    const policies = object(offer?.policies);
+    const cancellation = object(array(policies?.cancellations)[0]);
+    const cancellationDescription = object(cancellation?.description);
+    const hotelId = text(hotel?.hotelId);
+    const offerId = text(offer?.id);
+    const name = text(hotel?.name).trim();
+    const total = amount(price?.total);
+    if (!hotelId || !offerId || !name || total === undefined || total <= 0) return [];
+    return [{
+      id: `amadeus:${hotelId}:${offerId}`,
+      hotelId,
+      offerId,
+      name,
+      address: input.destination,
+      checkInDate: text(offer?.checkInDate),
+      checkOutDate: text(offer?.checkOutDate),
+      nightlyRate: Math.round(total / input.nights),
+      total: Math.round(total),
+      currency: text(price?.currency) || 'PHP',
+      roomDescription: text(description?.text).replace(/\s+/g, ' ').trim() || 'Available room',
+      cancellationPolicy: text(cancellationDescription?.text) || 'Check the provider terms before booking.',
+      available: hotelResult?.available !== false,
+      isLive,
+      source: 'amadeus',
+      fetchedAt,
+    }];
+  });
+}
+
 export class AmadeusTravelProvider implements TravelProvider {
   readonly name = 'amadeus';
   private readonly baseUrl: string;
@@ -205,6 +283,49 @@ export class AmadeusTravelProvider implements TravelProvider {
     });
     if (!response.ok) throw new Error(`Amadeus activity search failed (${response.status}).`);
     return normalizeActivityOffers(await response.json(), input.destination, fetchedAt, this.isLive).slice(0, 12);
+  }
+
+  async searchAccommodations(input: AccommodationSearchInput, fetchedAt: string): Promise<AccommodationSearchResult> {
+    const hotelListParams = new URLSearchParams({
+      latitude: String(input.latitude),
+      longitude: String(input.longitude),
+      radius: '20',
+      radiusUnit: 'KM',
+      hotelSource: 'ALL',
+    });
+    const headers = { Authorization: `Bearer ${this.accessToken}` };
+    const hotelListResponse = await this.fetchImplementation(`${this.baseUrl}/v1/reference-data/locations/hotels/by-geocode?${hotelListParams}`, {
+      headers, cache: 'no-store', signal: AbortSignal.timeout(15_000),
+    });
+    if (!hotelListResponse.ok) return { accommodations: [], inventoryAvailable: false, hotelsFound: false };
+
+    const hotelIds = array(object(await hotelListResponse.json())?.data)
+      .map(object)
+      .filter((hotel): hotel is Record<string, unknown> => Boolean(hotel))
+      .map((hotel) => text(hotel.hotelId))
+      .filter(Boolean)
+      .slice(0, 20);
+    if (hotelIds.length === 0) return { accommodations: [], inventoryAvailable: true, hotelsFound: false };
+
+    const rooms = Math.min(9, Math.max(1, Math.ceil(input.adults / 2)));
+    const offerParams = new URLSearchParams({
+      hotelIds: hotelIds.join(','),
+      adults: String(input.adults),
+      checkInDate: input.checkInDate,
+      checkOutDate: input.checkOutDate,
+      roomQuantity: String(rooms),
+      currency: 'PHP',
+      bestRateOnly: 'true',
+    });
+    const offersResponse = await this.fetchImplementation(`${this.baseUrl}/v3/shopping/hotel-offers?${offerParams}`, {
+      headers, cache: 'no-store', signal: AbortSignal.timeout(20_000),
+    });
+    if (!offersResponse.ok) return { accommodations: [], inventoryAvailable: true, hotelsFound: true };
+    return {
+      accommodations: normalizeAccommodationOffers(await offersResponse.json(), input, fetchedAt, this.isLive),
+      inventoryAvailable: true,
+      hotelsFound: true,
+    };
   }
 }
 
