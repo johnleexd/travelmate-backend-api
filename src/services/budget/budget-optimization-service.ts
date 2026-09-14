@@ -1,3 +1,4 @@
+/** Pure budget assessment and optimization rules. */
 export type BudgetOptimizationStatus = 'within_budget' | 'near_limit' | 'over_budget';
 
 export interface BudgetOptimizationSuggestion {

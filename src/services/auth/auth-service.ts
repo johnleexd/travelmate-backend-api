@@ -1,10 +1,9 @@
 import { randomBytes } from "node:crypto";
-import { Prisma } from "../generated/prisma/client.ts";
-import { publicUser, type PublicUser, type Role } from "../domain.ts";
-import { prisma } from "../lib/prisma.ts";
-import { password } from "../store.ts";
-
-export class EmailExistsError extends Error {}
+import { Prisma } from "../../generated/prisma/client.ts";
+import { EmailExistsError } from "../../exceptions/index.ts";
+import { publicUser, type PublicUser, type Role } from "../../schemas/domain.ts";
+import { prisma } from "../../lib/prisma.ts";
+import { password } from "../../repositories/platform-repository.ts";
 
 export async function authenticateUser(email: string, rawPassword: string): Promise<PublicUser | null> {
   const user = await prisma.user.findUnique({ where: { email } });

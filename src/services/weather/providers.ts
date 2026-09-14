@@ -1,4 +1,4 @@
-import { coordinatesForCebuDestination } from '../../data/cebu-locations.ts';
+import { coordinatesForCebuDestination } from '../../constants/cebu-locations.ts';
 import { currentAlerts, forecastAlert, normalizedForecastDay, weatherDetails } from './weather-domain.ts';
 import type { ForecastDay, WeatherData, WeatherProvider, WeatherRequest } from './types.ts';
 

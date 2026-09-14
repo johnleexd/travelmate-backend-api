@@ -1,8 +1,7 @@
-import type { Prisma } from "../generated/prisma/client.ts";
-import type { PublicUser } from "../domain.ts";
-import { prisma } from "../lib/prisma.ts";
-
-export class ProfileValidationError extends Error {}
+import type { Prisma } from "../../generated/prisma/client.ts";
+import { ProfileValidationError } from "../../exceptions/index.ts";
+import type { PublicUser } from "../../schemas/domain.ts";
+import { prisma } from "../../lib/prisma.ts";
 
 function optionalText(value: unknown, field: string, maximumLength: number): string | null | undefined {
   if (value === undefined) return undefined;

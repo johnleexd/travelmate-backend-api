@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildBudgetOptimization } from '../src/services/budget-optimization-service.ts';
+import { buildBudgetOptimization } from '../src/services/budget/budget-optimization-service.ts';
 
 const input = (plannedSpend: number) => ({
   budget: 10_000,

@@ -1,8 +1,9 @@
-import { requireUser } from "../session.ts";
-import { readDb } from "../store.ts";
-import { publicUser } from "../domain.ts";
-import { executePlatformAction, PlatformActionError } from "../services/platform-service.ts";
-import { allowRequest } from "../rate-limit.ts";
+import { requireUser } from "../middlewares/auth-middleware.ts";
+import { readDb } from "../repositories/platform-repository.ts";
+import { publicUser } from "../schemas/domain.ts";
+import { PlatformActionError } from "../exceptions/index.ts";
+import { executePlatformAction } from "../services/platform/platform-service.ts";
+import { allowRequest } from "../middlewares/rate-limit-middleware.ts";
 
 function errorResponse(error: unknown): Response {
   if (error instanceof Error && error.message === "UNAUTHORIZED") {

@@ -1,6 +1,6 @@
 import app from './app.ts';
 import { prisma } from './lib/prisma.ts';
-import { validateRuntimeEnvironment } from './config.ts';
+import { validateRuntimeEnvironment } from './config/env.ts';
 
 const PORT = Number(process.env.PORT) || 5000;
 validateRuntimeEnvironment();

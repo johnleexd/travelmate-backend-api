@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateRuntimeEnvironment } from "../src/config.ts";
+import { validateRuntimeEnvironment } from "../src/config/env.ts";
 
 test("development runtime accepts local defaults", () => {
   assert.doesNotThrow(() => validateRuntimeEnvironment({ NODE_ENV: "development" }));

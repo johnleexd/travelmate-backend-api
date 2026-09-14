@@ -1,7 +1,6 @@
-import { allocateEqualShares } from "../domain.ts";
-import { buildBudgetOptimization } from "./budget-optimization-service.ts";
-
-export class ItineraryEditValidationError extends Error {}
+import { allocateEqualShares } from "../../schemas/domain.ts";
+import { ItineraryEditValidationError } from "../../exceptions/index.ts";
+import { buildBudgetOptimization } from "../budget/budget-optimization-service.ts";
 
 type JsonRecord = Record<string, unknown>;
 

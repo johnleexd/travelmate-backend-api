@@ -4,13 +4,15 @@ import {
   type Listing as PrismaListing,
   type Moderation as PrismaModeration,
   type Trip as PrismaTrip,
-} from "../generated/prisma/client.ts";
-import { publicUser, splitBudget, type PaymentStatus, type PublicUser } from "../domain.ts";
-import { isCebuLocation } from "../data/cebu-locations.ts";
-import { prisma } from "../lib/prisma.ts";
-import { applyManualItineraryChanges, ItineraryEditValidationError } from "./itinerary-edit-service.ts";
-
-export class PlatformActionError extends Error {}
+} from "../../generated/prisma/client.ts";
+import {
+  ItineraryEditValidationError,
+  PlatformActionError,
+} from "../../exceptions/index.ts";
+import { publicUser, splitBudget, type PaymentStatus, type PublicUser } from "../../schemas/domain.ts";
+import { isCebuLocation } from "../../constants/cebu-locations.ts";
+import { prisma } from "../../lib/prisma.ts";
+import { applyManualItineraryChanges } from "../itinerary/itinerary-edit-service.ts";
 
 type Body = Record<string, unknown>;
 type Transaction = Prisma.TransactionClient;

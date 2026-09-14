@@ -3,6 +3,31 @@
 This is the TravelMate backend: Express 5 with strict TypeScript, Prisma ORM,
 and Neon PostgreSQL.
 
+The codebase follows the same layered organization as Express Breeze while
+keeping TravelMate's existing API contracts and providers:
+
+```text
+src/
+|-- config/          Runtime environment validation
+|-- constants/       Static application data
+|-- controllers/     HTTP request/response orchestration
+|-- exceptions/      Named application errors
+|-- generated/       Prisma-generated client code
+|-- lib/             Infrastructure clients
+|-- middlewares/     Authentication, security, rate-limit, and HTTP adapters
+|-- repositories/    Database persistence operations
+|-- routes/          Thin Express route declarations and composition
+|-- schemas/         Shared domain types and validation rules
+|-- services/        Capability-specific business logic and providers
+|-- utils/           Stateless shared helpers
+|-- app.ts           Express application composition
+`-- server.ts        Process startup and graceful shutdown
+```
+
+Dependencies flow inward from routes to controllers, services, and repositories.
+Route files contain no business logic, and `app.ts` owns only global middleware
+and router composition.
+
 Copy `.env.example` to `.env` and add the Neon pooled `DATABASE_URL`, then run:
 
 ```powershell

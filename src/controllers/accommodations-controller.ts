@@ -1,7 +1,7 @@
-import { requireUser } from '../session.ts';
-import { allowRequest } from '../rate-limit.ts';
-import { createOfferToken } from '../offer-token.ts';
-import { coordinatesForCebuDestination } from '../data/cebu-locations.ts';
+import { requireUser } from '../middlewares/auth-middleware.ts';
+import { allowRequest } from '../middlewares/rate-limit-middleware.ts';
+import { createOfferToken } from '../utils/offer-token.ts';
+import { coordinatesForCebuDestination } from '../constants/cebu-locations.ts';
 import { createAmadeusTravelProvider, type AccommodationOffer } from '../services/travel/amadeus-provider.ts';
 
 export interface LiveAccommodation extends AccommodationOffer {

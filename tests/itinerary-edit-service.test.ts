@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyManualItineraryChanges, ItineraryEditValidationError } from "../src/services/itinerary-edit-service.ts";
+import { ItineraryEditValidationError } from "../src/exceptions/index.ts";
+import { applyManualItineraryChanges } from "../src/services/itinerary/itinerary-edit-service.ts";
 
 const saved = {
   destination: "Cebu",

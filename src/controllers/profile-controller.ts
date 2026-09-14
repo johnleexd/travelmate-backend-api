@@ -1,5 +1,6 @@
-import { requireUser } from "../session.ts";
-import { ProfileValidationError, updateProfile } from "../services/profile-service.ts";
+import { requireUser } from "../middlewares/auth-middleware.ts";
+import { ProfileValidationError } from "../exceptions/index.ts";
+import { updateProfile } from "../services/profile/profile-service.ts";
 
 function profileError(error: unknown): Response {
   if (error instanceof Error && error.message === "UNAUTHORIZED") {

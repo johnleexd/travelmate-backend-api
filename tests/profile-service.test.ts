@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ProfileValidationError, validateProfileUpdate } from "../src/services/profile-service.ts";
+import { ProfileValidationError } from "../src/exceptions/index.ts";
+import { validateProfileUpdate } from "../src/services/profile/profile-service.ts";
 
 test("profile updates normalize supported fields", () => {
   assert.deepEqual(

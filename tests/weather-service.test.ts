@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { estimateCrowd } from '../src/services/crowd-service.ts';
+import { estimateCrowd } from '../src/services/crowd/crowd-service.ts';
 import { OpenMeteoWeatherProvider } from '../src/services/weather/providers.ts';
 import { unavailableWeather, validateWeatherDateRange, weatherForTripDates } from '../src/services/weather/weather-domain.ts';
 import { resolveWeather } from '../src/services/weather/weather-service.ts';

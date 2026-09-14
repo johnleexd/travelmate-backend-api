@@ -1,5 +1,5 @@
-import { requireUser } from '../session.ts';
-import { allowRequest } from '../rate-limit.ts';
+import { requireUser } from '../middlewares/auth-middleware.ts';
+import { allowRequest } from '../middlewares/rate-limit-middleware.ts';
 
 export interface LocationSuggestion {
   id: number;

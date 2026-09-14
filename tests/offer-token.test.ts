@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createOfferToken, verifyOfferToken, type OfferTokenData } from '../src/offer-token.ts';
+import { createOfferToken, verifyOfferToken, type OfferTokenData } from '../src/utils/offer-token.ts';
 
 const offer: OfferTokenData = { hotelId: 'HOTEL1', offerId: 'OFFER1', name: 'Test Hotel', nightlyRate: 2500, isLive: false };
 

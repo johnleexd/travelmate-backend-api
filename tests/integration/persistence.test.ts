@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { publicUser } from "../../src/domain.ts";
+import { publicUser } from "../../src/schemas/domain.ts";
 import { prisma } from "../../src/lib/prisma.ts";
-import { authenticateUser } from "../../src/services/auth-service.ts";
-import { executePlatformAction } from "../../src/services/platform-service.ts";
-import * as authRoute from "../../src/routes/auth.ts";
+import { authenticateUser } from "../../src/services/auth/auth-service.ts";
+import { executePlatformAction } from "../../src/services/platform/platform-service.ts";
+import * as authRoute from "../../src/controllers/auth-controller.ts";
 
 async function tableCounts() {
   const [users, listings, bookings, moderation, trips, audit] = await Promise.all([

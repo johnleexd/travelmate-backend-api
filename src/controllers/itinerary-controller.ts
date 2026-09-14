@@ -2,15 +2,23 @@
 // ─── Server-only Route Handler ────────────────────────────────────────────────
 // Keeps AI provider keys strictly on the server; never bundled to the client.
 
-import { requireUser } from '../session.ts';
-import { allowRequest } from '../rate-limit.ts';
-import { allocateEqualShares, splitBudget, travelersForParty, type PartyType } from '../domain.ts';
-import { readDb } from '../store.ts';
-import { verifyOfferToken } from '../offer-token.ts';
+import { requireUser } from '../middlewares/auth-middleware.ts';
+import { allowRequest } from '../middlewares/rate-limit-middleware.ts';
+import {
+  allocateEqualShares,
+  splitBudget,
+  travelersForParty,
+  type PartyType,
+} from '../schemas/domain.ts';
+import { readDb } from '../repositories/platform-repository.ts';
+import { verifyOfferToken } from '../utils/offer-token.ts';
 import { generateValidatedItinerary } from '../services/ai/itinerary-generator.ts';
 import { resolveAIProvider } from '../services/ai/provider.ts';
-import { buildBudgetOptimization, type BudgetOptimization } from '../services/budget-optimization-service.ts';
-import { estimateCrowd } from '../services/crowd-service.ts';
+import {
+  buildBudgetOptimization,
+  type BudgetOptimization,
+} from '../services/budget/budget-optimization-service.ts';
+import { estimateCrowd } from '../services/crowd/crowd-service.ts';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -675,6 +683,9 @@ export async function POST(request: Request) {
     const completed = await finalizeItinerary({ ...itinerary, destination: normalizedDestination, totalBudget: budget, source: resolvedProvider.name }, computedBudget, partyType, travelers, tripDays, startDate, accommodation);
     return Response.json({ ...completed, preferences });
   } catch (error) {
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+      return Response.json({ error: 'Unauthorized.' }, { status: 401 });
+    }
     console.error('[TravelMate] /api/itinerary unexpected error:', error);
     return Response.json(
       { error: 'Internal server error. Please try again.' },

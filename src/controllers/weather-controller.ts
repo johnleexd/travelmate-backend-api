@@ -1,5 +1,5 @@
-import { allowRequest } from '../rate-limit.ts';
-import { requireUser } from '../session.ts';
+import { allowRequest } from '../middlewares/rate-limit-middleware.ts';
+import { requireUser } from '../middlewares/auth-middleware.ts';
 import { validateWeatherDateRange, weatherForTripDates } from '../services/weather/weather-domain.ts';
 import { configuredWeatherProviders, resolveWeather } from '../services/weather/weather-service.ts';
 

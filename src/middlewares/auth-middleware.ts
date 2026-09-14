@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { PublicUser, Role } from "./domain.ts";
-import { publicUser } from "./domain.ts";
-import { prisma } from "./lib/prisma.ts";
+import type { PublicUser, Role } from "../schemas/domain.ts";
+import { publicUser } from "../schemas/domain.ts";
+import { prisma } from "../lib/prisma.ts";
 
 export const SESSION_COOKIE = "travelmate_session";
 

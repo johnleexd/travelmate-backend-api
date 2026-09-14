@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { allowedOrigins, requestOriginAllowed } from "../src/security.ts";
+import { allowedOrigins, requestOriginAllowed } from "../src/middlewares/security-middleware.ts";
 
 test("allowed origins support a comma-separated deployment allowlist", () => {
   assert.deepEqual(

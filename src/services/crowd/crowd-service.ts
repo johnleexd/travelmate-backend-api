@@ -1,3 +1,4 @@
+/** Deterministic crowd estimation used when no live crowd provider is available. */
 export interface CrowdCondition {
   crowdLevel: 'low' | 'moderate' | 'high';
   crowdSource: 'estimated';

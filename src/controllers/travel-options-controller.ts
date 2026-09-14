@@ -1,8 +1,8 @@
-import { coordinatesForCebuDestination } from '../data/cebu-locations.ts';
-import { allowRequest } from '../rate-limit.ts';
-import { requireUser } from '../session.ts';
+import { coordinatesForCebuDestination } from '../constants/cebu-locations.ts';
+import { allowRequest } from '../middlewares/rate-limit-middleware.ts';
+import { requireUser } from '../middlewares/auth-middleware.ts';
 import { createAmadeusTravelProvider, type ActivityOption, type FlightOption } from '../services/travel/amadeus-provider.ts';
-import { readDb } from '../store.ts';
+import { readDb } from '../repositories/platform-repository.ts';
 
 async function coordinates(destination: string, supplied?: { latitude: number; longitude: number }): Promise<{ latitude: number; longitude: number } | null> {
   if (supplied) return supplied;

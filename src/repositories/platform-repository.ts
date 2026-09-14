@@ -1,7 +1,7 @@
 import { scryptSync } from "node:crypto";
-import type { Prisma } from "./generated/prisma/client.ts";
-import type { AuditEvent, Booking, Database, Listing, ModerationItem, SavedTrip, StoredUser } from "./domain.ts";
-import { prisma } from "./lib/prisma.ts";
+import type { Prisma } from "../generated/prisma/client.ts";
+import type { AuditEvent, Booking, Database, Listing, ModerationItem, SavedTrip, StoredUser } from "../schemas/domain.ts";
+import { prisma } from "../lib/prisma.ts";
 
 export function password(value: string, salt: string) {
   return scryptSync(value, salt, 64).toString("hex");

@@ -1,8 +1,18 @@
 import { randomBytes } from 'node:crypto';
-import { clearSessionCookie, createSessionToken, currentUser, sessionCookie } from '../session.ts';
-import type { Role } from '../domain.ts';
-import { allowRequest } from '../rate-limit.ts';
-import { authenticateUser, EmailExistsError, registerUser, verifyEmail } from '../services/auth-service.ts';
+import {
+  clearSessionCookie,
+  createSessionToken,
+  currentUser,
+  sessionCookie,
+} from '../middlewares/auth-middleware.ts';
+import type { Role } from '../schemas/domain.ts';
+import { allowRequest } from '../middlewares/rate-limit-middleware.ts';
+import {
+  authenticateUser,
+  registerUser,
+  verifyEmail,
+} from '../services/auth/auth-service.ts';
+import { EmailExistsError } from '../exceptions/index.ts';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const fail = (message: string, status = 400) => Response.json({ error: message }, { status });
