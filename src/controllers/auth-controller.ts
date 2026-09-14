@@ -13,6 +13,10 @@ import {
   verifyEmail,
 } from '../services/auth/auth-service.ts';
 import { EmailExistsError } from '../exceptions/index.ts';
+import {
+  isStrongPassword,
+  STRONG_PASSWORD_REQUIREMENTS,
+} from '../schemas/auth/password-schema.ts';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const fail = (message: string, status = 400) => Response.json({ error: message }, { status });
@@ -50,7 +54,8 @@ export async function POST(request: Request) {
     const email = String(body.email || '').trim().toLowerCase();
     const rawPassword = String(body.password || '');
     const role: Role = body.role === 'owner' ? 'owner' : 'traveler';
-    if (name.length < 2 || !emailPattern.test(email) || rawPassword.length < 8 || !/\d/.test(rawPassword)) return fail('Use a valid name, email, and password with at least 8 characters and one number.');
+    if (name.length < 2 || !emailPattern.test(email)) return fail('Use a valid name and email address.');
+    if (!isStrongPassword(rawPassword)) return fail(STRONG_PASSWORD_REQUIREMENTS);
     const verificationCode = randomBytes(3).toString('hex').toUpperCase();
     const user = await registerUser({ name, email, rawPassword, role, verificationCode })
       .catch((error: unknown) => error instanceof EmailExistsError ? null : Promise.reject(error));

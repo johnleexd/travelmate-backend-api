@@ -62,3 +62,22 @@ test("authentication routes and JSON error middleware remain wired", async () =>
   assert.equal(invalidJson.status, 400);
   assert.deepEqual(await invalidJson.json(), { error: "Request body must be valid JSON." });
 });
+
+test("registration rejects weak passwords before persistence", async () => {
+  const response = await fetch(`${baseUrl}/api/auth`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "register",
+      name: "Password Test",
+      email: "password-test@example.com",
+      password: "weakpass1!",
+      role: "traveler",
+    }),
+  });
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: "Password must be 8–64 characters and include an uppercase letter, a lowercase letter, a number, and a special character, with no spaces.",
+  });
+});
