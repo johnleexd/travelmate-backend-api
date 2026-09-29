@@ -9,7 +9,6 @@ datasource db {
 
 enum Role {
   traveler
-  owner
   admin
 }
 
@@ -92,6 +91,7 @@ enum PaymentStatus {
 }
 
 enum ModerationKind {
+  report
   profile
   listing
   dispute

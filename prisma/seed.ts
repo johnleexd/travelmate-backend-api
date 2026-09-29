@@ -7,7 +7,6 @@ const passwordHash = scryptSync('Travel123!', salt, 64).toString('hex');
 
 const demoUsers = [
   { id: 'usr_traveler', name: 'Demo Traveler', email: 'traveler@travelmate.test', role: 'traveler' as const, trustScore: 72 },
-  { id: 'usr_owner', name: 'Demo Owner', email: 'owner@travelmate.test', role: 'owner' as const, trustScore: 81 },
   { id: 'usr_admin', name: 'TravelMate Admin', email: 'admin@travelmate.test', role: 'admin' as const, trustScore: 100 },
 ];
 
@@ -36,13 +35,13 @@ async function seed() {
     await prisma.listing.upsert({
       where: { id: stay.id },
       update: {},
-      create: { ...stay, ownerId: 'usr_owner', category: 'stay', status: 'approved', description: 'TravelMate demonstration accommodation. Confirm availability before payment.', amenities: ['Wi-Fi', 'Private room', 'Local transport access'] },
+      create: { ...stay, ownerId: 'usr_admin', category: 'stay', status: 'approved', description: 'TravelMate demonstration accommodation. Confirm availability before payment.', amenities: ['Wi-Fi', 'Private room', 'Local transport access'] },
     });
   }
 
   await prisma.listing.upsert({
     where: { id: 'lst_tour' }, update: {},
-    create: { id: 'lst_tour', ownerId: 'usr_owner', name: 'Old Town Food Walk', category: 'activity', price: 1600, capacity: 12, available: 9, status: 'approved', description: 'Guided local food experience.', municipality: 'Cebu City', address: 'Cebu City', amenities: [] },
+    create: { id: 'lst_tour', ownerId: 'usr_admin', name: 'Old Town Food Walk', category: 'activity', price: 1600, capacity: 12, available: 9, status: 'approved', description: 'Guided local food experience.', municipality: 'Cebu City', address: 'Cebu City', amenities: [] },
   });
 }
 

@@ -20,7 +20,7 @@ async function tableCounts() {
 }
 
 test("seeded roles authenticate through targeted user queries", async () => {
-  for (const role of ["traveler", "owner", "admin"] as const) {
+  for (const role of ["traveler", "admin"] as const) {
     const user = await authenticateUser(`${role}@travelmate.test`, "Travel123!");
     assert.equal(user?.role, role);
     assert.equal(user && "passwordHash" in user, false);

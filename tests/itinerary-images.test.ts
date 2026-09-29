@@ -67,3 +67,24 @@ test('image relevance matching rejects unrelated generic travel photos', () => {
   assert.equal(imageResultMatches('Tokyo Disneyland Chiba Japan', 'File:Tropical beach in Boracay Philippines.jpg'), false);
   assert.equal(imageResultMatches('Shinjuku Gyoen National Garden Tokyo Japan', 'File:Shinjuku Gyoen greenhouse Tokyo.jpg'), true);
 });
+
+test('retries each missing activity with its place name and geographic context', async () => {
+  const queries: string[] = [];
+  const result = await attachPlaceImages(itinerary(), async (query) => {
+    queries.push(query);
+    return query === 'Omoide Yokocho Japan' ? [{
+      imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/omoide.jpg',
+      attribution: { creator: 'Photographer', license: 'CC BY-SA', sourceUrl: 'https://commons.wikimedia.org/wiki/File:omoide.jpg' },
+    }] : [];
+  });
+  assert.ok(queries.includes('Omoide Yokocho Tokyo, Japan'));
+  assert.ok(queries.includes('Omoide Yokocho Japan'));
+  assert.match(result.days[0].activities[1].imageUrl || '', /omoide.jpg/);
+  assert.equal(result.days[0].activities[0].imageAttribution, undefined);
+});
+
+test('a failed image provider does not fail the itinerary', async () => {
+  const result = await attachPlaceImages(itinerary(), async () => { throw new Error('Provider unavailable'); });
+  assert.equal(result.days[0].activities.length, 2);
+  assert.equal(result.days[0].activities[0].imageAttribution, undefined);
+});

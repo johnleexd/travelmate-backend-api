@@ -19,23 +19,22 @@ function errorResponse(error: unknown): Response {
 export async function GET(request: Request): Promise<Response> {
   try {
     const requestedRole = new URL(request.url).searchParams.get("scope");
-    const scope = requestedRole === "traveler" || requestedRole === "owner" || requestedRole === "admin" ? requestedRole : undefined;
+    const scope = requestedRole === "traveler" || requestedRole === "admin" ? requestedRole : undefined;
     const user = await requireUser(request, scope);
     const db = await readScopedDb(user);
-    const listings = user.role === "owner" ? db.listings.filter((item) => item.ownerId === user.id) : user.role === "admin" ? db.listings : db.listings.filter((item) => item.status === "approved");
-    const listingIds = new Set(listings.map((item) => item.id));
-    const bookings = user.role === "traveler" ? db.bookings.filter((item) => item.travelerId === user.id) : user.role === "owner" ? db.bookings.filter((item) => listingIds.has(item.listingId)) : db.bookings;
-    const directory = user.role === "admin" ? db.users.map(publicUser) : user.role === "owner" ? db.users.filter((item) => bookings.some((booking) => booking.travelerId === item.id)).map(publicUser) : [];
+    const listings = user.role === "admin" ? db.listings : db.listings.filter((item) => item.status === "approved");
+    const bookings = user.role === "traveler" ? db.bookings.filter((item) => item.travelerId === user.id) : db.bookings;
+    const directory = user.role === "admin" ? db.users.map(publicUser) : [];
     const metrics = {
       held: bookings.filter((item) => item.paymentStatus === "PAID_HELD").reduce((sum, item) => sum + item.amount, 0),
       released: bookings.filter((item) => item.paymentStatus === "Released").reduce((sum, item) => sum + item.amount, 0),
       frozen: bookings.filter((item) => item.paymentStatus === "FROZEN_HELD").reduce((sum, item) => sum + item.amount, 0),
       activeUsers: user.role === 'admin' ? db.users.filter((item) => item.accountStatus === "active").length : 0,
       pendingProfiles: user.role === 'admin' ? db.users.filter((item) => item.profileStatus === "pending").length : 0,
-      listingViews: user.role === 'owner' ? listings.reduce((sum, item) => sum + item.viewCount, 0) : 0,
-      bookingRequests: user.role === 'owner' ? bookings.length : 0,
-      occupancy: user.role === 'owner' && listings.reduce((sum, item) => sum + item.capacity, 0) > 0 ? Math.round((listings.reduce((sum, item) => sum + item.capacity - item.available, 0) / listings.reduce((sum, item) => sum + item.capacity, 0)) * 100) : 0,
-      revenue: user.role === 'owner' ? db.transactions.filter((item) => item.status === 'released').reduce((sum, item) => sum + item.amount, 0) : 0,
+      listingViews: user.role === 'admin' ? listings.reduce((sum, item) => sum + item.viewCount, 0) : 0,
+      bookingRequests: user.role === 'admin' ? bookings.length : 0,
+      occupancy: user.role === 'admin' && listings.reduce((sum, item) => sum + item.capacity, 0) > 0 ? Math.round((listings.reduce((sum, item) => sum + item.capacity - item.available, 0) / listings.reduce((sum, item) => sum + item.capacity, 0)) * 100) : 0,
+      revenue: user.role === 'admin' ? db.transactions.filter((item) => item.status === 'released').reduce((sum, item) => sum + item.amount, 0) : 0,
     };
     const configured = (value: string | undefined) => Boolean(value && !value.startsWith("your_") && !value.startsWith("replace_"));
     const integrations = user.role === "admin" ? { database: true, openAI: configured(process.env.OPENAI_API_KEY), gemini: configured(process.env.GEMINI_API_KEY), weather: true, amadeus: configured(process.env.AMADEUS_API_KEY) && configured(process.env.AMADEUS_API_SECRET), payMongo: false } : undefined;
@@ -49,9 +48,9 @@ export async function GET(request: Request): Promise<Response> {
       integrations,
       trips: user.role === "traveler" ? db.trips.filter((item) => item.userId === user.id).reverse() : [],
       itineraryVersions: user.role === "traveler" ? db.itineraryVersions.filter((item) => ownedTripIds.has(item.tripId)) : [],
-      itineraryGenerations: user.role === "traveler" ? db.itineraryGenerations.filter((item) => item.userId === user.id).map((item) => ({ id: item.id, destination: item.destination, status: item.status, errorCode: item.errorCode, createdAt: item.createdAt, updatedAt: item.updatedAt })).slice(0, 25) : [],
-      moderation: user.role === "admin" ? db.moderation.filter((item) => item.status === "pending") : [],
-      audit: user.role === "admin" ? db.audit.slice(-100).reverse() : [],
+      itineraryGenerations: db.itineraryGenerations.filter((item) => user.role === "admin" || item.userId === user.id).map((item) => ({ id: item.id, destination: item.destination, status: item.status, errorCode: item.errorCode, createdAt: item.createdAt, updatedAt: item.updatedAt })).slice(0, 25),
+      moderation: user.role === "admin" ? db.moderation.filter((item) => item.kind === "report") : [],
+      audit: user.role === "admin" ? db.audit.slice(0, 100) : [],
       blockedDates: db.blockedDates,
       promotions: db.promotions,
       reviews: db.reviews,

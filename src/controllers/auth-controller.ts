@@ -65,13 +65,10 @@ export async function POST(request: Request) {
     if (!authenticated) return fail('Invalid email or password.', 401);
     if (authenticated.accountStatus === 'suspended') return fail('This account is suspended. Contact TravelMate support.', 403);
     if (!authenticated.emailVerified) return fail('Verify your email before signing in.', 403);
-    if ((body.role === 'traveler' || body.role === 'owner') && authenticated.role !== 'admin' && authenticated.role !== body.role) {
-      return fail(`This account is registered as a ${authenticated.role}. Select ${authenticated.role} to sign in.`, 403);
-    }
     const { sessionVersion, ...user } = authenticated;
     await recordAuthAudit(user.id, 'login').catch(() => undefined);
     return Response.json(
-      { user, redirect: user.role === 'admin' ? '/admin/dashboard' : user.role === 'owner' ? '/owner/dashboard' : '/dashboard' },
+      { user, redirect: user.role === 'admin' ? '/admin/dashboard' : '/dashboard' },
       { headers: { 'Set-Cookie': sessionCookie(createSessionToken(user.id, user.role, sessionVersion)) } },
     );
   }
@@ -82,7 +79,7 @@ export async function POST(request: Request) {
     const name = String(body.name || '').trim();
     const email = String(body.email || '').trim().toLowerCase();
     const rawPassword = String(body.password || '');
-    const role: Role = body.role === 'owner' ? 'owner' : 'traveler';
+    const role: Role = 'traveler';
     if (name.length < 2 || !emailPattern.test(email)) return fail('Use a valid name and email address.');
     if (!isStrongPassword(rawPassword)) return fail(STRONG_PASSWORD_REQUIREMENTS);
     const verificationCode = generateAccountCode();

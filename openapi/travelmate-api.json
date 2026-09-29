@@ -204,10 +204,19 @@
           "crowd": { "type": "array", "items": { "$ref": "#/components/schemas/CrowdCondition" } }
         }
       },
-      "Role": { "type": "string", "enum": ["traveler", "owner", "admin"] },
+      "Role": { "type": "string", "enum": ["traveler", "admin"] },
       "ProfileStatus": { "type": "string", "enum": ["unverified", "pending", "verified", "rejected"] },
       "PartyType": { "type": "string", "enum": ["solo", "couple", "family", "friends"] },
-      "PaymentStatus": { "type": "string", "enum": ["PAID_HELD", "Released", "FROZEN_HELD", "REFUNDED"] },
+      "PaymentStatus": {
+        "type": "string",
+        "enum": [
+          "PENDING",
+          "PAID_HELD",
+          "Released",
+          "FROZEN_HELD",
+          "REFUNDED"
+        ]
+      },
       "ImageAttribution": {
         "type": "object", "required": ["creator", "license", "sourceUrl"],
         "properties": { "creator": { "type": "string" }, "license": { "type": "string" }, "licenseUrl": { "type": "string" }, "sourceUrl": { "type": "string" } }
@@ -335,28 +344,368 @@
       },
       "ProfileResponse": { "type": "object", "required": ["profile"], "properties": { "profile": { "$ref": "#/components/schemas/PublicUser" } } },
       "Listing": {
-        "type": "object", "required": ["id", "ownerId", "name", "category", "price", "capacity", "available", "status", "description", "municipality", "address", "amenities"],
+        "type": "object",
+        "required": [
+          "id",
+          "ownerId",
+          "name",
+          "category",
+          "price",
+          "capacity",
+          "available",
+          "status",
+          "description",
+          "municipality",
+          "address",
+          "amenities",
+          "imageUrls",
+          "viewCount"
+        ],
         "properties": {
-          "id": { "type": "string" }, "ownerId": { "type": "string" }, "name": { "type": "string" },
-          "category": { "type": "string", "enum": ["stay", "activity", "food", "transport"] }, "price": { "type": "number" },
-          "capacity": { "type": "integer" }, "available": { "type": "integer" }, "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
-          "description": { "type": "string" }, "municipality": { "type": "string" }, "address": { "type": "string" },
-          "amenities": { "type": "array", "items": { "type": "string" } }, "imageUrl": { "type": "string" }
+          "id": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "stay",
+              "activity",
+              "food",
+              "transport"
+            ]
+          },
+          "price": {
+            "type": "number"
+          },
+          "capacity": {
+            "type": "number"
+          },
+          "available": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "municipality": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "amenities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "imageUrl": {
+            "type": "string"
+          },
+          "imageUrls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "viewCount": {
+            "type": "number"
+          }
         }
       },
       "Booking": {
-        "type": "object", "required": ["id", "travelerId", "listingId", "amount", "guests", "nights", "status", "paymentStatus", "createdAt"],
+        "type": "object",
+        "required": [
+          "id",
+          "travelerId",
+          "listingId",
+          "amount",
+          "guests",
+          "nights",
+          "status",
+          "paymentStatus",
+          "notes",
+          "requestNote",
+          "createdAt",
+          "updatedAt"
+        ],
         "properties": {
-          "id": { "type": "string" }, "travelerId": { "type": "string" }, "listingId": { "type": "string" }, "amount": { "type": "number" },
-          "guests": { "type": "integer" }, "nights": { "type": "integer" },
-          "status": { "type": "string", "enum": ["confirmed", "change_requested", "cancel_requested", "cancelled", "completed"] },
-          "paymentStatus": { "$ref": "#/components/schemas/PaymentStatus" }, "createdAt": { "type": "string" }
+          "id": {
+            "type": "string"
+          },
+          "travelerId": {
+            "type": "string"
+          },
+          "listingId": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "guests": {
+            "type": "number"
+          },
+          "nights": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "confirmed",
+              "declined",
+              "change_requested",
+              "cancel_requested",
+              "cancelled",
+              "completed"
+            ]
+          },
+          "paymentStatus": {
+            "$ref": "#/components/schemas/PaymentStatus"
+          },
+          "checkIn": {
+            "type": "string"
+          },
+          "checkOut": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "requestedCheckIn": {
+            "type": "string"
+          },
+          "requestedCheckOut": {
+            "type": "string"
+          },
+          "requestedGuests": {
+            "type": "number"
+          },
+          "requestNote": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        }
+      },
+      "ListingBlockedDate": {
+        "type": "object",
+        "required": [
+          "id",
+          "listingId",
+          "date",
+          "reason"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "listingId": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "Promotion": {
+        "type": "object",
+        "required": [
+          "id",
+          "listingId",
+          "name",
+          "discountPct",
+          "startDate",
+          "endDate",
+          "active"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "listingId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "discountPct": {
+            "type": "number"
+          },
+          "startDate": {
+            "type": "string"
+          },
+          "endDate": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Review": {
+        "type": "object",
+        "required": [
+          "id",
+          "bookingId",
+          "listingId",
+          "travelerId",
+          "rating",
+          "comment",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "bookingId": {
+            "type": "string"
+          },
+          "listingId": {
+            "type": "string"
+          },
+          "travelerId": {
+            "type": "string"
+          },
+          "rating": {
+            "type": "number"
+          },
+          "comment": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        }
+      },
+      "Notification": {
+        "type": "object",
+        "required": [
+          "id",
+          "userId",
+          "title",
+          "body",
+          "href",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "href": {
+            "type": "string"
+          },
+          "readAt": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        }
+      },
+      "PaymentTransaction": {
+        "type": "object",
+        "required": [
+          "id",
+          "bookingId",
+          "kind",
+          "status",
+          "amount",
+          "note",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "bookingId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        }
+      },
+      "OwnerDocument": {
+        "type": "object",
+        "required": [
+          "id",
+          "ownerId",
+          "type",
+          "name",
+          "fileUrl",
+          "status",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "fileUrl": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          }
         }
       },
       "ModerationItem": {
         "type": "object", "required": ["id", "kind", "subjectId", "title", "details", "status", "createdAt"],
         "properties": {
-          "id": { "type": "string" }, "kind": { "type": "string", "enum": ["profile", "listing", "dispute"] }, "subjectId": { "type": "string" },
+          "id": { "type": "string" }, "kind": { "type": "string", "enum": ["profile", "listing", "dispute", "report"] }, "subjectId": { "type": "string" },
           "title": { "type": "string" }, "details": { "type": "string" }, "status": { "type": "string", "enum": ["pending", "approved", "rejected", "resolved"] }, "createdAt": { "type": "string" }
         }
       },
@@ -391,22 +740,166 @@
         "properties": { "id": { "type": "string" }, "actorId": { "type": "string" }, "action": { "type": "string" }, "targetId": { "type": "string" }, "createdAt": { "type": "string" } }
       },
       "PlatformMetrics": {
-        "type": "object", "required": ["held", "released", "frozen", "activeUsers", "pendingProfiles"],
-        "properties": { "held": { "type": "number" }, "released": { "type": "number" }, "frozen": { "type": "number" }, "activeUsers": { "type": "integer" }, "pendingProfiles": { "type": "integer" } }
+        "type": "object",
+        "required": [
+          "held",
+          "released",
+          "frozen",
+          "activeUsers",
+          "pendingProfiles",
+          "listingViews",
+          "bookingRequests",
+          "occupancy",
+          "revenue"
+        ],
+        "properties": {
+          "held": {
+            "type": "number"
+          },
+          "released": {
+            "type": "number"
+          },
+          "frozen": {
+            "type": "number"
+          },
+          "activeUsers": {
+            "type": "number"
+          },
+          "pendingProfiles": {
+            "type": "number"
+          },
+          "listingViews": {
+            "type": "number"
+          },
+          "bookingRequests": {
+            "type": "number"
+          },
+          "occupancy": {
+            "type": "number"
+          },
+          "revenue": {
+            "type": "number"
+          }
+        }
       },
       "PlatformIntegrations": {
         "type": "object", "required": ["database", "openAI", "gemini", "weather", "amadeus", "payMongo"],
         "properties": { "database": { "type": "boolean" }, "openAI": { "type": "boolean" }, "gemini": { "type": "boolean" }, "weather": { "type": "boolean" }, "amadeus": { "type": "boolean" }, "payMongo": { "type": "boolean" } }
       },
       "PlatformResponse": {
-        "type": "object", "required": ["user", "listings", "bookings", "directory", "metrics", "trips", "itineraryVersions", "itineraryGenerations", "moderation", "audit"],
+        "type": "object",
+        "required": [
+          "user",
+          "listings",
+          "bookings",
+          "directory",
+          "metrics",
+          "trips",
+          "itineraryVersions",
+          "itineraryGenerations",
+          "moderation",
+          "audit",
+          "blockedDates",
+          "promotions",
+          "reviews",
+          "notifications",
+          "transactions",
+          "ownerDocuments"
+        ],
         "properties": {
-          "user": { "$ref": "#/components/schemas/PublicUser" }, "listings": { "type": "array", "items": { "$ref": "#/components/schemas/Listing" } },
-          "bookings": { "type": "array", "items": { "$ref": "#/components/schemas/Booking" } }, "directory": { "type": "array", "items": { "$ref": "#/components/schemas/PublicUser" } },
-          "metrics": { "$ref": "#/components/schemas/PlatformMetrics" }, "integrations": { "$ref": "#/components/schemas/PlatformIntegrations" },
-          "trips": { "type": "array", "items": { "$ref": "#/components/schemas/SavedTrip" } }, "itineraryVersions": { "type": "array", "items": { "$ref": "#/components/schemas/ItineraryVersion" } },
-          "itineraryGenerations": { "type": "array", "items": { "$ref": "#/components/schemas/ItineraryGenerationSummary" } },
-          "moderation": { "type": "array", "items": { "$ref": "#/components/schemas/ModerationItem" } }, "audit": { "type": "array", "items": { "$ref": "#/components/schemas/AuditEvent" } }
+          "user": {
+            "$ref": "#/components/schemas/PublicUser"
+          },
+          "listings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Listing"
+            }
+          },
+          "bookings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Booking"
+            }
+          },
+          "directory": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicUser"
+            }
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/PlatformMetrics"
+          },
+          "integrations": {
+            "$ref": "#/components/schemas/PlatformIntegrations"
+          },
+          "trips": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SavedTrip"
+            }
+          },
+          "itineraryVersions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ItineraryVersion"
+            }
+          },
+          "itineraryGenerations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ItineraryGenerationSummary"
+            }
+          },
+          "moderation": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModerationItem"
+            }
+          },
+          "audit": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditEvent"
+            }
+          },
+          "blockedDates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ListingBlockedDate"
+            }
+          },
+          "promotions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Promotion"
+            }
+          },
+          "reviews": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Review"
+            }
+          },
+          "notifications": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Notification"
+            }
+          },
+          "transactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentTransaction"
+            }
+          },
+          "ownerDocuments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OwnerDocument"
+            }
+          }
         }
       },
       "PlatformActionResponse": { "type": "object", "required": ["result"], "properties": { "result": { "x-typescript-type": "unknown" } } },

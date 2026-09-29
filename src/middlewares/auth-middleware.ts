@@ -28,7 +28,7 @@ export function verifySessionToken(token?: string): Session | null {
   if (signature.length !== expected.length || !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
   try {
     const session = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Session;
-    return session.exp > Date.now() ? session : null;
+    return session.exp > Date.now() && (session.role === "traveler" || session.role === "admin") ? session : null;
   } catch {
     return null;
   }

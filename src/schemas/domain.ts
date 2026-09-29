@@ -1,4 +1,4 @@
-export type Role = 'traveler' | 'owner' | 'admin';
+export type Role = 'traveler' | 'admin';
 export type ProfileStatus = 'unverified' | 'pending' | 'verified' | 'rejected';
 export type TripStatus = 'active' | 'archived';
 export type ItineraryVersionKind = 'saved' | 'regenerated' | 'manual_edit' | 'duplicated' | 'restored';
@@ -98,7 +98,7 @@ export interface OwnerDocument { id: string; ownerId: string; type: string; name
 
 export interface ModerationItem {
   id: string;
-  kind: 'profile' | 'listing' | 'dispute';
+  kind: 'profile' | 'listing' | 'dispute' | 'report';
   subjectId: string;
   title: string;
   details: string;

@@ -203,8 +203,31 @@ function firstUnusedImage(images: CommonsImage[], usedImageUrls: Set<string>): C
  * places, and previously caused a single result to be repeated down the list.
  */
 async function attachImagesToDays(destination: string, days: DayPlan[], search: CommonsImageSearch): Promise<DayPlan[]> {
-  const lookups = days.flatMap((day) => day.activities.map((activity) => `${activity.title} ${destination}`));
-  const found = await mapWithConcurrency(lookups, 6, (query) => search(query, 5));
+  const lookups = days.flatMap((day) => day.activities.map((activity) => activity.title));
+  const pending = new Map<string, Promise<CommonsImage[]>>();
+  const lookup = (query: string) => {
+    let result = pending.get(query);
+    if (!result) {
+      result = search(query, 5).catch(() => []);
+      pending.set(query, result);
+    }
+    return result;
+  };
+  const found = await mapWithConcurrency(lookups, 4, async (title) => {
+    // Search the named place without itinerary actions that Commons treats as
+    // additional required words. Keep geographic context in every attempt.
+    const place = title.replace(/\b(?:guided|visit|explore|tour|walk|walking|briefing|breakfast|lunch|dinner|at|the|of|and|with)\b/gi, ' ').replace(/\s+/g, ' ').trim();
+    const country = destination.split(',').at(-1)?.trim() || destination;
+    const queries = [...new Set([
+      `${title} ${destination}`,
+      ...(place ? [`${place} ${destination}`, `${place} ${country}`] : []),
+    ])];
+    for (const query of queries) {
+      const images = await lookup(query);
+      if (images.length) return images;
+    }
+    return [];
+  });
   const usedImageUrls = new Set<string>();
   let lookupIndex = 0;
 

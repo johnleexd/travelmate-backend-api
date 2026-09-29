@@ -158,3 +158,18 @@ Development responses expose test codes when transactional email is not configur
 production startup requires `EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, and
 `EMAIL_FROM`. Token hashes use a separate production `ACCOUNT_TOKEN_SECRET` so
 database access alone is not enough to test guessed recovery codes offline.
+# Account roles
+
+TravelMate supports traveler and admin accounts through one login endpoint.
+Public registration always creates a traveler. Migration
+`20260930000000_traveler_admin_roles` converts legacy owners to travelers and
+invalidates their old sessions without deleting their records. The admin dashboard
+contains Overview, Users, Reports, and System Health. Profile approvals, trust
+scoring, listings, bookings, disputes, and payment workflows are retired; historical
+records remain intact. Email verification still protects sign-in.
+
+Travelers submit problem reports from their account page. Migration
+`20261001000000_traveler_reports` adds the report kind to the existing review table.
+Only admins can read the report queue or resolve reports; each resolution is audited
+and notifies the traveler. System Health shows service configuration and recent
+generation failures, without claiming that configured providers are currently live.

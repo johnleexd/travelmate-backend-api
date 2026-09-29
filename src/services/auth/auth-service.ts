@@ -51,7 +51,7 @@ export async function registerUser(input: {
         data: {
           name: input.name,
           email: input.email,
-          role: input.role,
+          role: 'traveler',
           emailVerified: false,
           profileStatus: "unverified",
           trustScore: 50,

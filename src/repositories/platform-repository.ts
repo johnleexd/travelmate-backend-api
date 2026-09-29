@@ -15,22 +15,21 @@ const publicUserSelect = { id: true, name: true, email: true, role: true, emailV
 
 async function loadDatabase(user?: PublicUser): Promise<Database> {
   const traveler = user?.role === 'traveler';
-  const owner = user?.role === 'owner';
   const [users, listings, bookings, moderation, trips, itineraryVersions, itineraryGenerations, audit, blockedDates, promotions, reviews, notifications, transactions, ownerDocuments] = await Promise.all([
-    prisma.user.findMany({ where: traveler ? { id: user.id } : owner ? { bookings: { some: { listing: { ownerId: user.id } } } } : undefined, select: publicUserSelect, orderBy: { id: "asc" } }),
-    prisma.listing.findMany({ where: traveler ? { status: 'approved' } : owner ? { ownerId: user.id } : undefined, orderBy: { id: "asc" } }),
-    prisma.booking.findMany({ where: traveler ? { travelerId: user.id } : owner ? { listing: { ownerId: user.id } } : undefined, orderBy: { createdAt: "asc" } }),
-    prisma.moderation.findMany({ where: user && user.role !== 'admin' ? { id: '__none__' } : undefined, orderBy: { createdAt: "asc" } }),
+    prisma.user.findMany({ where: traveler ? { id: user.id } : undefined, select: publicUserSelect, orderBy: { id: "asc" } }),
+    user?.role === 'admin' ? Promise.resolve([]) : prisma.listing.findMany({ where: traveler ? { status: 'approved' } : undefined, orderBy: { id: "asc" } }),
+    user ? Promise.resolve([]) : prisma.booking.findMany({ orderBy: { createdAt: "asc" } }),
+    prisma.moderation.findMany({ where: user && user.role !== 'admin' ? { id: '__none__' } : { kind: 'report' }, orderBy: { createdAt: "desc" } }),
     prisma.trip.findMany({ where: traveler ? { userId: user.id } : user ? { id: '__none__' } : undefined, orderBy: { createdAt: "asc" } }),
     prisma.itineraryVersion.findMany({ where: traveler ? { trip: { userId: user.id } } : user ? { id: '__none__' } : undefined, orderBy: [{ tripId: "asc" }, { version: "desc" }] }),
-    prisma.itineraryGeneration.findMany({ where: traveler ? { userId: user.id } : user ? { id: '__none__' } : undefined, select: { id: true, userId: true, destination: true, status: true, errorCode: true, createdAt: true, updatedAt: true }, orderBy: { createdAt: "desc" }, take: traveler ? 25 : undefined }),
-    prisma.auditEvent.findMany({ where: user && user.role !== 'admin' ? { id: '__none__' } : undefined, orderBy: { createdAt: "asc" }, take: user?.role === 'admin' ? 100 : undefined }),
-    prisma.listingBlockedDate.findMany({ where: traveler ? { listing: { status: 'approved' } } : owner ? { listing: { ownerId: user.id } } : undefined, orderBy: { date: 'asc' } }),
-    prisma.promotion.findMany({ where: traveler ? { listing: { status: 'approved' }, active: true } : owner ? { listing: { ownerId: user.id } } : undefined, orderBy: { startDate: 'desc' } }),
-    prisma.review.findMany({ where: traveler ? { OR: [{ travelerId: user.id }, { listing: { status: 'approved' } }] } : owner ? { listing: { ownerId: user.id } } : undefined, orderBy: { createdAt: 'desc' } }),
+    prisma.itineraryGeneration.findMany({ where: traveler ? { userId: user.id } : undefined, select: { id: true, userId: true, destination: true, status: true, errorCode: true, createdAt: true, updatedAt: true }, orderBy: { createdAt: "desc" }, take: 25 }),
+    prisma.auditEvent.findMany({ where: user && user.role !== 'admin' ? { id: '__none__' } : undefined, orderBy: { createdAt: "desc" }, take: 100 }),
+    user ? Promise.resolve([]) : prisma.listingBlockedDate.findMany({ orderBy: { date: 'asc' } }),
+    user ? Promise.resolve([]) : prisma.promotion.findMany({ orderBy: { startDate: 'desc' } }),
+    user ? Promise.resolve([]) : prisma.review.findMany({ orderBy: { createdAt: 'desc' } }),
     prisma.notification.findMany({ where: user ? { userId: user.id } : undefined, orderBy: { createdAt: 'desc' }, take: user ? 50 : undefined }),
-    prisma.paymentTransaction.findMany({ where: traveler ? { booking: { travelerId: user.id } } : owner ? { booking: { listing: { ownerId: user.id } } } : undefined, orderBy: { createdAt: 'desc' } }),
-    prisma.ownerDocument.findMany({ where: owner ? { ownerId: user.id } : traveler ? { id: '__none__' } : undefined, orderBy: { createdAt: 'desc' } }),
+    user ? Promise.resolve([]) : prisma.paymentTransaction.findMany({ orderBy: { createdAt: 'desc' } }),
+    user ? Promise.resolve([]) : prisma.ownerDocument.findMany({ orderBy: { createdAt: 'desc' } }),
   ]);
 
   return {
