@@ -5,6 +5,7 @@ export interface OfferTokenData {
   offerId: string;
   name: string;
   nightlyRate: number;
+  currency: string;
   isLive: boolean;
 }
 
@@ -13,7 +14,7 @@ function secret(): string {
 }
 
 function payload(data: OfferTokenData): string {
-  return [data.hotelId, data.offerId, data.name, String(data.nightlyRate), data.isLive ? 'live' : 'test'].join('|');
+  return [data.hotelId, data.offerId, data.name, String(data.nightlyRate), data.currency, data.isLive ? 'live' : 'test'].join('|');
 }
 
 export function createOfferToken(data: OfferTokenData): string {

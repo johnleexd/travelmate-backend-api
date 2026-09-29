@@ -1,3 +1,5 @@
+import { formatMoney, type CurrencyCode } from '../../schemas/domain.ts';
+
 /** Pure budget assessment and optimization rules. */
 export type BudgetOptimizationStatus = 'within_budget' | 'near_limit' | 'over_budget';
 
@@ -36,6 +38,7 @@ interface OptimizationDay {
 
 export interface BudgetOptimizationInput {
   budget: number;
+  currency: CurrencyCode;
   reserve: number;
   plannedSpend: number;
   travelers: number;
@@ -71,7 +74,7 @@ export function buildBudgetOptimization(input: BudgetOptimizationInput): BudgetO
         id: 'compare-lower-rate-stay',
         category: 'accommodation',
         title: 'Compare a lower-rate stay',
-        description: `Look for a verified stay near PHP ${targetRate.toLocaleString()} per night or lower before changing the selected accommodation.`,
+        description: `Look for a verified stay near ${formatMoney(targetRate, input.currency)} per night or lower before changing the selected accommodation.`,
         estimatedSavings: money(accommodationTotal * 0.2),
         tradeoff: 'A lower rate may mean fewer amenities, a smaller room, or a less central location. Availability is not guaranteed.',
       });
@@ -102,7 +105,7 @@ export function buildBudgetOptimization(input: BudgetOptimizationInput): BudgetO
       id: 'set-meal-budget-cap',
       category: 'food',
       title: 'Set a daily meal cap',
-      description: `Choose local set meals or markets for selected meals; a 20% reduction is about PHP ${money(foodTotal * 0.2).toLocaleString()} for the group.`,
+      description: `Choose local set meals or markets for selected meals; a 20% reduction is about ${formatMoney(money(foodTotal * 0.2), input.currency)} for the group.`,
       estimatedSavings: money(foodTotal * 0.2),
       tradeoff: 'This reduces premium dining and may require checking menus or sharing dishes.',
     });

@@ -1,4 +1,4 @@
-import { allocateEqualShares } from "../../schemas/domain.ts";
+import { allocateEqualShares, formatMoney, type CurrencyCode } from "../../schemas/domain.ts";
 import { ItineraryEditValidationError } from "../../exceptions/index.ts";
 import { buildBudgetOptimization } from "../budget/budget-optimization-service.ts";
 
@@ -11,10 +11,10 @@ function record(value: unknown, message: string): JsonRecord {
   return value as JsonRecord;
 }
 
-function finiteMoney(value: unknown): number {
+function finiteMoney(value: unknown, currency: CurrencyCode): number {
   const amount = Number(value);
   if (!Number.isFinite(amount) || amount < 0 || amount > 10_000_000) {
-    throw new ItineraryEditValidationError("Activity cost must be between PHP 0 and PHP 10,000,000.");
+    throw new ItineraryEditValidationError(`Activity cost must be between ${formatMoney(0, currency)} and ${formatMoney(10_000_000, currency)}.`);
   }
   return Math.round(amount * 100) / 100;
 }
@@ -32,10 +32,10 @@ function optionalImage(value: unknown): string | undefined {
   return value.startsWith("/") || value.startsWith("https://upload.wikimedia.org/") || value.startsWith("https://thumb.wikimedia.org/") ? value : undefined;
 }
 
-function activityInput(value: unknown, travelers: number): JsonRecord {
+function activityInput(value: unknown, travelers: number, currency: CurrencyCode): JsonRecord {
   const activity = record(value, "Every activity must be structured data.");
   const category = typeof activity.category === "string" && categories.has(activity.category) ? activity.category : "activity";
-  const estimatedCost = finiteMoney(activity.estimatedCost);
+  const estimatedCost = finiteMoney(activity.estimatedCost, currency);
   const imageUrl = optionalImage(activity.imageUrl);
   return {
     time: text(activity.time, "Activity time", 30) || "Flexible",
@@ -50,11 +50,11 @@ function activityInput(value: unknown, travelers: number): JsonRecord {
   };
 }
 
-function activitiesFromDay(value: unknown, travelers: number): JsonRecord[] {
+function activitiesFromDay(value: unknown, travelers: number, currency: CurrencyCode): JsonRecord[] {
   const day = record(value, "Every itinerary day must be structured data.");
   if (!Array.isArray(day.activities)) throw new ItineraryEditValidationError("Every itinerary day must contain an activities list.");
   if (day.activities.length > 8) throw new ItineraryEditValidationError("A day can contain at most 8 activities.");
-  return day.activities.map((activity) => activityInput(activity, travelers));
+  return day.activities.map((activity) => activityInput(activity, travelers, currency));
 }
 
 function safeNumber(value: unknown, fallback = 0): number {
@@ -72,6 +72,7 @@ export function applyManualItineraryChanges(
   expectedDays: number,
   budget: number,
   travelers: number,
+  currency: CurrencyCode,
 ): JsonRecord {
   const existing = record(existingValue, "The saved itinerary is invalid.");
   const submitted = record(submittedValue, "The edited itinerary is invalid.");
@@ -91,7 +92,7 @@ export function applyManualItineraryChanges(
 
   const days = existing.days.map((storedDay, index) => {
     const day = record(storedDay, "The saved itinerary contains an invalid day.");
-    const activities = activitiesFromDay(submittedDays[index], travelers);
+    const activities = activitiesFromDay(submittedDays[index], travelers, currency);
     const activityTotal = activities.reduce((sum, activity) => sum + Number(activity.estimatedCost), 0);
     const rideFare = activities.filter((activity) => activity.category === "transport").reduce((sum, activity) => sum + Number(activity.estimatedCost), 0);
     return {
@@ -108,12 +109,10 @@ export function applyManualItineraryChanges(
   const shortfall = Math.max(0, Math.round((plannedSpend - budget) * 100) / 100);
   const previousBudget = existing.budgetSummary && typeof existing.budgetSummary === "object" && !Array.isArray(existing.budgetSummary) ? existing.budgetSummary as JsonRecord : {};
   const previousSharing = existing.costSharing && typeof existing.costSharing === "object" && !Array.isArray(existing.costSharing) ? existing.costSharing as JsonRecord : {};
-  const wholePlannedSpend = Math.max(0, Math.round(plannedSpend));
-  const wholeAccommodation = Math.max(0, Math.round(accommodationTotal));
-  const wholeRemaining = Math.max(0, Math.round(remainingBudget));
   const reserve = safeNumber(previousBudget.reserve);
   const budgetOptimization = buildBudgetOptimization({
     budget,
+    currency,
     reserve,
     plannedSpend,
     travelers,
@@ -141,10 +140,10 @@ export function applyManualItineraryChanges(
       travelers,
       groupBudget: budget,
       plannedGroupSpend: plannedSpend,
-      budgetShares: allocateEqualShares(Math.round(budget), travelers),
-      plannedSpendShares: allocateEqualShares(wholePlannedSpend, travelers),
-      accommodationShares: allocateEqualShares(wholeAccommodation, travelers),
-      reserveShares: allocateEqualShares(wholeRemaining, travelers),
+      budgetShares: allocateEqualShares(budget, travelers, currency),
+      plannedSpendShares: allocateEqualShares(plannedSpend, travelers, currency),
+      accommodationShares: allocateEqualShares(accommodationTotal, travelers, currency),
+      reserveShares: allocateEqualShares(remainingBudget, travelers, currency),
     },
   };
 }

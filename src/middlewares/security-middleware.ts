@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
+import { apiErrorPayload } from "../contracts/api-error.ts";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
@@ -28,6 +29,7 @@ export function securityHeaders(environment: NodeJS.ProcessEnv = process.env) {
     response.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
     response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
     response.setHeader("Cross-Origin-Resource-Policy", "same-site");
+    response.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
     if (environment.NODE_ENV === "production") {
       response.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
     }
@@ -35,10 +37,32 @@ export function securityHeaders(environment: NodeJS.ProcessEnv = process.env) {
   };
 }
 
+export function requestUsesHttps(request: Pick<Request, "secure" | "get">): boolean {
+  if (request.secure) return true;
+  const forwardedProtocol = request.get("x-forwarded-proto")
+    ?.split(",", 1)[0]
+    ?.trim()
+    .toLowerCase();
+  return forwardedProtocol === "https";
+}
+
+export function enforceHttps(environment: NodeJS.ProcessEnv = process.env) {
+  return (request: Request, response: Response, next: NextFunction) => {
+    if (environment.NODE_ENV !== "production" || requestUsesHttps(request)) {
+      next();
+      return;
+    }
+
+    response
+      .status(426)
+      .json(apiErrorPayload("HTTPS is required for the TravelMate API.", 426));
+  };
+}
+
 export function sameOriginWrites(origins: string[]) {
   return (request: Request, response: Response, next: NextFunction) => {
     if (!requestOriginAllowed(request.method, request.get("origin"), request.get("sec-fetch-site"), origins)) {
-      response.status(403).json({ error: "Cross-site write request rejected." });
+      response.status(403).json(apiErrorPayload("Cross-site write request rejected.", 403));
       return;
     }
     next();

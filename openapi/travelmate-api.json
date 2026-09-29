@@ -1,0 +1,492 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "TravelMate API", "version": "1.0.0" },
+  "paths": {
+    "/health": { "get": { "summary": "Check API and database health", "responses": { "200": { "description": "Healthy" }, "503": { "description": "Unavailable" } } } },
+    "/api/auth": {
+      "get": { "summary": "Return the authenticated user", "responses": { "200": { "description": "Current user", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CurrentUserResponse" } } } }, "401": { "$ref": "#/components/responses/Unauthorized" } } },
+      "post": { "summary": "Register, verify, login, logout, or recover an account", "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["action"], "properties": { "action": { "type": "string", "enum": ["register", "verify-email", "resend-verification", "login", "logout", "forgot-password", "reset-password"] } }, "additionalProperties": true } } } }, "responses": { "200": { "description": "Authentication action completed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthActionResponse" } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } } }
+    },
+    "/api/auth/oauth/google": { "get": { "summary": "Begin Google OpenID Connect sign-in with state, nonce, and PKCE", "responses": { "302": { "description": "Redirect to Google authorization" } } } },
+    "/api/auth/oauth/google/callback": { "get": { "summary": "Verify the Google callback and create a TravelMate session", "responses": { "302": { "description": "Redirect to a dashboard or a safe authentication error" } } } },
+    "/api/platform": {
+      "get": { "summary": "Return a role-scoped dashboard payload", "responses": { "200": { "description": "Scoped dashboard data", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PlatformResponse" } } } }, "401": { "$ref": "#/components/responses/Unauthorized" } } },
+      "post": { "summary": "Execute an authorized platform CRUD action", "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["action"], "properties": { "action": { "type": "string" } }, "additionalProperties": true } } } }, "responses": { "200": { "description": "Action result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PlatformActionResponse" } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "401": { "$ref": "#/components/responses/Unauthorized" } } }
+    },
+    "/api/itinerary": { "post": { "summary": "Generate and validate a personalized itinerary", "responses": { "200": { "description": "Validated itinerary", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ItineraryResponse" } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" }, "502": { "description": "AI provider or validation failure", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } } } } },
+    "/api/itinerary/images": { "post": { "summary": "Refresh images for one itinerary day", "responses": { "200": { "description": "Refreshed itinerary day", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ItineraryDayResponse" } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "401": { "$ref": "#/components/responses/Unauthorized" } } } },
+    "/api/profile": {
+      "get": { "summary": "Return the authenticated profile", "responses": { "200": { "description": "Profile", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProfileResponse" } } } }, "401": { "$ref": "#/components/responses/Unauthorized" } } },
+      "patch": { "summary": "Update the authenticated profile", "responses": { "200": { "description": "Updated profile", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProfileResponse" } } } }, "401": { "$ref": "#/components/responses/Unauthorized" }, "422": { "$ref": "#/components/responses/BadRequest" } } }
+    },
+    "/api/weather": { "get": { "summary": "Retrieve provider-backed weather and crowd estimates", "responses": { "200": { "description": "Weather snapshot", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WeatherData" } } } }, "400": { "$ref": "#/components/responses/BadRequest" } } } },
+    "/api/locations": { "get": { "summary": "Search destination suggestions", "responses": { "200": { "description": "Location search results", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LocationSearchResponse" } } } } } } },
+    "/api/destination-context": { "get": { "summary": "Resolve destination currency and transportation guidance", "responses": { "200": { "description": "Destination context", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DestinationContext" } } } } } } },
+    "/api/exchange-rate": { "get": { "summary": "Retrieve a reference exchange rate", "responses": { "200": { "description": "Exchange rate", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ExchangeRateQuote" } } } } } } },
+    "/api/accommodations": { "get": { "summary": "Search accommodation offers", "responses": { "200": { "description": "Accommodation results", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AccommodationSearchResponse" } } } } } } },
+    "/api/travel-options": { "get": { "summary": "Compare flight and activity options", "responses": { "200": { "description": "Travel option results", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TravelOptionsResponse" } } } } } } }
+  },
+  "components": {
+    "schemas": {
+      "ApiError": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["error", "code", "retryable"],
+        "properties": {
+          "error": { "type": "string", "minLength": 1 },
+          "code": {
+            "type": "string",
+            "enum": ["BAD_REQUEST", "AUTHENTICATION_REQUIRED", "FORBIDDEN", "NOT_FOUND", "CONFLICT", "VALIDATION_ERROR", "RATE_LIMITED", "INTERNAL_ERROR", "PROVIDER_UNAVAILABLE", "GENERATION_CONFLICT", "AI_PROVIDER_UNAVAILABLE", "AI_GENERATION_FAILED"]
+          },
+          "retryable": { "type": "boolean" },
+          "details": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "CurrencyCode": {
+        "type": "string",
+        "enum": ["PHP", "USD", "EUR", "JPY", "KRW", "THB", "GBP", "AUD", "CAD", "SGD", "CNY", "HKD", "TWD", "MYR", "IDR", "VND", "INR", "NZD", "CHF", "AED"]
+      },
+      "FreshnessMetadata": {
+        "type": "object",
+        "required": ["source", "status", "isStale", "fetchedAt", "expiresAt", "staleUntil", "policy"],
+        "properties": {
+          "source": { "type": "string", "enum": ["flights", "hotels", "activities", "weather", "exchange-rates"] },
+          "status": { "type": "string", "enum": ["live", "fresh-cache", "stale-cache", "unavailable"] },
+          "isStale": { "type": "boolean" },
+          "fetchedAt": { "type": "string" },
+          "expiresAt": { "type": "string" },
+          "staleUntil": { "type": "string" },
+          "policy": { "type": "string" }
+        }
+      },
+      "LocationSuggestion": {
+        "type": "object",
+        "required": ["id", "name", "region", "country", "countryCode", "latitude", "longitude", "label", "placeType", "contextLabel"],
+        "properties": {
+          "id": { "type": "number" },
+          "name": { "type": "string" },
+          "region": { "type": "string" },
+          "country": { "type": "string" },
+          "countryCode": { "type": "string" },
+          "latitude": { "type": "number" },
+          "longitude": { "type": "number" },
+          "label": { "type": "string" },
+          "placeType": { "type": "string" },
+          "contextLabel": { "type": "string" }
+        }
+      },
+      "TransportationOption": {
+        "type": "object",
+        "required": ["id", "label", "category"],
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "category": { "type": "string", "enum": ["public", "private", "active", "water"] }
+        }
+      },
+      "DestinationContext": {
+        "type": "object",
+        "required": ["currency", "currencySource", "transportation", "transportationSource", "transportationMessage"],
+        "properties": {
+          "currency": { "anyOf": [{ "$ref": "#/components/schemas/CurrencyCode" }, { "type": "null" }] },
+          "currencySource": { "type": "string", "enum": ["country-code", "unsupported"] },
+          "transportation": { "type": "array", "items": { "$ref": "#/components/schemas/TransportationOption" } },
+          "transportationSource": { "type": "string", "enum": ["curated-country-city-guidance", "unavailable"] },
+          "transportationMessage": { "type": "string" }
+        }
+      },
+      "ExchangeRateQuote": {
+        "type": "object",
+        "required": ["base", "quote", "rate", "asOf", "fetchedAt", "refreshAfter", "source", "sourceUrl", "disclaimer", "freshness"],
+        "properties": {
+          "base": { "$ref": "#/components/schemas/CurrencyCode" },
+          "quote": { "$ref": "#/components/schemas/CurrencyCode" },
+          "rate": { "type": "number" },
+          "asOf": { "type": "string" },
+          "fetchedAt": { "type": "string" },
+          "refreshAfter": { "type": "string" },
+          "source": { "type": "string", "enum": ["frankfurter"] },
+          "sourceUrl": { "type": "string" },
+          "disclaimer": { "type": "string" },
+          "freshness": { "$ref": "#/components/schemas/FreshnessMetadata" }
+        }
+      },
+      "LiveAccommodation": {
+        "type": "object",
+        "required": ["id", "hotelId", "offerId", "name", "type", "typeSource", "address", "checkInDate", "checkOutDate", "nightlyRate", "total", "currency", "roomDescription", "cancellationPolicy", "available", "isLive", "source", "selectionToken", "fetchedAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "hotelId": { "type": "string" },
+          "offerId": { "type": "string" },
+          "name": { "type": "string" },
+          "type": { "type": "string", "enum": ["Hotel", "Hostel", "Condo", "Apartment", "Resort", "Accommodation"] },
+          "typeSource": { "type": "string", "enum": ["name-inferred"] },
+          "rating": { "type": "number" },
+          "address": { "type": "string" },
+          "checkInDate": { "type": "string" },
+          "checkOutDate": { "type": "string" },
+          "nightlyRate": { "type": "number" },
+          "total": { "type": "number" },
+          "currency": { "$ref": "#/components/schemas/CurrencyCode" },
+          "roomDescription": { "type": "string" },
+          "cancellationPolicy": { "type": "string" },
+          "available": { "type": "boolean" },
+          "isLive": { "type": "boolean" },
+          "source": { "type": "string", "enum": ["amadeus"] },
+          "selectionToken": { "type": "string" },
+          "fetchedAt": { "type": "string" }
+        }
+      },
+      "LocationSearchResponse": {
+        "type": "object",
+        "required": ["locations"],
+        "properties": { "locations": { "type": "array", "items": { "$ref": "#/components/schemas/LocationSuggestion" } } }
+      },
+      "AccommodationSearchResponse": {
+        "type": "object",
+        "required": ["configured", "accommodations", "message", "freshness"],
+        "properties": {
+          "configured": { "type": "boolean" },
+          "accommodations": { "type": "array", "items": { "$ref": "#/components/schemas/LiveAccommodation" } },
+          "message": { "type": "string" },
+          "freshness": { "$ref": "#/components/schemas/FreshnessMetadata" }
+        }
+      },
+      "CrowdCondition": {
+        "type": "object",
+        "required": ["date", "crowdLevel", "crowdSource", "crowdConfidence", "crowdNote", "crowdRecommendation", "fetchedAt", "refreshAfter"],
+        "properties": {
+          "date": { "type": "string" },
+          "crowdLevel": { "type": "string", "enum": ["low", "moderate", "high"] },
+          "crowdSource": { "type": "string", "enum": ["estimated"] },
+          "crowdConfidence": { "type": "string", "enum": ["low"] },
+          "crowdNote": { "type": "string" },
+          "crowdRecommendation": { "type": "string" },
+          "fetchedAt": { "type": "string" },
+          "refreshAfter": { "type": "string" }
+        }
+      },
+      "ForecastDay": {
+        "type": "object",
+        "required": ["date", "tempMin", "tempMax", "description", "icon", "iconUrl", "precipitationProbability"],
+        "properties": {
+          "date": { "type": "string" },
+          "tempMin": { "type": "number" },
+          "tempMax": { "type": "number" },
+          "description": { "type": "string" },
+          "icon": { "type": "string" },
+          "iconUrl": { "type": "string" },
+          "precipitationProbability": { "type": "number" },
+          "weatherAlert": { "type": "string" }
+        }
+      },
+      "WeatherData": {
+        "type": "object",
+        "required": ["source", "city", "country", "temperature", "feelsLike", "humidity", "windSpeed", "description", "icon", "iconUrl", "alerts", "forecast", "forecastAvailable", "fetchedAt", "refreshAfter", "freshness", "crowd"],
+        "properties": {
+          "source": { "type": "string", "enum": ["openweathermap", "open-meteo", "unavailable", "mock"] },
+          "city": { "type": "string" },
+          "country": { "type": "string" },
+          "temperature": { "type": "number" },
+          "feelsLike": { "type": "number" },
+          "humidity": { "type": "number" },
+          "windSpeed": { "type": "number" },
+          "description": { "type": "string" },
+          "icon": { "type": "string" },
+          "iconUrl": { "type": "string" },
+          "alerts": { "type": "array", "items": { "type": "string" } },
+          "forecast": { "type": "array", "items": { "$ref": "#/components/schemas/ForecastDay" } },
+          "forecastAvailable": { "type": "boolean" },
+          "forecastMessage": { "type": "string" },
+          "fetchedAt": { "type": "string" },
+          "refreshAfter": { "type": "string" },
+          "freshness": { "$ref": "#/components/schemas/FreshnessMetadata" },
+          "crowd": { "type": "array", "items": { "$ref": "#/components/schemas/CrowdCondition" } }
+        }
+      },
+      "Role": { "type": "string", "enum": ["traveler", "owner", "admin"] },
+      "ProfileStatus": { "type": "string", "enum": ["unverified", "pending", "verified", "rejected"] },
+      "PartyType": { "type": "string", "enum": ["solo", "couple", "family", "friends"] },
+      "PaymentStatus": { "type": "string", "enum": ["PAID_HELD", "Released", "FROZEN_HELD", "REFUNDED"] },
+      "ImageAttribution": {
+        "type": "object", "required": ["creator", "license", "sourceUrl"],
+        "properties": { "creator": { "type": "string" }, "license": { "type": "string" }, "licenseUrl": { "type": "string" }, "sourceUrl": { "type": "string" } }
+      },
+      "DayActivity": {
+        "type": "object", "required": ["time", "title", "description", "estimatedCost", "category", "icon"],
+        "properties": {
+          "time": { "type": "string" }, "title": { "type": "string" }, "description": { "type": "string" },
+          "estimatedCost": { "type": "number" }, "unitCost": { "type": "number" },
+          "category": { "type": "string", "enum": ["accommodation", "food", "activity", "transport", "misc"] },
+          "icon": { "type": "string" }, "imageUrl": { "type": "string" },
+          "imageAttribution": { "$ref": "#/components/schemas/ImageAttribution" },
+          "placeVerification": { "type": "string", "enum": ["supporting-source-found", "unverified"] }
+        }
+      },
+      "DayPlan": {
+        "type": "object", "required": ["day", "date", "theme", "imageUrl", "totalCost", "activities"],
+        "properties": {
+          "day": { "type": "integer" }, "date": { "type": "string" }, "theme": { "type": "string" }, "imageUrl": { "type": "string" },
+          "imageAttribution": { "$ref": "#/components/schemas/ImageAttribution" }, "travelNote": { "type": "string" },
+          "returnToStayAt": { "type": "string" }, "rideFare": { "type": "number" }, "totalCost": { "type": "number" },
+          "activities": { "type": "array", "items": { "$ref": "#/components/schemas/DayActivity" } },
+          "weatherAlert": { "type": "string" }, "crowdLevel": { "type": "string", "enum": ["low", "moderate", "high"] },
+          "crowdSource": { "type": "string", "enum": ["estimated"] }, "crowdConfidence": { "type": "string", "enum": ["low"] },
+          "crowdNote": { "type": "string" }, "crowdRecommendation": { "type": "string" },
+          "crowdFetchedAt": { "type": "string" }, "crowdRefreshAfter": { "type": "string" }
+        }
+      },
+      "AccommodationPlan": {
+        "type": "object", "required": ["listingId", "name", "address", "nightlyRate", "nights", "total", "currency"],
+        "properties": {
+          "listingId": { "type": "string" }, "name": { "type": "string" }, "address": { "type": "string" },
+          "nightlyRate": { "type": "number" }, "nights": { "type": "integer" }, "total": { "type": "number" },
+          "currency": { "$ref": "#/components/schemas/CurrencyCode" }, "source": { "type": "string", "enum": ["travelmate", "amadeus"] },
+          "offerId": { "type": "string" }, "isLive": { "type": "boolean" }
+        }
+      },
+      "SelectedFlightCost": {
+        "type": "object", "required": ["id", "name", "total", "currency", "fetchedAt"],
+        "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "total": { "type": "number" }, "currency": { "$ref": "#/components/schemas/CurrencyCode" }, "fetchedAt": { "type": "string" } }
+      },
+      "SelectedActivityCost": {
+        "type": "object", "required": ["id", "name", "unitCost", "travelers", "total", "currency", "fetchedAt"],
+        "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "unitCost": { "type": "number" }, "travelers": { "type": "integer" }, "total": { "type": "number" }, "currency": { "$ref": "#/components/schemas/CurrencyCode" }, "fetchedAt": { "type": "string" } }
+      },
+      "PreTripCosts": {
+        "type": "object", "required": ["airportTransferOutbound", "airportTransferReturn", "passport", "visaOrAuthorization", "departureTaxes", "insurance", "other", "total", "currency", "source"],
+        "properties": {
+          "startingLocation": { "type": "string" }, "departureAirport": { "type": "string" }, "passportCountry": { "type": "string" },
+          "passportStatus": { "type": "string", "enum": ["valid", "needs_application", "needs_renewal", "not_sure"] },
+          "airportTransferOutbound": { "type": "number" }, "airportTransferReturn": { "type": "number" }, "passport": { "type": "number" },
+          "visaOrAuthorization": { "type": "number" }, "departureTaxes": { "type": "number" }, "insurance": { "type": "number" },
+          "other": { "type": "number" }, "total": { "type": "number" }, "currency": { "$ref": "#/components/schemas/CurrencyCode" },
+          "source": { "type": "string", "enum": ["user-entered-estimate"] }
+        }
+      },
+      "SelectedTravelCosts": {
+        "type": "object", "required": ["activities", "total"],
+        "properties": { "flight": { "$ref": "#/components/schemas/SelectedFlightCost" }, "activities": { "type": "array", "items": { "$ref": "#/components/schemas/SelectedActivityCost" } }, "preTrip": { "$ref": "#/components/schemas/PreTripCosts" }, "total": { "type": "number" } }
+      },
+      "BudgetOptimizationSuggestion": {
+        "type": "object", "required": ["id", "category", "title", "description", "estimatedSavings", "tradeoff"],
+        "properties": {
+          "id": { "type": "string" }, "category": { "type": "string", "enum": ["accommodation", "food", "activity", "transport"] },
+          "title": { "type": "string" }, "description": { "type": "string" }, "estimatedSavings": { "type": "number" },
+          "tradeoff": { "type": "string" }, "affectedDay": { "type": "integer" }, "affectedActivityTitle": { "type": "string" }
+        }
+      },
+      "BudgetOptimization": {
+        "type": "object", "required": ["status", "targetSpend", "amountToTarget", "combinedEstimatedSavings", "projectedSpendIfAllApplied", "remainingGapAfterSuggestions", "suggestions", "disclaimer"],
+        "properties": {
+          "status": { "type": "string", "enum": ["within_budget", "near_limit", "over_budget"] },
+          "targetSpend": { "type": "number" }, "amountToTarget": { "type": "number" }, "combinedEstimatedSavings": { "type": "number" },
+          "projectedSpendIfAllApplied": { "type": "number" }, "remainingGapAfterSuggestions": { "type": "number" },
+          "suggestions": { "type": "array", "items": { "$ref": "#/components/schemas/BudgetOptimizationSuggestion" } }, "disclaimer": { "type": "string" }
+        }
+      },
+      "CostSharing": {
+        "type": "object", "required": ["partyType", "travelers", "groupBudget", "plannedGroupSpend", "budgetShares", "plannedSpendShares", "accommodationShares", "reserveShares"],
+        "properties": {
+          "partyType": { "$ref": "#/components/schemas/PartyType" }, "travelers": { "type": "integer" }, "groupBudget": { "type": "number" }, "plannedGroupSpend": { "type": "number" },
+          "budgetShares": { "type": "array", "items": { "type": "number" } }, "plannedSpendShares": { "type": "array", "items": { "type": "number" } },
+          "accommodationShares": { "type": "array", "items": { "type": "number" } }, "reserveShares": { "type": "array", "items": { "type": "number" } }
+        }
+      },
+      "BudgetSummary": {
+        "type": "object", "required": ["accommodation", "food", "activities", "transport", "reserve", "dailyAverage", "total"],
+        "properties": {
+          "accommodation": { "type": "number" }, "food": { "type": "number" }, "activities": { "type": "number" }, "transport": { "type": "number" },
+          "reserve": { "type": "number" }, "dailyAverage": { "type": "number" }, "accommodationActual": { "type": "number" },
+          "travelOptionsActual": { "type": "number" }, "variableBudget": { "type": "number" }, "plannedSpend": { "type": "number" },
+          "remainingBudget": { "type": "number" }, "shortfall": { "type": "number" }, "total": { "type": "number" }
+        }
+      },
+      "ItineraryPreferences": {
+        "type": "object", "required": ["travelStyle", "accommodation", "transportation", "activities"],
+        "properties": { "travelStyle": { "type": "string" }, "accommodation": { "type": "string" }, "transportation": { "type": "string" }, "activities": { "type": "array", "items": { "type": "string" } } }
+      },
+      "ItineraryResponse": {
+        "type": "object", "required": ["destination", "totalBudget", "currency", "days", "budgetSummary"],
+        "properties": {
+          "destination": { "type": "string" }, "totalBudget": { "type": "number" }, "currency": { "$ref": "#/components/schemas/CurrencyCode" },
+          "source": { "type": "string", "enum": ["openai", "gemini", "mock"] }, "manuallyEdited": { "type": "boolean" },
+          "partyType": { "$ref": "#/components/schemas/PartyType" }, "travelers": { "type": "integer" },
+          "preferences": { "$ref": "#/components/schemas/ItineraryPreferences" }, "accommodation": { "$ref": "#/components/schemas/AccommodationPlan" },
+          "selectedTravelCosts": { "$ref": "#/components/schemas/SelectedTravelCosts" }, "budgetOptimization": { "$ref": "#/components/schemas/BudgetOptimization" },
+          "costSharing": { "$ref": "#/components/schemas/CostSharing" }, "days": { "type": "array", "items": { "$ref": "#/components/schemas/DayPlan" } },
+          "budgetSummary": { "$ref": "#/components/schemas/BudgetSummary" }, "idempotentReplay": { "type": "boolean" }
+        }
+      },
+      "PublicUser": {
+        "type": "object", "required": ["id", "name", "email", "role", "emailVerified", "profileStatus", "trustScore", "accountStatus"],
+        "properties": {
+          "id": { "type": "string" }, "name": { "type": "string" }, "email": { "type": "string" }, "role": { "$ref": "#/components/schemas/Role" },
+          "emailVerified": { "type": "boolean" }, "profileStatus": { "$ref": "#/components/schemas/ProfileStatus" }, "trustScore": { "type": "number" },
+          "accountStatus": { "type": "string", "enum": ["active", "suspended"] }, "bio": { "type": "string" }, "phone": { "type": "string" }
+        }
+      },
+      "CurrentUserResponse": { "type": "object", "required": ["user"], "properties": { "user": { "$ref": "#/components/schemas/PublicUser" } } },
+      "AuthActionResponse": {
+        "type": "object", "properties": {
+          "user": { "$ref": "#/components/schemas/PublicUser" }, "redirect": { "type": "string" }, "verificationCode": { "type": "string" },
+          "resetCode": { "type": "string" }, "message": { "type": "string" }, "ok": { "type": "boolean" }
+        }
+      },
+      "ProfileResponse": { "type": "object", "required": ["profile"], "properties": { "profile": { "$ref": "#/components/schemas/PublicUser" } } },
+      "Listing": {
+        "type": "object", "required": ["id", "ownerId", "name", "category", "price", "capacity", "available", "status", "description", "municipality", "address", "amenities"],
+        "properties": {
+          "id": { "type": "string" }, "ownerId": { "type": "string" }, "name": { "type": "string" },
+          "category": { "type": "string", "enum": ["stay", "activity", "food", "transport"] }, "price": { "type": "number" },
+          "capacity": { "type": "integer" }, "available": { "type": "integer" }, "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+          "description": { "type": "string" }, "municipality": { "type": "string" }, "address": { "type": "string" },
+          "amenities": { "type": "array", "items": { "type": "string" } }, "imageUrl": { "type": "string" }
+        }
+      },
+      "Booking": {
+        "type": "object", "required": ["id", "travelerId", "listingId", "amount", "guests", "nights", "status", "paymentStatus", "createdAt"],
+        "properties": {
+          "id": { "type": "string" }, "travelerId": { "type": "string" }, "listingId": { "type": "string" }, "amount": { "type": "number" },
+          "guests": { "type": "integer" }, "nights": { "type": "integer" },
+          "status": { "type": "string", "enum": ["confirmed", "change_requested", "cancel_requested", "cancelled", "completed"] },
+          "paymentStatus": { "$ref": "#/components/schemas/PaymentStatus" }, "createdAt": { "type": "string" }
+        }
+      },
+      "ModerationItem": {
+        "type": "object", "required": ["id", "kind", "subjectId", "title", "details", "status", "createdAt"],
+        "properties": {
+          "id": { "type": "string" }, "kind": { "type": "string", "enum": ["profile", "listing", "dispute"] }, "subjectId": { "type": "string" },
+          "title": { "type": "string" }, "details": { "type": "string" }, "status": { "type": "string", "enum": ["pending", "approved", "rejected", "resolved"] }, "createdAt": { "type": "string" }
+        }
+      },
+      "SavedTrip": {
+        "type": "object", "required": ["id", "userId", "destination", "budget", "currency", "startDate", "endDate", "travelers", "partyType", "interests", "itinerary", "weather", "status", "createdAt", "updatedAt"],
+        "properties": {
+          "id": { "type": "string" }, "userId": { "type": "string" }, "destination": { "type": "string" }, "destinationCity": { "type": "string" },
+          "destinationRegion": { "type": "string" }, "destinationCountry": { "type": "string" }, "destinationCountryCode": { "type": "string" },
+          "latitude": { "type": "number" }, "longitude": { "type": "number" }, "budget": { "type": "number" }, "currency": { "$ref": "#/components/schemas/CurrencyCode" },
+          "startDate": { "type": "string" }, "endDate": { "type": "string" }, "travelers": { "type": "integer" }, "partyType": { "$ref": "#/components/schemas/PartyType" },
+          "interests": { "type": "array", "items": { "type": "string" } }, "itinerary": { "x-typescript-type": "unknown" }, "weather": { "x-typescript-type": "unknown" },
+          "status": { "type": "string", "enum": ["active", "archived"] }, "archivedAt": { "type": "string" }, "createdAt": { "type": "string" }, "updatedAt": { "type": "string" }
+        }
+      },
+      "ItineraryVersion": {
+        "type": "object", "required": ["id", "tripId", "version", "kind", "itinerary", "weather", "createdAt"],
+        "properties": {
+          "id": { "type": "string" }, "tripId": { "type": "string" }, "version": { "type": "integer" },
+          "kind": { "type": "string", "enum": ["saved", "regenerated", "manual_edit", "duplicated", "restored"] },
+          "itinerary": { "x-typescript-type": "unknown" }, "weather": { "x-typescript-type": "unknown" }, "createdAt": { "type": "string" }
+        }
+      },
+      "ItineraryGenerationSummary": {
+        "type": "object", "required": ["id", "destination", "status", "createdAt", "updatedAt"],
+        "properties": {
+          "id": { "type": "string" }, "destination": { "type": "string" }, "status": { "type": "string", "enum": ["pending", "completed", "failed"] },
+          "errorCode": { "type": "string" }, "createdAt": { "type": "string" }, "updatedAt": { "type": "string" }
+        }
+      },
+      "AuditEvent": {
+        "type": "object", "required": ["id", "actorId", "action", "targetId", "createdAt"],
+        "properties": { "id": { "type": "string" }, "actorId": { "type": "string" }, "action": { "type": "string" }, "targetId": { "type": "string" }, "createdAt": { "type": "string" } }
+      },
+      "PlatformMetrics": {
+        "type": "object", "required": ["held", "released", "frozen", "activeUsers", "pendingProfiles"],
+        "properties": { "held": { "type": "number" }, "released": { "type": "number" }, "frozen": { "type": "number" }, "activeUsers": { "type": "integer" }, "pendingProfiles": { "type": "integer" } }
+      },
+      "PlatformIntegrations": {
+        "type": "object", "required": ["database", "openAI", "gemini", "weather", "amadeus", "payMongo"],
+        "properties": { "database": { "type": "boolean" }, "openAI": { "type": "boolean" }, "gemini": { "type": "boolean" }, "weather": { "type": "boolean" }, "amadeus": { "type": "boolean" }, "payMongo": { "type": "boolean" } }
+      },
+      "PlatformResponse": {
+        "type": "object", "required": ["user", "listings", "bookings", "directory", "metrics", "trips", "itineraryVersions", "itineraryGenerations", "moderation", "audit"],
+        "properties": {
+          "user": { "$ref": "#/components/schemas/PublicUser" }, "listings": { "type": "array", "items": { "$ref": "#/components/schemas/Listing" } },
+          "bookings": { "type": "array", "items": { "$ref": "#/components/schemas/Booking" } }, "directory": { "type": "array", "items": { "$ref": "#/components/schemas/PublicUser" } },
+          "metrics": { "$ref": "#/components/schemas/PlatformMetrics" }, "integrations": { "$ref": "#/components/schemas/PlatformIntegrations" },
+          "trips": { "type": "array", "items": { "$ref": "#/components/schemas/SavedTrip" } }, "itineraryVersions": { "type": "array", "items": { "$ref": "#/components/schemas/ItineraryVersion" } },
+          "itineraryGenerations": { "type": "array", "items": { "$ref": "#/components/schemas/ItineraryGenerationSummary" } },
+          "moderation": { "type": "array", "items": { "$ref": "#/components/schemas/ModerationItem" } }, "audit": { "type": "array", "items": { "$ref": "#/components/schemas/AuditEvent" } }
+        }
+      },
+      "PlatformActionResponse": { "type": "object", "required": ["result"], "properties": { "result": { "x-typescript-type": "unknown" } } },
+      "ItineraryDayResponse": { "type": "object", "required": ["day"], "properties": { "day": { "$ref": "#/components/schemas/DayPlan" } } },
+      "FlightOption": {
+        "type": "object",
+        "required": ["id", "provider", "airline", "origin", "destination", "departure", "arrival", "duration", "price", "currency", "stops", "fetchedAt", "isLive", "selectionToken"],
+        "properties": {
+          "id": { "type": "string" },
+          "provider": { "type": "string", "enum": ["amadeus"] },
+          "airline": { "type": "string" },
+          "origin": { "type": "string" },
+          "destination": { "type": "string" },
+          "departure": { "type": "string" },
+          "arrival": { "type": "string" },
+          "returnDeparture": { "type": "string" },
+          "returnArrival": { "type": "string" },
+          "duration": { "type": "string" },
+          "price": { "type": "number" },
+          "currency": { "type": "string" },
+          "stops": { "type": "number" },
+          "seatsAvailable": { "type": "number" },
+          "fetchedAt": { "type": "string" },
+          "isLive": { "type": "boolean" },
+          "selectionToken": { "type": "string" }
+        }
+      },
+      "ActivityOption": {
+        "type": "object",
+        "required": ["id", "provider", "name", "location", "description", "price", "currency", "fetchedAt", "isLive", "selectionToken"],
+        "properties": {
+          "id": { "type": "string" },
+          "provider": { "type": "string", "enum": ["amadeus", "travelmate"] },
+          "name": { "type": "string" },
+          "location": { "type": "string" },
+          "description": { "type": "string" },
+          "price": { "type": "number" },
+          "currency": { "type": "string" },
+          "rating": { "type": "number" },
+          "referenceUrl": { "type": "string" },
+          "fetchedAt": { "type": "string" },
+          "isLive": { "type": "boolean" },
+          "selectionToken": { "type": "string" }
+        }
+      },
+      "TravelProviderStatus": {
+        "type": "object",
+        "required": ["name", "configured", "isLive"],
+        "properties": {
+          "name": { "type": "string", "enum": ["amadeus"] },
+          "configured": { "type": "boolean" },
+          "isLive": { "type": "boolean" }
+        }
+      },
+      "TravelOptionFreshness": {
+        "type": "object",
+        "required": ["flights", "activities"],
+        "properties": {
+          "flights": { "$ref": "#/components/schemas/FreshnessMetadata" },
+          "activities": { "$ref": "#/components/schemas/FreshnessMetadata" }
+        }
+      },
+      "TravelOptionsResponse": {
+        "type": "object",
+        "required": ["fetchedAt", "provider", "flights", "activities", "flightMessage", "activityMessage", "freshness"],
+        "properties": {
+          "fetchedAt": { "type": "string" },
+          "provider": { "$ref": "#/components/schemas/TravelProviderStatus" },
+          "flights": { "type": "array", "items": { "$ref": "#/components/schemas/FlightOption" } },
+          "activities": { "type": "array", "items": { "$ref": "#/components/schemas/ActivityOption" } },
+          "flightMessage": { "type": "string" },
+          "activityMessage": { "type": "string" },
+          "freshness": { "$ref": "#/components/schemas/TravelOptionFreshness" }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": { "description": "Invalid request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } },
+      "Unauthorized": { "description": "Authentication required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } },
+      "RateLimited": { "description": "Rate limit exceeded", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } }
+    }
+  }
+}

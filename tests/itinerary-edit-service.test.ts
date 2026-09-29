@@ -6,6 +6,7 @@ import { applyManualItineraryChanges } from "../src/services/itinerary/itinerary
 const saved = {
   destination: "Cebu",
   totalBudget: 10_000,
+  currency: "PHP",
   accommodation: { name: "Test stay", nightlyRate: 1_000, nights: 1, total: 1_000 },
   budgetSummary: { total: 10_000, reserve: 1_000 },
   costSharing: { partyType: "couple" },
@@ -21,7 +22,7 @@ test("manual itinerary changes recalculate daily and trip totals", () => {
       { activities: [{ time: "08:00", title: "Jeepney ride", description: "Transfer", category: "transport", estimatedCost: 500 }] },
       { activities: [{ time: "12:00", title: "Lunch", description: "Local meal", category: "food", estimatedCost: 600 }] },
     ],
-  }, 2, 10_000, 2);
+  }, 2, 10_000, 2, "PHP");
   const days = result.days as Array<Record<string, unknown>>;
   assert.equal(days[0].rideFare, 500);
   assert.equal(days[0].totalCost, 1_500);
@@ -33,7 +34,7 @@ test("manual itinerary changes recalculate daily and trip totals", () => {
 });
 
 test("manual itinerary changes support empty days and preserve server metadata", () => {
-  const result = applyManualItineraryChanges(saved, { days: [{ activities: [] }, { activities: [] }] }, 2, 10_000, 2);
+  const result = applyManualItineraryChanges(saved, { days: [{ activities: [] }, { activities: [] }] }, 2, 10_000, 2, "PHP");
   const days = result.days as Array<Record<string, unknown>>;
   assert.equal(result.destination, "Cebu");
   assert.equal(days[0].totalCost, 1_000);
@@ -41,9 +42,9 @@ test("manual itinerary changes support empty days and preserve server metadata",
 });
 
 test("manual itinerary changes reject invalid activity data and day counts", () => {
-  assert.throws(() => applyManualItineraryChanges(saved, { days: [] }, 2, 10_000, 2), ItineraryEditValidationError);
-  assert.throws(() => applyManualItineraryChanges(saved, { days: [{ activities: [{ title: "", estimatedCost: 1 }] }, { activities: [] }] }, 2, 10_000, 2), ItineraryEditValidationError);
-  assert.throws(() => applyManualItineraryChanges(saved, { days: [{ activities: Array.from({ length: 9 }, () => ({ title: "Too many", estimatedCost: 1 })) }, { activities: [] }] }, 2, 10_000, 2), ItineraryEditValidationError);
+  assert.throws(() => applyManualItineraryChanges(saved, { days: [] }, 2, 10_000, 2, "PHP"), ItineraryEditValidationError);
+  assert.throws(() => applyManualItineraryChanges(saved, { days: [{ activities: [{ title: "", estimatedCost: 1 }] }, { activities: [] }] }, 2, 10_000, 2, "PHP"), ItineraryEditValidationError);
+  assert.throws(() => applyManualItineraryChanges(saved, { days: [{ activities: Array.from({ length: 9 }, () => ({ title: "Too many", estimatedCost: 1 })) }, { activities: [] }] }, 2, 10_000, 2, "PHP"), ItineraryEditValidationError);
 });
 
 test("manual itinerary changes recalculate canonical budget alternatives", () => {
@@ -52,9 +53,17 @@ test("manual itinerary changes recalculate canonical budget alternatives", () =>
       { activities: [{ time: "08:00", title: "Premium tour", description: "Guided", category: "activity", estimatedCost: 10_000 }] },
       { activities: [{ time: "12:00", title: "Lunch", description: "Local meal", category: "food", estimatedCost: 2_000 }] },
     ],
-  }, 2, 10_000, 2);
+  }, 2, 10_000, 2, "PHP");
   const optimization = result.budgetOptimization as Record<string, unknown>;
   assert.equal(optimization.status, "over_budget");
   assert.ok(Number(optimization.amountToTarget) > 0);
   assert.ok(Array.isArray(optimization.suggestions));
+});
+
+test("manual itinerary changes preserve decimal budget shares", () => {
+  const decimalSaved = { ...saved, totalBudget: 1000.50, currency: "USD", budgetSummary: { total: 1000.50, reserve: 100.05 } };
+  const result = applyManualItineraryChanges(decimalSaved, { days: [{ activities: [] }, { activities: [] }] }, 2, 1000.50, 3, "USD");
+  const sharing = result.costSharing as Record<string, unknown>;
+  assert.deepEqual(sharing.budgetShares, [333.50, 333.50, 333.50]);
+  assert.equal((sharing.budgetShares as number[]).reduce((sum, amount) => sum + amount, 0), 1000.50);
 });

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { estimateCrowd } from '../src/services/crowd/crowd-service.ts';
+import { estimateCrowd, estimateCrowdRange } from '../src/services/crowd/crowd-service.ts';
 import { OpenMeteoWeatherProvider } from '../src/services/weather/providers.ts';
 import { unavailableWeather, validateWeatherDateRange, weatherForTripDates } from '../src/services/weather/weather-domain.ts';
 import { resolveWeather } from '../src/services/weather/weather-service.ts';
@@ -65,10 +65,16 @@ test('Open-Meteo provider validates and normalizes provider values', async () =>
 });
 
 test('crowd estimates expose low confidence and never claim live foot traffic', () => {
-  const weekday = estimateCrowd('2026-09-10', 'Tokyo, Japan');
+  const retrievedAt = new Date('2026-09-01T00:00:00.000Z');
+  const weekday = estimateCrowd('2026-09-10', 'Tokyo, Japan', retrievedAt);
   assert.equal(weekday.crowdLevel, 'low');
   assert.equal(weekday.crowdConfidence, 'low');
   assert.match(weekday.crowdNote, /not live foot-traffic/);
-  const peakWeekend = estimateCrowd('2026-12-05', 'Cebu City, Philippines');
+  assert.match(weekday.crowdRecommendation, /No crowd-based timing change/);
+  assert.equal(weekday.fetchedAt, retrievedAt.toISOString());
+  const peakWeekend = estimateCrowd('2026-12-05', 'Cebu City, Philippines', retrievedAt);
   assert.equal(peakWeekend.crowdLevel, 'high');
+  assert.match(peakWeekend.crowdRecommendation, /before 9:00 AM/);
+  assert.match(peakWeekend.crowdRecommendation, /No activity was moved automatically/);
+  assert.equal(estimateCrowdRange('2026-12-05', '2026-12-07', 'Cebu City, Philippines', retrievedAt).length, 3);
 });

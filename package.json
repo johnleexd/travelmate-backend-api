@@ -15,14 +15,17 @@
     "db:migrate:dev": "prisma migrate dev",
     "db:seed": "node --experimental-strip-types prisma/seed.ts",
     "db:setup": "npm run db:generate && npm run db:migrate && npm run db:seed",
+    "email:smoke": "node --experimental-strip-types scripts/send-email-smoke.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "cors": "^2.8.6",
+    "countries-list": "^3.4.1",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "google-auth-library": "^11.1.0",
     "pg": "^8.23.0",
     "zod": "^4.6.1"
   },

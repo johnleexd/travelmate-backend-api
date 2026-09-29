@@ -15,6 +15,7 @@ export interface FlightOption {
   seatsAvailable?: number;
   fetchedAt: string;
   isLive: boolean;
+  selectionToken?: string;
 }
 
 export interface ActivityOption {
@@ -29,6 +30,7 @@ export interface ActivityOption {
   referenceUrl?: string;
   fetchedAt: string;
   isLive: boolean;
+  selectionToken?: string;
 }
 
 export interface AccommodationOffer {
@@ -36,6 +38,9 @@ export interface AccommodationOffer {
   hotelId: string;
   offerId: string;
   name: string;
+  type: 'Hotel' | 'Hostel' | 'Condo' | 'Apartment' | 'Resort' | 'Accommodation';
+  typeSource: 'name-inferred';
+  rating?: number;
   address: string;
   checkInDate: string;
   checkOutDate: string;
@@ -56,6 +61,7 @@ export interface FlightSearchInput {
   departureDate: string;
   returnDate?: string;
   adults: number;
+  currency: string;
 }
 
 export interface ActivitySearchInput {
@@ -72,6 +78,7 @@ export interface AccommodationSearchInput {
   checkOutDate: string;
   adults: number;
   nights: number;
+  currency: string;
 }
 
 export interface AccommodationSearchResult {
@@ -114,6 +121,16 @@ function safeUrl(value: unknown): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+export function inferAccommodationType(name: string): AccommodationOffer['type'] {
+  const normalized = name.toLowerCase();
+  if (/\bhostel\b/.test(normalized)) return 'Hostel';
+  if (/\b(condo|condominium)\b/.test(normalized)) return 'Condo';
+  if (/\b(apartment|apartments|aparthotel|apart-hotel|residence)\b/.test(normalized)) return 'Apartment';
+  if (/\bresort\b/.test(normalized)) return 'Resort';
+  if (/\bhotel\b/.test(normalized)) return 'Hotel';
+  return 'Accommodation';
 }
 
 export function normalizeFlightOffers(payload: unknown, fetchedAt: string, isLive: boolean): FlightOption[] {
@@ -183,7 +200,7 @@ export function normalizeActivityOffers(payload: unknown, destination: string, f
 
 export function normalizeAccommodationOffers(
   payload: unknown,
-  input: Pick<AccommodationSearchInput, 'destination' | 'nights'>,
+  input: Pick<AccommodationSearchInput, 'destination' | 'nights' | 'currency'>,
   fetchedAt: string,
   isLive: boolean,
 ): AccommodationOffer[] {
@@ -200,6 +217,9 @@ export function normalizeAccommodationOffers(
     const hotelId = text(hotel?.hotelId);
     const offerId = text(offer?.id);
     const name = text(hotel?.name).trim();
+    const rating = Number(hotel?.rating);
+    const addressData = object(hotel?.address);
+    const address = array(addressData?.lines).map(text).filter(Boolean).join(', ');
     const total = amount(price?.total);
     if (!hotelId || !offerId || !name || total === undefined || total <= 0) return [];
     return [{
@@ -207,12 +227,15 @@ export function normalizeAccommodationOffers(
       hotelId,
       offerId,
       name,
-      address: input.destination,
+      type: inferAccommodationType(name),
+      typeSource: 'name-inferred',
+      ...(Number.isFinite(rating) && rating >= 0 && rating <= 5 ? { rating } : {}),
+      address: address || input.destination,
       checkInDate: text(offer?.checkInDate),
       checkOutDate: text(offer?.checkOutDate),
       nightlyRate: Math.round(total / input.nights),
       total: Math.round(total),
-      currency: text(price?.currency) || 'PHP',
+      currency: text(price?.currency) || input.currency,
       roomDescription: text(description?.text).replace(/\s+/g, ' ').trim() || 'Available room',
       cancellationPolicy: text(cancellationDescription?.text) || 'Check the provider terms before booking.',
       available: hotelResult?.available !== false,
@@ -265,7 +288,7 @@ export class AmadeusTravelProvider implements TravelProvider {
       destinationLocationCode: destinationCode,
       departureDate: input.departureDate,
       adults: String(input.adults),
-      currencyCode: 'PHP',
+      currencyCode: input.currency,
       max: '10',
     });
     if (input.returnDate && input.returnDate > input.departureDate) params.set('returnDate', input.returnDate);
@@ -314,7 +337,7 @@ export class AmadeusTravelProvider implements TravelProvider {
       checkInDate: input.checkInDate,
       checkOutDate: input.checkOutDate,
       roomQuantity: String(rooms),
-      currency: 'PHP',
+      currency: input.currency,
       bestRateOnly: 'true',
     });
     const offersResponse = await this.fetchImplementation(`${this.baseUrl}/v3/shopping/hotel-offers?${offerParams}`, {

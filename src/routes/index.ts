@@ -1,6 +1,7 @@
 import { Router } from "express";
 import accommodationsRoutes from "./accommodations-routes.ts";
 import authRoutes from "./auth-routes.ts";
+import destinationContextRoutes from "./destination-context-routes.ts";
 import itineraryRoutes from "./itinerary-routes.ts";
 import locationsRoutes from "./locations-routes.ts";
 import platformRoutes from "./platform-routes.ts";
@@ -14,6 +15,7 @@ apiRoutes.use("/platform", platformRoutes);
 apiRoutes.use("/itinerary", itineraryRoutes);
 apiRoutes.use("/weather", weatherRoutes);
 apiRoutes.use("/locations", locationsRoutes);
+apiRoutes.use("/destination-context", destinationContextRoutes);
 apiRoutes.use("/accommodations", accommodationsRoutes);
 apiRoutes.use("/travel-options", travelOptionsRoutes);
 apiRoutes.use("/profile", profileRoutes);

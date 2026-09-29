@@ -11,12 +11,12 @@ function sessionSecret() {
   return "travelmate-local-development-secret-change-me";
 }
 
-type Session = { userId: string; role: Role; exp: number };
+type Session = { userId: string; role: Role; exp: number; sessionVersion?: number };
 const encode = (value: string) => Buffer.from(value).toString("base64url");
 const sign = (value: string) => createHmac("sha256", sessionSecret()).update(value).digest("base64url");
 
-export function createSessionToken(userId: string, role: Role) {
-  const payload = encode(JSON.stringify({ userId, role, exp: Date.now() + 1000 * 60 * 60 * 8 } satisfies Session));
+export function createSessionToken(userId: string, role: Role, sessionVersion = 0) {
+  const payload = encode(JSON.stringify({ userId, role, sessionVersion, exp: Date.now() + 1000 * 60 * 60 * 8 } satisfies Session));
   return `${payload}.${sign(payload)}`;
 }
 
@@ -43,7 +43,7 @@ export async function currentUser(request: Request, requiredRole?: Role): Promis
   const session = verifySessionToken(cookieValue(request, SESSION_COOKIE));
   if (!session || (requiredRole && session.role !== requiredRole)) return null;
   const user = await prisma.user.findFirst({
-    where: { id: session.userId, role: session.role, accountStatus: "active" },
+    where: { id: session.userId, role: session.role, accountStatus: "active", sessionVersion: session.sessionVersion ?? 0 },
   });
   return user ? publicUser(user) : null;
 }
@@ -60,5 +60,6 @@ export function sessionCookie(token: string) {
 }
 
 export function clearSessionCookie() {
-  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
 }

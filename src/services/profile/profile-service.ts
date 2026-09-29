@@ -80,10 +80,11 @@ function toPublicUser(user: SelectedUser): PublicUser {
 }
 
 export async function updateProfile(userId: string, input: unknown): Promise<PublicUser> {
-  const user = await prisma.user.update({
-    where: { id: userId },
-    data: validateProfileUpdate(input),
-    select: safeUserSelect,
+  const data = validateProfileUpdate(input);
+  const user = await prisma.$transaction(async (transaction) => {
+    const updated = await transaction.user.update({ where: { id: userId }, data, select: safeUserSelect });
+    await transaction.auditEvent.create({ data: { actorId: userId, action: 'update-profile', targetId: userId } });
+    return updated;
   });
 
   return toPublicUser(user);

@@ -2,23 +2,36 @@
 // ─── Server-only Route Handler ────────────────────────────────────────────────
 // Keeps AI provider keys strictly on the server; never bundled to the client.
 
+import { createHash, randomUUID } from 'node:crypto';
+import { Prisma } from '../generated/prisma/client.ts';
+import { prisma } from '../lib/prisma.ts';
 import { requireUser } from '../middlewares/auth-middleware.ts';
 import { allowRequest } from '../middlewares/rate-limit-middleware.ts';
 import {
   allocateEqualShares,
+  hasValidCurrencyPrecision,
+  normalizeCurrency,
   splitBudget,
   travelersForParty,
+  ZERO_DECIMAL_CURRENCIES,
+  type CurrencyCode,
   type PartyType,
 } from '../schemas/domain.ts';
-import { readDb } from '../repositories/platform-repository.ts';
+import { readApprovedListings } from '../repositories/platform-repository.ts';
 import { verifyOfferToken } from '../utils/offer-token.ts';
+import { verifyTravelSelectionToken } from '../utils/travel-selection-token.ts';
 import { generateValidatedItinerary } from '../services/ai/itinerary-generator.ts';
-import { resolveAIProvider } from '../services/ai/provider.ts';
+import { mockItinerariesEnabled, resolveAIProviders } from '../services/ai/provider.ts';
 import {
   buildBudgetOptimization,
   type BudgetOptimization,
 } from '../services/budget/budget-optimization-service.ts';
-import { estimateCrowd } from '../services/crowd/crowd-service.ts';
+import { normalizePreTripCosts, type PreTripCosts } from '../services/budget/pre-trip-cost-service.ts';
+import { estimateCrowd, estimateCrowdRange } from '../services/crowd/crowd-service.ts';
+import { configuredWeatherProviders, resolveWeather } from '../services/weather/weather-service.ts';
+import { weatherForTripDates } from '../services/weather/weather-domain.ts';
+import { PROVIDER_CACHE_POLICIES } from '../services/cache/policies.ts';
+import { withProviderCache } from '../services/cache/provider-cache.ts';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,6 +45,7 @@ export interface DayActivity {
   icon: string;       // emoji shorthand
   imageUrl?: string;
   imageAttribution?: ImageAttribution;
+  placeVerification?: 'supporting-source-found' | 'unverified';
 }
 
 export interface ImageAttribution {
@@ -57,6 +71,9 @@ export interface DayPlan {
   crowdSource?: 'estimated';
   crowdConfidence?: 'low';
   crowdNote?: string;
+  crowdRecommendation?: string;
+  crowdFetchedAt?: string;
+  crowdRefreshAfter?: string;
 }
 
 export interface AccommodationPlan {
@@ -66,6 +83,7 @@ export interface AccommodationPlan {
   nightlyRate: number;
   nights: number;
   total: number;
+  currency: CurrencyCode;
   source?: 'travelmate' | 'amadeus';
   offerId?: string;
   isLive?: boolean;
@@ -95,9 +113,35 @@ function activityImage(title: string, fallback: string): string {
 }
 
 type CommonsImage = { imageUrl: string; attribution: ImageAttribution };
+type CommonsImageSearch = (query: string, limit: number) => Promise<CommonsImage[]>;
 
 function plainText(value: string | undefined): string {
   return (value || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#\d+;/g, '').trim();
+}
+
+const IMAGE_SEARCH_STOP_WORDS = new Set([
+  'activity', 'breakfast', 'cafe', 'dinner', 'explore', 'food', 'japan', 'lunch',
+  'philippines', 'restaurant', 'the', 'tour', 'travel', 'trip', 'visit', 'with',
+]);
+
+function imageSearchTerms(value: string): string[] {
+  return [...new Set(value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').split(/\s+/)
+    .filter((term) => term.length >= 4 && !IMAGE_SEARCH_STOP_WORDS.has(term)))];
+}
+
+export interface SelectedTravelCosts {
+  flight?: { id: string; name: string; total: number; currency: CurrencyCode; fetchedAt: string };
+  activities: Array<{ id: string; name: string; unitCost: number; travelers: number; total: number; currency: CurrencyCode; fetchedAt: string }>;
+  preTrip?: PreTripCosts;
+  total: number;
+}
+
+export function imageResultMatches(query: string, candidate: string): boolean {
+  const terms = imageSearchTerms(query);
+  if (terms.length === 0) return false;
+  const candidateText = ` ${candidate.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ')} `;
+  const matches = terms.filter((term) => candidateText.includes(` ${term} `) || candidateText.includes(term));
+  return matches.length >= Math.min(2, terms.length);
 }
 
 async function searchCommonsImages(query: string, limit: number): Promise<CommonsImage[]> {
@@ -112,12 +156,14 @@ async function searchCommonsImages(query: string, limit: number): Promise<Common
       signal: AbortSignal.timeout(6_000),
     });
     if (!response.ok) return [];
-    const data = await response.json() as { query?: { pages?: Record<string, { pageid: number; index?: number; imageinfo?: Array<{ thumburl?: string; url?: string; extmetadata?: Record<string, { value?: string }> }> }> } };
+    const data = await response.json() as { query?: { pages?: Record<string, { pageid: number; title?: string; index?: number; imageinfo?: Array<{ thumburl?: string; url?: string; extmetadata?: Record<string, { value?: string }> }> }> } };
     return Object.values(data.query?.pages || {}).sort((a, b) => (a.index || 0) - (b.index || 0)).flatMap((page): CommonsImage[] => {
       const info = page.imageinfo?.[0];
       const imageUrl = info?.thumburl || info?.url;
       if (!info || !(imageUrl?.startsWith('https://upload.wikimedia.org/') || imageUrl?.startsWith('https://thumb.wikimedia.org/'))) return [];
       const metadata = info.extmetadata || {};
+      const descriptiveText = `${page.title || ''} ${plainText(metadata.Credit?.value)}`;
+      if (!imageResultMatches(query, descriptiveText)) return [];
       return [{
         imageUrl,
         attribution: {
@@ -145,39 +191,54 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, mapper: (item
   return results;
 }
 
-async function attachPlaceImages(itinerary: ItineraryResponse): Promise<ItineraryResponse> {
-  const found = await mapWithConcurrency(itinerary.days, 3, async (day) => {
-    const specific = await searchCommonsImages(`${day.theme} ${itinerary.destination}`, day.activities.length + 1);
-    return specific.length ? specific : searchCommonsImages(itinerary.destination, day.activities.length + 1);
+function firstUnusedImage(images: CommonsImage[], usedImageUrls: Set<string>): CommonsImage | undefined {
+  const image = images.find((candidate) => !usedImageUrls.has(candidate.imageUrl)) || images[0];
+  if (image) usedImageUrls.add(image.imageUrl);
+  return image;
+}
+
+/**
+ * Retrieves a destination-aware Wikimedia Commons result for every individual
+ * activity. A day-level query cannot reliably represent several different
+ * places, and previously caused a single result to be repeated down the list.
+ */
+async function attachImagesToDays(destination: string, days: DayPlan[], search: CommonsImageSearch): Promise<DayPlan[]> {
+  const lookups = days.flatMap((day) => day.activities.map((activity) => `${activity.title} ${destination}`));
+  const found = await mapWithConcurrency(lookups, 6, (query) => search(query, 5));
+  const usedImageUrls = new Set<string>();
+  let lookupIndex = 0;
+
+  return days.map((day) => {
+    const activityPhotos = day.activities.map(() => firstUnusedImage(found[lookupIndex++] || [], usedImageUrls));
+    const dayImage = activityPhotos.find(Boolean);
+    return {
+      ...day,
+      imageUrl: dayImage?.imageUrl || day.imageUrl,
+      imageAttribution: dayImage?.attribution || day.imageAttribution,
+      activities: day.activities.map((item, activityIndex) => {
+        const activityPhoto = activityPhotos[activityIndex];
+        return { ...item, imageUrl: activityPhoto?.imageUrl || item.imageUrl, imageAttribution: activityPhoto?.attribution || item.imageAttribution, placeVerification: activityPhoto ? 'supporting-source-found' : 'unverified' };
+      }),
+    };
   });
-  return {
-    ...itinerary,
-    days: itinerary.days.map((day, dayIndex) => {
-      const dayImages = found[dayIndex] || [];
-      const dayImage = dayImages[0];
-      return {
-        ...day,
-        imageUrl: dayImage?.imageUrl || day.imageUrl,
-        imageAttribution: dayImage?.attribution || day.imageAttribution,
-        activities: day.activities.map((item, activityIndex) => {
-          const activityPhoto = dayImages[activityIndex + 1] || dayImage;
-          return { ...item, imageUrl: activityPhoto?.imageUrl || item.imageUrl || day.imageUrl, imageAttribution: activityPhoto?.attribution || item.imageAttribution || dayImage?.attribution };
-        }),
-      };
-    }),
-  };
 }
 
-async function finalizeItinerary(itinerary: ItineraryResponse, budgetSummary: ReturnType<typeof splitBudget>, partyType: PartyType, travelers: number, tripDays: number, startDate: string, accommodation?: Omit<AccommodationPlan, 'nights' | 'total'>): Promise<ItineraryResponse> {
-  return attachPlaceImages(normalizeItinerary(itinerary, budgetSummary, partyType, travelers, tripDays, startDate, accommodation));
+export async function attachPlaceImages(itinerary: ItineraryResponse, search: CommonsImageSearch = searchCommonsImages): Promise<ItineraryResponse> {
+  return { ...itinerary, days: await attachImagesToDays(itinerary.destination, itinerary.days, search) };
 }
 
-function normalizeItinerary(itinerary: ItineraryResponse, budgetSummary: ReturnType<typeof splitBudget>, partyType: PartyType, travelers: number, tripDays: number, startDate: string, accommodation?: Omit<AccommodationPlan, 'nights' | 'total'>): ItineraryResponse {
+async function finalizeItinerary(itinerary: ItineraryResponse, budgetSummary: ReturnType<typeof splitBudget>, partyType: PartyType, travelers: number, tripDays: number, startDate: string, accommodation?: Omit<AccommodationPlan, 'nights' | 'total'>, selectedTravelCosts?: SelectedTravelCosts): Promise<ItineraryResponse> {
+  return attachPlaceImages(normalizeItinerary(itinerary, budgetSummary, partyType, travelers, tripDays, startDate, accommodation, selectedTravelCosts));
+}
+
+function normalizeItinerary(itinerary: ItineraryResponse, budgetSummary: ReturnType<typeof splitBudget>, partyType: PartyType, travelers: number, tripDays: number, startDate: string, accommodation?: Omit<AccommodationPlan, 'nights' | 'total'>, selectedTravelCosts?: SelectedTravelCosts): ItineraryResponse {
   const nights = accommodation ? Math.max(1, tripDays - 1) : 0;
   const accommodationTotal = accommodation ? accommodation.nightlyRate * nights : 0;
-  const variableBudget = Math.max(0, budgetSummary.total - accommodationTotal - budgetSummary.reserve);
-  const estimatedUnitCosts = itinerary.days.slice(0, tripDays).flatMap((day) => day.activities.map((activity) => Math.max(0, Math.round(Number.isFinite(activity.estimatedCost) ? activity.estimatedCost : 0))));
+  const travelOptionsTotal = selectedTravelCosts?.total ?? 0;
+  const variableBudget = Math.max(0, budgetSummary.total - accommodationTotal - travelOptionsTotal - budgetSummary.reserve);
+  const estimatedUnitCosts = itinerary.days.slice(0, tripDays).flatMap((day) => day.activities.map((activity) => Math.max(0, Math.round((Number.isFinite(activity.estimatedCost) ? activity.estimatedCost : 0) * 100) / 100)));
   let costIndex = 0;
+  const crowdRetrievedAt = new Date();
   const days = itinerary.days.slice(0, tripDays).map((day, index) => {
     const fallbackImage = day.imageUrl || DAY_IMAGES[index % DAY_IMAGES.length];
     const activities = day.activities.map((activity) => {
@@ -201,11 +262,23 @@ function normalizeItinerary(itinerary: ItineraryResponse, budgetSummary: ReturnT
     const date = new Date(`${startDate}T00:00:00.000Z`);
     date.setUTCDate(date.getUTCDate() + index);
     const dateText = date.toISOString().slice(0, 10);
-    return { ...day, date: dateText, ...estimateCrowd(dateText, itinerary.destination) };
+    const crowd = estimateCrowd(dateText, itinerary.destination, crowdRetrievedAt);
+    return {
+      ...day,
+      date: dateText,
+      crowdLevel: crowd.crowdLevel,
+      crowdSource: crowd.crowdSource,
+      crowdConfidence: crowd.crowdConfidence,
+      crowdNote: crowd.crowdNote,
+      crowdRecommendation: crowd.crowdRecommendation,
+      crowdFetchedAt: crowd.fetchedAt,
+      crowdRefreshAfter: crowd.refreshAfter,
+    };
   });
-  const plannedSpend = days.reduce((sum, day) => sum + day.totalCost, 0);
+  const plannedSpend = Math.round((days.reduce((sum, day) => sum + day.totalCost, 0) + travelOptionsTotal) * 100) / 100;
   const budgetOptimization = buildBudgetOptimization({
     budget: budgetSummary.total,
+    currency: itinerary.currency as CurrencyCode,
     reserve: budgetSummary.reserve,
     plannedSpend,
     travelers,
@@ -223,6 +296,7 @@ function normalizeItinerary(itinerary: ItineraryResponse, budgetSummary: ReturnT
     ...itinerary,
     days,
     accommodation: accommodation ? { ...accommodation, nights, total: accommodation.nightlyRate * nights } : undefined,
+    selectedTravelCosts,
     partyType,
     travelers,
     budgetOptimization,
@@ -231,14 +305,15 @@ function normalizeItinerary(itinerary: ItineraryResponse, budgetSummary: ReturnT
       travelers,
       groupBudget: budgetSummary.total,
       plannedGroupSpend: plannedSpend,
-      budgetShares: allocateEqualShares(budgetSummary.total, travelers),
-      plannedSpendShares: allocateEqualShares(plannedSpend, travelers),
-      accommodationShares: allocateEqualShares(accommodationTotal, travelers),
-      reserveShares: allocateEqualShares(Math.max(0, budgetSummary.total - plannedSpend), travelers),
+      budgetShares: allocateEqualShares(budgetSummary.total, travelers, itinerary.currency),
+      plannedSpendShares: allocateEqualShares(plannedSpend, travelers, itinerary.currency),
+      accommodationShares: allocateEqualShares(accommodationTotal, travelers, itinerary.currency),
+      reserveShares: allocateEqualShares(Math.max(0, budgetSummary.total - plannedSpend), travelers, itinerary.currency),
     },
     budgetSummary: {
       ...budgetSummary,
       accommodationActual: accommodationTotal,
+      travelOptionsActual: travelOptionsTotal,
       variableBudget,
       plannedSpend,
       remainingBudget: Math.max(0, budgetSummary.total - plannedSpend),
@@ -250,12 +325,13 @@ function normalizeItinerary(itinerary: ItineraryResponse, budgetSummary: ReturnT
 export interface ItineraryResponse {
   destination: string;
   totalBudget: number;
-  currency: string;
+  currency: CurrencyCode;
   source?: 'openai' | 'gemini' | 'mock';
   partyType?: PartyType;
   travelers?: number;
   preferences?: { travelStyle: string; accommodation: string; transportation: string; activities: string[] };
   accommodation?: AccommodationPlan;
+  selectedTravelCosts?: SelectedTravelCosts;
   budgetOptimization?: BudgetOptimization;
   costSharing?: {
     partyType: PartyType;
@@ -276,6 +352,7 @@ export interface ItineraryResponse {
     reserve: number;
     dailyAverage: number;
     accommodationActual?: number;
+    travelOptionsActual?: number;
     variableBudget?: number;
     plannedSpend?: number;
     remainingBudget?: number;
@@ -363,11 +440,11 @@ const CORDOVA_DAY_TEMPLATES: DayTemplate[] = [
 
 const CORDOVA_RETURN_TIMES = ['08:30 PM', '06:30 PM', '05:30 PM', '06:30 PM', '05:30 PM', '05:30 PM', '04:30 PM'] as const;
 
-function buildMockItinerary(destination: string, budget: number, requestedStartDate: string, tripDays: number): ItineraryResponse {
+function buildMockItinerary(destination: string, budget: number, currency: CurrencyCode, requestedStartDate: string, tripDays: number): ItineraryResponse {
   const startDate = requestedStartDate ? new Date(`${requestedStartDate}T00:00:00`) : new Date();
   const perDay = Math.round(budget / tripDays);
 
-  if (/\bcordova\b/i.test(destination)) {
+  if (currency === 'PHP' && /\bcordova\b/i.test(destination)) {
     const days = Array.from({ length: tripDays }, (_, index): DayPlan => {
       const template = CORDOVA_DAY_TEMPLATES[index % CORDOVA_DAY_TEMPLATES.length];
       const date = new Date(startDate);
@@ -386,7 +463,7 @@ function buildMockItinerary(destination: string, budget: number, requestedStartD
     return {
       destination,
       totalBudget: budget,
-      currency: 'PHP',
+      currency,
       source: 'mock',
       days,
       budgetSummary: {
@@ -461,7 +538,7 @@ function buildMockItinerary(destination: string, budget: number, requestedStartD
   return {
     destination,
     totalBudget: budget,
-    currency: 'PHP',
+    currency,
     source: 'mock',
     days,
     budgetSummary: {
@@ -478,9 +555,9 @@ function buildMockItinerary(destination: string, budget: number, requestedStartD
 
 // ─── OpenAI System Prompt ─────────────────────────────────────────────────────
 
-function buildSystemPrompt(tripDays: number): string {
+function buildSystemPrompt(tripDays: number, currency: CurrencyCode): string {
   return `You are TravelMate's expert AI travel planner. 
- Given a destination and total budget (in Philippine pesos), produce a detailed ${tripDays}-day travel itinerary as valid JSON.
+ Given a destination and total budget in ${currency}, produce a detailed ${tripDays}-day travel itinerary as valid JSON.
 
 The JSON must exactly match this TypeScript interface:
 
@@ -488,7 +565,7 @@ interface DayActivity {
   time: string;          // "HH:MM AM/PM"
   title: string;
   description: string;
-  estimatedCost: number; // PHP integer per traveler; the server converts this to a group total exactly once
+  estimatedCost: number; // ${currency} per traveler, with at most two decimals; the server converts this to a group total exactly once
   category: "accommodation" | "food" | "activity" | "transport" | "misc";
   icon: string;          // single emoji
 }
@@ -507,7 +584,7 @@ interface DayPlan {
 interface ItineraryResponse {
   destination: string;
   totalBudget: number;
-  currency: "PHP";
+  currency: "${currency}";
   days: DayPlan[];       // exactly ${tripDays}
   budgetSummary: {
     accommodation: number;
@@ -531,7 +608,7 @@ Rules:
 - Group each day inside one compact nearby zone or around one main attraction; avoid backtracking and cross-city transfers.
 - Set travelNote for every day with a realistic travel, boarding, check-in, traffic, tide, or weather allowance.
 - Keep enough time between activities for travel and rest. Never create a rushed schedule merely to add more stops.
-- Use realistic PHP price estimates for each item. Never inflate activity prices merely to consume the full entered budget.
+- Use realistic ${currency} price estimates for each item. Never inflate activity prices merely to consume the full entered budget.
 - End each non-departure day with a realistic return time to the selected accommodation.
 - Include 3–5 activities per day.
 - Respond with ONLY valid JSON, no markdown fences, no explanatory text.`;
@@ -539,11 +616,22 @@ Rules:
 
 // ─── Route Handler ─────────────────────────────────────────────────────────────
 
-function travelerPrompt(destination: string, budget: number, partyType: PartyType, travelers: number, startDate: string, endDate: string, interests: string[], accommodationTotal: number, variableBudget: number, tripDays: number, preferences: { travelStyle: string; accommodation: string; transportation: string; activities: string[] }, weatherSummary: string): string {
+function budgetScope(partyType: PartyType, travelers: number): string {
+  if (partyType === 'solo') return 'SOLO TRIP BUDGET for the one traveler';
+  if (partyType === 'couple') return 'COMBINED COUPLE BUDGET for both travelers together';
+  if (partyType === 'family') return `TOTAL FAMILY BUDGET for all ${travelers} travelers together`;
+  return `TOTAL BARKADA BUDGET for all ${travelers} travelers together`;
+}
+
+function travelerPrompt(destination: string, budget: number, currency: CurrencyCode, partyType: PartyType, travelers: number, startDate: string, endDate: string, interests: string[], accommodationTotal: number, selectedTravelCosts: SelectedTravelCosts, variableBudget: number, tripDays: number, preferences: { travelStyle: string; accommodation: string; transportation: string; activities: string[] }, weatherSummary: string, crowdSummary: string, coordinates?: { latitude: number; longitude: number }): string {
   const budgetGuidance = variableBudget > 0
-    ? `Aim to keep the combined per-traveler food, activity, transport, and miscellaneous estimates within PHP ${Math.floor(variableBudget / travelers)} per traveler without replacing realistic prices with zero.`
+    ? `Aim to keep the combined per-traveler food, activity, transport, and miscellaneous estimates within ${currency} ${Math.floor(variableBudget / travelers)} per traveler without replacing realistic prices with zero.`
     : 'The accommodation already uses the available budget. Still provide a realistic non-zero price for every paid item; TravelMate will clearly report the resulting budget shortfall.';
-  return `Plan a ${tripDays}-day trip to ${destination} from ${startDate} through ${endDate} for a ${partyType} party of ${travelers} traveler(s). Interests: ${interests.join(', ') || 'general sightseeing'}. Travel style: ${preferences.travelStyle}. Accommodation preference: ${preferences.accommodation}. Transportation preference: ${preferences.transportation}. Preferred activities: ${preferences.activities.join(', ') || 'any suitable activities'}. ${weatherSummary || 'No date-matched forecast is available; do not invent weather conditions.'} PHP ${budget} is the TOTAL GROUP BUDGET. The selected accommodation costs PHP ${accommodationTotal} for the whole group and is handled separately. ${budgetGuidance} TravelMate will multiply each estimatedCost by ${travelers} exactly once.`;
+  const destinationAnchor = coordinates
+    ? `The confirmed destination center is latitude ${coordinates.latitude.toFixed(5)}, longitude ${coordinates.longitude.toFixed(5)}; keep recommendations in or reasonably around that selected place.`
+    : 'Stay within the confirmed destination named by the traveler.';
+  const committedOptions = [selectedTravelCosts.flight?.name, ...selectedTravelCosts.activities.map((activity) => activity.name), selectedTravelCosts.preTrip?.total ? 'user-entered pre-trip costs' : undefined].filter(Boolean);
+  return `Plan a ${tripDays}-day trip to ${destination} from ${startDate} through ${endDate} for a ${partyType} party of ${travelers} traveler(s). ${destinationAnchor} Use only real, specifically named places you are confident exist at this destination. Never invent a venue, attraction, restaurant, district, or transport stop. Meal titles must name a real restaurant, market, food hall, or district; transport titles must name their origin and destination; do not return generic items such as Cafe Break, Traditional Lunch, Local Transport, Free Time, or City Exploration. Interests: ${interests.join(', ') || 'general sightseeing'}. Travel style: ${preferences.travelStyle}. Accommodation preference: ${preferences.accommodation}. Transportation preference: ${preferences.transportation}. Preferred activities: ${preferences.activities.join(', ') || 'any suitable activities'}. ${weatherSummary || 'No date-matched forecast is available; do not invent weather conditions.'} ${crowdSummary} For moderate or high estimated crowd days, prefer earlier visits to major attractions or include a nearby alternative in the travel note. Never claim the estimate is live and do not imply availability. ${currency} ${budget} is the ${budgetScope(partyType, travelers)}. The selected accommodation costs ${currency} ${accommodationTotal} for the whole party and is handled separately. Committed flight, activity, and user-entered pre-trip estimates cost ${currency} ${selectedTravelCosts.total} for the whole party (${committedOptions.join(', ') || 'none'}); this amount is handled separately, so do not duplicate it in activity estimatedCost values. ${budgetGuidance} TravelMate will multiply each per-traveler estimatedCost by ${travelers} exactly once.`;
 }
 
 function validatedDateRange(startDate: unknown, endDate: unknown): { startDate: string; endDate: string; tripDays: number } {
@@ -568,15 +656,58 @@ function preference(value: unknown, fallback: string): string {
   return text || fallback;
 }
 
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>).filter(([key]) => key !== 'idempotencyKey').sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+export async function beginGeneration(userId: string, destination: string, body: Record<string, unknown>, headerKey: string | null) {
+  const suppliedKey = (headerKey || String(body.idempotencyKey || '')).trim();
+  if (suppliedKey && !/^[A-Za-z0-9._:-]{8,100}$/.test(suppliedKey)) throw new Error('INVALID_IDEMPOTENCY_KEY');
+  const idempotencyKey = suppliedKey || randomUUID();
+  const requestHash = createHash('sha256').update(stableJson(body)).digest('hex');
+  const existing = await prisma.itineraryGeneration.findUnique({ where: { userId_idempotencyKey: { userId, idempotencyKey } } });
+  if (existing) {
+    if (existing.requestHash !== requestHash) return { conflict: 'This generation key was already used for different trip details.' } as const;
+    if (existing.status === 'completed' && existing.response) return { replay: existing.response } as const;
+    if (existing.status === 'pending' && Date.now() - existing.updatedAt.getTime() < 120_000) return { conflict: 'This itinerary generation is already in progress.' } as const;
+    const retried = await prisma.itineraryGeneration.update({ where: { id: existing.id }, data: { status: 'pending', errorCode: null, response: Prisma.DbNull } });
+    return { recordId: retried.id } as const;
+  }
+  try {
+    const created = await prisma.itineraryGeneration.create({ data: { userId, idempotencyKey, requestHash, destination } });
+    return { recordId: created.id } as const;
+  } catch (error) {
+    const raced = await prisma.itineraryGeneration.findUnique({ where: { userId_idempotencyKey: { userId, idempotencyKey } } });
+    if (!raced) throw error;
+    if (raced.requestHash !== requestHash) return { conflict: 'This generation key was already used for different trip details.' } as const;
+    if (raced.status === 'completed' && raced.response) return { replay: raced.response } as const;
+    return { conflict: 'This itinerary generation is already in progress.' } as const;
+  }
+}
+
+export async function completeGeneration(recordId: string, response: Record<string, unknown>) {
+  await prisma.itineraryGeneration.update({ where: { id: recordId }, data: { status: 'completed', response: response as Prisma.InputJsonValue, errorCode: null } });
+}
+
+async function failGeneration(recordId: string | undefined, errorCode: string) {
+  if (!recordId) return;
+  await prisma.itineraryGeneration.update({ where: { id: recordId }, data: { status: 'failed', errorCode, response: Prisma.DbNull } }).catch((error) => console.error('[TravelMate] Could not persist failed generation status.', error));
+}
+
 export async function POST(request: Request) {
+  let generationRecordId: string | undefined;
   try {
     const user = await requireUser(request, 'traveler');
-    if (!allowRequest(`itinerary:${user.id}`, 6, 60_000)) {
+    if (!await allowRequest(`itinerary:${user.id}`, 6, 60_000)) {
       return Response.json({ error: 'Planner limit reached. Try again in one minute.' }, { status: 429 });
     }
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== 'object' || Array.isArray(body)) return Response.json({ error: 'Request body must be valid JSON.' }, { status: 400 });
-    const { destination, budget, travelers: requestedTravelers = 1, partyType: requestedPartyType, startDate: requestedStartDate, endDate: requestedEndDate, interests = [], preferredActivities = [], travelStyle, accommodationPreference, transportationPreference, weatherContext = [], accommodationListingId, externalAccommodation } = body as { destination: string; budget: number; travelers?: number; partyType?: PartyType; startDate?: string; endDate?: string; interests?: string[]; preferredActivities?: string[]; travelStyle?: string; accommodationPreference?: string; transportationPreference?: string; weatherContext?: Array<{ date?: unknown; description?: unknown; precipitationProbability?: unknown; tempMax?: unknown }>; accommodationListingId?: string; externalAccommodation?: { hotelId?: string; offerId?: string; name?: string; address?: string; nightlyRate?: number; isLive?: boolean; selectionToken?: string } };
+    const { destination, budget, currency: requestedCurrency = 'PHP', travelers: requestedTravelers = 1, partyType: requestedPartyType, latitude, longitude, startDate: requestedStartDate, endDate: requestedEndDate, interests = [], preferredActivities = [], travelStyle, accommodationPreference, transportationPreference, accommodationListingId, externalAccommodation, selectedFlight, selectedActivities = [], preTripCosts: requestedPreTripCosts } = body as { destination: string; budget: number; currency?: string; travelers?: number; partyType?: PartyType; latitude?: number; longitude?: number; startDate?: string; endDate?: string; interests?: string[]; preferredActivities?: string[]; travelStyle?: string; accommodationPreference?: string; transportationPreference?: string; accommodationListingId?: string; externalAccommodation?: { hotelId?: string; offerId?: string; name?: string; address?: string; nightlyRate?: number; currency?: string; isLive?: boolean; selectionToken?: string }; selectedFlight?: { id?: string; name?: string; price?: number; currency?: string; fetchedAt?: string; selectionToken?: string }; selectedActivities?: Array<{ id?: string; name?: string; price?: number; currency?: string; fetchedAt?: string; selectionToken?: string }>; preTripCosts?: unknown };
 
     if (typeof destination !== 'string' || destination.trim().length < 2 || typeof budget !== 'number' || !Number.isFinite(budget) || budget <= 0 || budget > 1_000_000_000) {
       return Response.json(
@@ -586,6 +717,16 @@ export async function POST(request: Request) {
     }
     const normalizedDestination = destination.trim();
     if (normalizedDestination.length > 120) return Response.json({ error: 'Destination is too long.' }, { status: 400 });
+    let currency: CurrencyCode;
+    try {
+      currency = normalizeCurrency(requestedCurrency);
+    } catch (error) {
+      return Response.json({ error: error instanceof Error ? error.message : 'Currency is invalid.' }, { status: 400 });
+    }
+    if (!hasValidCurrencyPrecision(budget, currency)) {
+      const precision = ZERO_DECIMAL_CURRENCIES.includes(currency) ? 'whole currency units' : 'no more than two decimal places';
+      return Response.json({ error: `${currency} budgets must use ${precision}.` }, { status: 400 });
+    }
     let range: { startDate: string; endDate: string; tripDays: number };
     try {
       range = validatedDateRange(requestedStartDate, requestedEndDate);
@@ -602,18 +743,23 @@ export async function POST(request: Request) {
       return Response.json({ error: error instanceof Error ? error.message : 'Invalid traveler count.' }, { status: 400 });
     }
     const computedBudget = splitBudget(budget, travelers, tripDays);
-    const db = await readDb();
-    const stay = db.listings.find((listing) => listing.id === accommodationListingId && listing.category === 'stay' && listing.status === 'approved' && normalizedDestination.toLowerCase().startsWith(listing.municipality.toLowerCase()));
+    const listings = await readApprovedListings();
+    const stay = listings.find((listing) => listing.id === accommodationListingId && listing.category === 'stay' && normalizedDestination.toLowerCase().startsWith(listing.municipality.toLowerCase()));
     if (accommodationListingId && !stay) {
       return Response.json({ error: 'Select an approved accommodation in the chosen city or municipality.' }, { status: 400 });
     }
+    if (stay && currency !== 'PHP') {
+      return Response.json({ error: 'TravelMate marketplace stays are priced in PHP. Choose PHP or remove the selected stay.' }, { status: 400 });
+    }
     const externalRate = Number(externalAccommodation?.nightlyRate);
+    const externalCurrency = typeof externalAccommodation?.currency === 'string' ? externalAccommodation.currency.toUpperCase() : '';
     const hasValidExternalAccommodation = externalAccommodation
       && typeof externalAccommodation.hotelId === 'string' && externalAccommodation.hotelId.length <= 30
       && typeof externalAccommodation.offerId === 'string' && externalAccommodation.offerId.length <= 200
       && typeof externalAccommodation.name === 'string' && externalAccommodation.name.length > 0 && externalAccommodation.name.length <= 150
       && Number.isFinite(externalRate) && externalRate > 0 && externalRate <= 10_000_000
-      && verifyOfferToken({ hotelId: externalAccommodation.hotelId, offerId: externalAccommodation.offerId, name: externalAccommodation.name, nightlyRate: Math.round(externalRate), isLive: externalAccommodation.isLive === true }, externalAccommodation.selectionToken);
+      && externalCurrency === currency
+      && verifyOfferToken({ hotelId: externalAccommodation.hotelId, offerId: externalAccommodation.offerId, name: externalAccommodation.name, nightlyRate: Math.round(externalRate), currency: externalCurrency, isLive: externalAccommodation.isLive === true }, externalAccommodation.selectionToken);
     if (externalAccommodation && !hasValidExternalAccommodation) {
       return Response.json({ error: 'The selected live accommodation offer is invalid.' }, { status: 400 });
     }
@@ -621,13 +767,41 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Select either a TravelMate stay or a live hotel offer.' }, { status: 400 });
     }
     const accommodation: Omit<AccommodationPlan, 'nights' | 'total'> | undefined = stay
-      ? { listingId: stay.id, name: stay.name, address: stay.address, nightlyRate: stay.price, source: 'travelmate' as const }
+      ? { listingId: stay.id, name: stay.name, address: stay.address, nightlyRate: stay.price, currency: 'PHP' as const, source: 'travelmate' as const }
       : hasValidExternalAccommodation
-        ? { listingId: `amadeus:${externalAccommodation!.hotelId}`, offerId: externalAccommodation!.offerId!, name: externalAccommodation!.name!, address: String(externalAccommodation!.address || normalizedDestination).slice(0, 300), nightlyRate: Math.round(externalRate), source: 'amadeus' as const, isLive: externalAccommodation!.isLive === true }
+        ? { listingId: `amadeus:${externalAccommodation!.hotelId}`, offerId: externalAccommodation!.offerId!, name: externalAccommodation!.name!, address: String(externalAccommodation!.address || normalizedDestination).slice(0, 300), nightlyRate: Math.round(externalRate), currency, source: 'amadeus' as const, isLive: externalAccommodation!.isLive === true }
         : undefined;
     const accommodationNights = accommodation ? Math.max(1, tripDays - 1) : 0;
     const accommodationTotal = accommodation ? accommodation.nightlyRate * accommodationNights : 0;
-    const variableBudget = Math.max(0, computedBudget.total - accommodationTotal - computedBudget.reserve);
+    const normalizeSelection = (kind: 'flight' | 'activity', selection: { id?: string; name?: string; price?: number; currency?: string; fetchedAt?: string; selectionToken?: string }) => {
+      const price = Number(selection.price);
+      const selectionCurrency = typeof selection.currency === 'string' ? selection.currency.toUpperCase() : '';
+      const valid = typeof selection.id === 'string' && selection.id.length > 0 && selection.id.length <= 200
+        && typeof selection.name === 'string' && selection.name.trim().length > 0 && selection.name.length <= 200
+        && Number.isFinite(price) && price >= 0 && price <= 100_000_000 && hasValidCurrencyPrecision(price, currency)
+        && selectionCurrency === currency && typeof selection.fetchedAt === 'string' && Number.isFinite(Date.parse(selection.fetchedAt))
+        && verifyTravelSelectionToken({ kind, id: selection.id, name: selection.name, price, currency: selectionCurrency, fetchedAt: selection.fetchedAt }, selection.selectionToken);
+      return valid ? { id: selection.id!, name: selection.name!.trim(), price, fetchedAt: selection.fetchedAt! } : null;
+    };
+    const normalizedFlight = selectedFlight ? normalizeSelection('flight', selectedFlight) : null;
+    if (selectedFlight && !normalizedFlight) return Response.json({ error: 'The selected flight offer is invalid or uses a different currency.' }, { status: 400 });
+    if (!Array.isArray(selectedActivities) || selectedActivities.length > 10) return Response.json({ error: 'Select at most 10 activity cost commitments.' }, { status: 400 });
+    const normalizedActivities = selectedActivities.map((selection) => normalizeSelection('activity', selection));
+    if (normalizedActivities.some((selection) => !selection)) return Response.json({ error: 'A selected activity offer is invalid or uses a different currency.' }, { status: 400 });
+    let preTripCosts: PreTripCosts | undefined;
+    try {
+      preTripCosts = normalizePreTripCosts(requestedPreTripCosts, currency);
+    } catch (error) {
+      return Response.json({ error: error instanceof Error ? error.message : 'Pre-trip costs are invalid.' }, { status: 400 });
+    }
+    const selectedTravelCosts: SelectedTravelCosts = {
+      ...(normalizedFlight ? { flight: { id: normalizedFlight.id, name: normalizedFlight.name, total: normalizedFlight.price, currency, fetchedAt: normalizedFlight.fetchedAt } } : {}),
+      activities: normalizedActivities.map((selection) => ({ id: selection!.id, name: selection!.name, unitCost: selection!.price, travelers, total: Math.round(selection!.price * travelers * 100) / 100, currency, fetchedAt: selection!.fetchedAt })),
+      ...(preTripCosts ? { preTrip: preTripCosts } : {}),
+      total: 0,
+    };
+    selectedTravelCosts.total = Math.round(((selectedTravelCosts.flight?.total ?? 0) + selectedTravelCosts.activities.reduce((sum, activity) => sum + activity.total, 0) + (selectedTravelCosts.preTrip?.total ?? 0)) * 100) / 100;
+    const variableBudget = Math.max(0, computedBudget.total - accommodationTotal - selectedTravelCosts.total - computedBudget.reserve);
     const safeInterests = Array.isArray(interests) ? interests.map(String).map((item) => item.trim()).filter(Boolean).slice(0, 20) : [];
     const safeActivities = Array.isArray(preferredActivities) ? preferredActivities.map(String).map((item) => item.trim()).filter(Boolean).slice(0, 20) : [];
     const preferences = {
@@ -637,59 +811,158 @@ export async function POST(request: Request) {
       activities: safeActivities,
     };
 
-    const resolvedProvider = resolveAIProvider();
+    let generation;
+    try {
+      generation = await beginGeneration(user.id, normalizedDestination, body as Record<string, unknown>, request.headers.get('idempotency-key'));
+    } catch (error) {
+      if (error instanceof Error && error.message === 'INVALID_IDEMPOTENCY_KEY') return Response.json({ error: 'Idempotency-Key must be 8-100 letters, numbers, dots, colons, underscores, or hyphens.' }, { status: 400 });
+      throw error;
+    }
+    if ('conflict' in generation) return Response.json({ error: generation.conflict, code: 'GENERATION_CONFLICT', retryable: true }, { status: 409 });
+    if ('replay' in generation) return Response.json({ ...(generation.replay as Record<string, unknown>), idempotentReplay: true });
+    generationRecordId = generation.recordId;
 
-    // ── No API key → return mock data immediately ──────────────────────────
+    const resolvedProviders = resolveAIProviders();
+    const resolvedProvider = resolvedProviders[0] || { name: 'openai' as const };
+
+    // ── Explicit local demo mode only ──────────────────────────────────────
     if (!resolvedProvider.provider) {
-      console.warn(`[TravelMate] ${resolvedProvider.name} API key not set - returning mock itinerary.`);
-      const fallback = await finalizeItinerary(buildMockItinerary(normalizedDestination, budget, startDate, tripDays), computedBudget, partyType, travelers, tripDays, startDate, accommodation);
-      return Response.json({ ...fallback, preferences });
+      if (!mockItinerariesEnabled()) {
+        await failGeneration(generationRecordId, 'AI_PROVIDER_UNAVAILABLE');
+        return Response.json({
+          error: 'AI itinerary generation is unavailable because no provider is configured. Your current plan is unchanged.',
+          code: 'AI_PROVIDER_UNAVAILABLE',
+          retryable: true,
+        }, { status: 503 });
+      }
+      console.warn(`[TravelMate] ${resolvedProvider.name} API key not set - explicit development fallback enabled.`);
+      const fallback = await finalizeItinerary(buildMockItinerary(normalizedDestination, budget, currency, startDate, tripDays), computedBudget, partyType, travelers, tripDays, startDate, accommodation, selectedTravelCosts);
+      const response = { ...fallback, preferences } as Record<string, unknown>;
+      await completeGeneration(generationRecordId, response);
+      return Response.json(response);
     }
 
     // ── Call OpenAI ────────────────────────────────────────────────────────
-    const safeWeather = Array.isArray(weatherContext) ? weatherContext.slice(0, tripDays).flatMap((item) => {
+    const weatherCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude)
+      && Number(latitude) >= -90 && Number(latitude) <= 90 && Number(longitude) >= -180 && Number(longitude) <= 180
+      ? { latitude: Number(latitude), longitude: Number(longitude) } : undefined;
+    let trustedWeatherContext: Array<{ date: string; description: string; precipitationProbability: number; tempMax: number }> = [];
+    let weatherProvenance = 'provider-backed';
+    try {
+      const weatherKey = weatherCoordinates ? `${weatherCoordinates.latitude.toFixed(4)}:${weatherCoordinates.longitude.toFixed(4)}` : normalizedDestination.toLowerCase();
+      const weatherResult = await withProviderCache(weatherKey, PROVIDER_CACHE_POLICIES.weather, async () => {
+        const resolved = await resolveWeather({ city: normalizedDestination, coordinates: weatherCoordinates }, configuredWeatherProviders());
+        if (resolved.source === 'unavailable') throw new Error('Weather providers are unavailable.');
+        return resolved;
+      });
+      const tripWeather = weatherForTripDates(weatherResult.value, startDate, endDate);
+      trustedWeatherContext = tripWeather.forecast.map((day) => ({ date: day.date, description: day.description, precipitationProbability: day.precipitationProbability, tempMax: day.tempMax }));
+      weatherProvenance = weatherResult.freshness.status === 'live' ? 'provider-fetched' : weatherResult.freshness.status === 'fresh-cache' ? 'fresh cached provider' : 'stale cached provider';
+    } catch (error) {
+      console.warn('[TravelMate] Weather context unavailable for AI generation:', error instanceof Error ? error.message : error);
+    }
+    const safeWeather = trustedWeatherContext.slice(0, tripDays).flatMap((item) => {
       const date = typeof item?.date === 'string' ? item.date : '';
       const description = typeof item?.description === 'string' ? item.description.trim().slice(0, 60) : '';
       const rain = Number(item?.precipitationProbability);
       const tempMax = Number(item?.tempMax);
       return /^\d{4}-\d{2}-\d{2}$/.test(date) && description && Number.isFinite(rain) && Number.isFinite(tempMax) ? [`${date}: ${description}, ${Math.max(0, Math.min(100, Math.round(rain)))}% rain, high ${Math.round(tempMax)}°C`] : [];
-    }) : [];
-    const weatherSummary = safeWeather.length ? `Date-matched live forecast: ${safeWeather.join('; ')}. Prefer indoor alternatives during heavy rain and cooler hours during extreme heat.` : '';
-    const prompt = travelerPrompt(normalizedDestination, budget, partyType, travelers, startDate, endDate, safeInterests, accommodationTotal, variableBudget, tripDays, preferences, weatherSummary);
+    });
+    const weatherSummary = safeWeather.length ? `Date-matched ${weatherProvenance} forecast: ${safeWeather.join('; ')}. Prefer indoor alternatives during heavy rain and cooler hours during extreme heat.` : '';
+    const crowdSummary = `Low-confidence calendar crowd estimates (not live): ${estimateCrowdRange(startDate, endDate, normalizedDestination).map((condition) => `${condition.date} ${condition.crowdLevel}`).join('; ')}.`;
+    const confirmedCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude)
+      && Number(latitude) >= -90 && Number(latitude) <= 90
+      && Number(longitude) >= -180 && Number(longitude) <= 180
+      ? { latitude: Number(latitude), longitude: Number(longitude) }
+      : undefined;
+    const prompt = travelerPrompt(normalizedDestination, budget, currency, partyType, travelers, startDate, endDate, safeInterests, accommodationTotal, selectedTravelCosts, variableBudget, tripDays, preferences, weatherSummary, crowdSummary, confirmedCoordinates);
 
-    let itinerary: ItineraryResponse;
-    try {
-      const generated = await generateValidatedItinerary({
-        provider: resolvedProvider.provider,
-        systemPrompt: buildSystemPrompt(tripDays),
-        userPrompt: prompt,
-        tripDays,
-        startDate,
-        totalBudget: budget,
-      });
-      itinerary = {
-        ...generated,
-        days: generated.days.map((day, index) => ({
-          ...day,
-          imageUrl: DAY_IMAGES[index % DAY_IMAGES.length],
-        })),
-      };
-    } catch (error) {
-      console.error(`[TravelMate] ${resolvedProvider.name} generation failed after validation/repair - falling back to mock.`, error instanceof Error ? error.message : error);
-      const fallback = await finalizeItinerary(buildMockItinerary(normalizedDestination, budget, startDate, tripDays), computedBudget, partyType, travelers, tripDays, startDate, accommodation);
-      return Response.json({ ...fallback, preferences });
+    let itinerary: ItineraryResponse | undefined;
+    let generationProvider = resolvedProvider.name;
+    let lastGenerationError: unknown;
+    for (const candidate of resolvedProviders) {
+      try {
+        const generated = await generateValidatedItinerary({
+          provider: candidate.provider!,
+          systemPrompt: buildSystemPrompt(tripDays, currency),
+          userPrompt: prompt,
+          tripDays,
+          startDate,
+          totalBudget: budget,
+          currency,
+        });
+        itinerary = {
+          ...generated,
+          days: generated.days.map((day, index) => ({
+            ...day,
+            imageUrl: DAY_IMAGES[index % DAY_IMAGES.length],
+          })),
+        };
+        generationProvider = candidate.name;
+        break;
+      } catch (error) {
+        lastGenerationError = error;
+        console.error(`[TravelMate] ${candidate.name} generation failed after validation/repair.`, error instanceof Error ? error.message : error);
+      }
+    }
+    if (!itinerary) {
+      console.error('[TravelMate] All configured AI itinerary providers failed.', lastGenerationError);
+      await failGeneration(generationRecordId, 'AI_GENERATION_FAILED');
+      return Response.json({
+        error: 'AI itinerary generation is temporarily unavailable. Your current plan is unchanged; please retry.',
+        code: 'AI_GENERATION_FAILED',
+        retryable: true,
+      }, { status: 502 });
     }
 
-    const completed = await finalizeItinerary({ ...itinerary, destination: normalizedDestination, totalBudget: budget, source: resolvedProvider.name }, computedBudget, partyType, travelers, tripDays, startDate, accommodation);
-    return Response.json({ ...completed, preferences });
+    const completed = await finalizeItinerary({ ...itinerary, destination: normalizedDestination, totalBudget: budget, source: generationProvider }, computedBudget, partyType, travelers, tripDays, startDate, accommodation, selectedTravelCosts);
+    const response = { ...completed, preferences } as Record<string, unknown>;
+    await completeGeneration(generationRecordId, response);
+    return Response.json(response);
   } catch (error) {
     if (error instanceof Error && error.message === 'UNAUTHORIZED') {
       return Response.json({ error: 'Unauthorized.' }, { status: 401 });
     }
     console.error('[TravelMate] /api/itinerary unexpected error:', error);
+    await failGeneration(generationRecordId, 'INTERNAL_ERROR');
     return Response.json(
       { error: 'Internal server error. Please try again.' },
       { status: 500 },
     );
+  }
+}
+
+function refreshableDay(value: unknown): value is DayPlan {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const day = value as Partial<DayPlan>;
+  return Number.isInteger(day.day) && Number(day.day) >= 1 && Number(day.day) <= 14
+    && typeof day.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day.date)
+    && typeof day.theme === 'string' && day.theme.trim().length > 0 && day.theme.length <= 120
+    && typeof day.imageUrl === 'string' && day.imageUrl.length <= 2_000
+    && Number.isFinite(day.totalCost)
+    && Array.isArray(day.activities) && day.activities.length <= 8
+    && day.activities.every((activity) => activity && typeof activity === 'object'
+      && typeof activity.title === 'string' && activity.title.trim().length > 0 && activity.title.length <= 160);
+}
+
+export async function POST_IMAGES(request: Request) {
+  try {
+    const user = await requireUser(request, 'traveler');
+    if (!await allowRequest(`itinerary-images:${user.id}`, 20, 60_000)) {
+      return Response.json({ error: 'Photo refresh limit reached. Try again in one minute.' }, { status: 429 });
+    }
+    const body = await request.json().catch(() => null) as { destination?: unknown; day?: unknown } | null;
+    const destination = typeof body?.destination === 'string' ? body.destination.trim() : '';
+    if (destination.length < 2 || destination.length > 120 || !refreshableDay(body?.day)) {
+      return Response.json({ error: 'A valid destination and itinerary day are required.' }, { status: 400 });
+    }
+    const [day] = await attachImagesToDays(destination, [body.day], searchCommonsImages);
+    return Response.json({ day });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+      return Response.json({ error: 'Unauthorized.' }, { status: 401 });
+    }
+    console.error('[TravelMate] /api/itinerary/images unexpected error:', error);
+    return Response.json({ error: 'Activity photos could not be refreshed right now.' }, { status: 502 });
   }
 }

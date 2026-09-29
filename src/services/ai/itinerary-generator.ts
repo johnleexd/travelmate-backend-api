@@ -1,5 +1,6 @@
 import { ItinerarySchemaError, parseGeneratedItinerary, type GeneratedItinerary } from './itinerary-schema.ts';
 import type { AIItineraryProvider } from './provider.ts';
+import type { CurrencyCode } from '../../schemas/domain.ts';
 
 export interface GenerateValidatedItineraryOptions {
   provider: AIItineraryProvider;
@@ -8,6 +9,7 @@ export interface GenerateValidatedItineraryOptions {
   tripDays: number;
   startDate: string;
   totalBudget: number;
+  currency: CurrencyCode;
   maxAttempts?: number;
 }
 
@@ -28,6 +30,7 @@ export async function generateValidatedItinerary(options: GenerateValidatedItine
         tripDays: options.tripDays,
         startDate: options.startDate,
         totalBudget: options.totalBudget,
+        currency: options.currency,
       });
     } catch (error) {
       if (!(error instanceof ItinerarySchemaError)) throw error;

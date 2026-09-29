@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createAmadeusTravelProvider, normalizeAccommodationOffers, normalizeActivityOffers, normalizeFlightOffers } from '../src/services/travel/amadeus-provider.ts';
+import { createAmadeusTravelProvider, inferAccommodationType, normalizeAccommodationOffers, normalizeActivityOffers, normalizeFlightOffers } from '../src/services/travel/amadeus-provider.ts';
 
 const fetchedAt = '2026-09-10T00:00:00.000Z';
 
@@ -40,15 +40,22 @@ test('Amadeus hotel offers normalize price, room details, availability, and sour
       price: { currency: 'PHP', total: '7500.40' },
       policies: { cancellations: [{ description: { text: 'Free cancellation before arrival.' } }] },
     }],
-  }] }, { destination: 'Cordova, Cebu, Philippines', nights: 3 }, fetchedAt, false);
+  }] }, { destination: 'Cordova, Cebu, Philippines', nights: 3, currency: 'PHP' }, fetchedAt, false);
 
   assert.deepEqual(result[0], {
-    id: 'amadeus:CEB123:room-1', hotelId: 'CEB123', offerId: 'room-1', name: 'Harbor Test Hotel',
+    id: 'amadeus:CEB123:room-1', hotelId: 'CEB123', offerId: 'room-1', name: 'Harbor Test Hotel', type: 'Hotel', typeSource: 'name-inferred',
     address: 'Cordova, Cebu, Philippines', checkInDate: '2026-10-01', checkOutDate: '2026-10-04',
     nightlyRate: 2500, total: 7500, currency: 'PHP', roomDescription: 'Deluxe sea-view room',
     cancellationPolicy: 'Free cancellation before arrival.', available: true, isLive: false,
     source: 'amadeus', fetchedAt,
   });
+});
+
+test('provider accommodation names are classified without inventing availability', () => {
+  assert.equal(inferAccommodationType('Shibuya Capsule Hostel'), 'Hostel');
+  assert.equal(inferAccommodationType('Makati Executive Condominium'), 'Condo');
+  assert.equal(inferAccommodationType('Island Beach Resort'), 'Resort');
+  assert.equal(inferAccommodationType('Central Guesthouse'), 'Accommodation');
 });
 
 test('shared Amadeus provider authenticates once before hotel inventory and offer searches', async () => {
@@ -71,7 +78,7 @@ test('shared Amadeus provider authenticates once before hotel inventory and offe
 
   const result = await provider.searchAccommodations({
     destination: 'Cordova, Cebu, Philippines', latitude: 10.25, longitude: 123.95,
-    checkInDate: '2026-10-01', checkOutDate: '2026-10-04', adults: 3, nights: 3,
+    checkInDate: '2026-10-01', checkOutDate: '2026-10-04', adults: 3, nights: 3, currency: 'PHP',
   }, fetchedAt);
 
   assert.equal(requestedUrls.filter((url) => url.endsWith('/v1/security/oauth2/token')).length, 1);
@@ -85,5 +92,5 @@ test('shared Amadeus provider authenticates once before hotel inventory and offe
 test('normalizers discard malformed prices instead of inventing values', () => {
   assert.deepEqual(normalizeFlightOffers({ data: [{ id: 'bad', price: { total: 'unknown' }, itineraries: [] }] }, fetchedAt, false), []);
   assert.deepEqual(normalizeActivityOffers({ data: [{ id: 'bad', name: 'Unknown', price: { amount: 'call us' } }] }, 'Cebu', fetchedAt, false), []);
-  assert.deepEqual(normalizeAccommodationOffers({ data: [{ hotel: { hotelId: 'bad', name: 'Unknown' }, offers: [{ id: 'bad', price: { total: 'call us' } }] }] }, { destination: 'Cebu', nights: 2 }, fetchedAt, false), []);
+  assert.deepEqual(normalizeAccommodationOffers({ data: [{ hotel: { hotelId: 'bad', name: 'Unknown' }, offers: [{ id: 'bad', price: { total: 'call us' } }] }] }, { destination: 'Cebu', nights: 2, currency: 'PHP' }, fetchedAt, false), []);
 });

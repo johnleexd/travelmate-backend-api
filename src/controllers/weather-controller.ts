@@ -2,11 +2,15 @@ import { allowRequest } from '../middlewares/rate-limit-middleware.ts';
 import { requireUser } from '../middlewares/auth-middleware.ts';
 import { validateWeatherDateRange, weatherForTripDates } from '../services/weather/weather-domain.ts';
 import { configuredWeatherProviders, resolveWeather } from '../services/weather/weather-service.ts';
+import { estimateCrowdRange } from '../services/crowd/crowd-service.ts';
+import { unavailableWeather } from '../services/weather/weather-domain.ts';
+import { PROVIDER_CACHE_POLICIES } from '../services/cache/policies.ts';
+import { cachePolicyLabel, withProviderCache, type FreshnessMetadata } from '../services/cache/provider-cache.ts';
 
 export async function GET(request: Request) {
   const user = await requireUser(request, 'traveler').catch(() => null);
   if (!user) return Response.json({ error: 'Unauthorized.' }, { status: 401 });
-  if (!allowRequest(`weather:${user.id}`, 30, 60_000)) return Response.json({ error: 'Too many weather requests.' }, { status: 429 });
+  if (!await allowRequest(`weather:${user.id}`, 30, 60_000)) return Response.json({ error: 'Too many weather requests.' }, { status: 429 });
 
   const { searchParams } = new URL(request.url);
   const city = searchParams.get('city')?.trim() || '';
@@ -27,6 +31,26 @@ export async function GET(request: Request) {
     return Response.json({ error: 'Provide valid latitude and longitude together.' }, { status: 400 });
   }
 
-  const weather = await resolveWeather({ city, coordinates }, configuredWeatherProviders());
-  return Response.json(weatherForTripDates(weather, range.startDate, range.endDate));
+  const policy = PROVIDER_CACHE_POLICIES.weather;
+  let cached;
+  try {
+    const key = coordinates ? `${coordinates.latitude.toFixed(4)}:${coordinates.longitude.toFixed(4)}` : city.toLowerCase();
+    cached = await withProviderCache(key, policy, async () => {
+      const weather = await resolveWeather({ city, coordinates }, configuredWeatherProviders());
+      if (weather.source === 'unavailable') throw new Error('All weather providers are unavailable.');
+      return weather;
+    });
+  } catch (error) {
+    console.error('[TravelMate] Weather cache/provider lookup failed:', error instanceof Error ? error.message : error);
+    const now = new Date();
+    const freshness: FreshnessMetadata = { source: 'weather', status: 'unavailable', isStale: false, fetchedAt: now.toISOString(), expiresAt: now.toISOString(), staleUntil: now.toISOString(), policy: cachePolicyLabel(policy) };
+    cached = { value: unavailableWeather(city), freshness };
+  }
+  return Response.json({
+    ...weatherForTripDates(cached.value, range.startDate, range.endDate),
+    fetchedAt: cached.freshness.fetchedAt,
+    refreshAfter: cached.freshness.expiresAt,
+    freshness: cached.freshness,
+    crowd: estimateCrowdRange(range.startDate, range.endDate, city, new Date()),
+  });
 }

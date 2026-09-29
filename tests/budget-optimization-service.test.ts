@@ -4,6 +4,7 @@ import { buildBudgetOptimization } from '../src/services/budget/budget-optimizat
 
 const input = (plannedSpend: number) => ({
   budget: 10_000,
+  currency: 'PHP' as const,
   reserve: 1_000,
   plannedSpend,
   travelers: 2,

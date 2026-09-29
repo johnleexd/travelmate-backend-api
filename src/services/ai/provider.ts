@@ -43,6 +43,18 @@ function geminiContent(value: unknown): string {
   }).join('');
 }
 
+async function geminiError(response: Response): Promise<Error> {
+  let message = '';
+  try {
+    const payload = object(await response.json());
+    const error = object(payload?.error);
+    if (typeof error?.message === 'string') message = error.message.trim().slice(0, 500);
+  } catch {
+    // Preserve the HTTP status when Gemini returns a non-JSON error.
+  }
+  return new Error(`Gemini request failed (${response.status})${message ? `: ${message}` : '.'}`);
+}
+
 export class OpenAIItineraryProvider implements AIItineraryProvider {
   readonly name = 'openai' as const;
   private readonly apiKey: string;
@@ -105,17 +117,18 @@ export class GeminiItineraryProvider implements AIItineraryProvider {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey },
         body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: `${request.systemPrompt}\n\nTraveler request:\n${request.userPrompt}` }] }],
+          systemInstruction: { parts: [{ text: request.systemPrompt }] },
+          contents: [{ role: 'user', parts: [{ text: request.userPrompt }] }],
           generationConfig: {
-            temperature: request.mode === 'repair' ? 0.2 : 0.7,
-            maxOutputTokens: 8192,
+            temperature: 1,
+            maxOutputTokens: Math.min(32_768, 4_096 + request.tripDays * 2_048),
             responseMimeType: 'application/json',
           },
         }),
         signal: AbortSignal.timeout(45_000),
       },
     );
-    if (!response.ok) throw new Error(`Gemini request failed (${response.status}).`);
+    if (!response.ok) throw await geminiError(response);
     const content = geminiContent(await response.json());
     if (!content.trim()) throw new Error('Gemini returned an empty response.');
     return content;
@@ -127,19 +140,33 @@ export interface ResolvedAIProvider {
   provider?: AIItineraryProvider;
 }
 
+export function mockItinerariesEnabled(environment: NodeJS.ProcessEnv = process.env): boolean {
+  return environment.NODE_ENV !== 'production' && String(environment.AI_MOCK_FALLBACK || '').toLowerCase() === 'true';
+}
+
 export function resolveAIProvider(
   environment: NodeJS.ProcessEnv = process.env,
   fetchImplementation: FetchImplementation = fetch,
 ): ResolvedAIProvider {
-  const name: AIProviderName = String(environment.AI_PROVIDER || 'openai').toLowerCase() === 'gemini'
+  return resolveAIProviders(environment, fetchImplementation)[0] || { name: 'openai' };
+}
+
+export function resolveAIProviders(
+  environment: NodeJS.ProcessEnv = process.env,
+  fetchImplementation: FetchImplementation = fetch,
+): ResolvedAIProvider[] {
+  const preferred: AIProviderName = String(environment.AI_PROVIDER || 'openai').toLowerCase() === 'gemini'
     ? 'gemini'
     : 'openai';
-  const apiKey = name === 'gemini' ? environment.GEMINI_API_KEY : environment.OPENAI_API_KEY;
-  if (!apiKey || apiKey.startsWith('your_')) return { name };
-  return {
-    name,
-    provider: name === 'gemini'
-      ? new GeminiItineraryProvider(apiKey, environment.GEMINI_MODEL || undefined, fetchImplementation)
-      : new OpenAIItineraryProvider(apiKey, environment.OPENAI_MODEL || undefined, fetchImplementation),
-  };
+  const order: AIProviderName[] = [preferred, preferred === 'openai' ? 'gemini' : 'openai'];
+  return order.flatMap((name) => {
+    const apiKey = name === 'gemini' ? environment.GEMINI_API_KEY : environment.OPENAI_API_KEY;
+    if (!apiKey?.trim() || apiKey.startsWith('your_')) return [];
+    return [{
+      name,
+      provider: name === 'gemini'
+        ? new GeminiItineraryProvider(apiKey, environment.GEMINI_MODEL || undefined, fetchImplementation)
+        : new OpenAIItineraryProvider(apiKey, environment.OPENAI_MODEL || undefined, fetchImplementation),
+    }];
+  });
 }

@@ -1,0 +1,81 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Unit, typecheck, and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out backend
+        uses: actions/checkout@v7
+      - name: Use Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Run unit tests
+        run: npm test
+      - name: Run TypeScript checks
+        run: npm run typecheck
+      - name: Build production server
+        run: npm run build
+
+  integration:
+    name: Migrations and database integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: travelmate_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d travelmate_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/travelmate_ci?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/travelmate_ci?schema=public
+      FRONTEND_URL: http://localhost:3000
+      SESSION_SECRET: travelmate-ci-session-secret-at-least-32-characters
+      ACCOUNT_TOKEN_SECRET: travelmate-ci-account-token-secret-at-least-32-characters
+      AI_MOCK_FALLBACK: "true"
+    steps:
+      - name: Check out backend
+        uses: actions/checkout@v7
+      - name: Use Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Apply all migrations
+        run: npm run db:migrate
+      - name: Seed deterministic test data
+        run: npm run db:seed
+      - name: Run database integration tests
+        run: npm run test:integration

@@ -1,4 +1,5 @@
 import type { Request as ExpressRequest, Response as ExpressResponse } from "express";
+import { normalizeApiError } from "../contracts/api-error.ts";
 
 export type WebHandler = (request: Request) => Promise<Response> | Response;
 
@@ -26,7 +27,22 @@ export function adaptWebHandler(handler: WebHandler) {
   return async (request: ExpressRequest, response: ExpressResponse): Promise<void> => {
     const result = await handler(toWebRequest(request));
     response.status(result.status);
-    result.headers.forEach((value, name) => response.setHeader(name, value));
-    response.send(Buffer.from(await result.arrayBuffer()));
+    result.headers.forEach((value, name) => { if (name.toLowerCase() !== 'set-cookie') response.setHeader(name, value); });
+    const setCookies = result.headers.getSetCookie();
+    if (setCookies.length > 0) response.setHeader('set-cookie', setCookies);
+    const body = Buffer.from(await result.arrayBuffer());
+    if (result.status >= 400 && result.headers.get("content-type")?.includes("application/json")) {
+      try {
+        const normalized = normalizeApiError(JSON.parse(body.toString("utf8")), result.status);
+        if (normalized) {
+          response.removeHeader("content-length");
+          response.send(JSON.stringify(normalized));
+          return;
+        }
+      } catch {
+        // Preserve malformed controller output so the client reports an invalid response.
+      }
+    }
+    response.send(body);
   };
 }

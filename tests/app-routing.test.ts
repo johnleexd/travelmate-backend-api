@@ -28,14 +28,16 @@ test("system and API fallback routes remain wired", async () => {
 
   const missing = await fetch(`${baseUrl}/api/not-a-route`);
   assert.equal(missing.status, 404);
-  assert.deepEqual(await missing.json(), { error: "API route not found." });
+  assert.deepEqual(await missing.json(), { error: "API route not found.", code: "NOT_FOUND", retryable: false });
 });
 
 test("every protected feature route resolves to its controller", async () => {
   const routes: Array<[string, RequestInit?]> = [
     ["/api/platform"],
     ["/api/itinerary", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }],
+    ["/api/itinerary/images", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }],
     ["/api/weather"],
+    ["/api/destination-context/exchange-rate"],
     ["/api/locations"],
     ["/api/accommodations"],
     ["/api/travel-options"],
@@ -50,9 +52,14 @@ test("every protected feature route resolves to its controller", async () => {
 });
 
 test("authentication routes and JSON error middleware remain wired", async () => {
+  const googleStatus = await fetch(`${baseUrl}/api/auth/oauth/google/status`);
+  assert.equal(googleStatus.status, 200);
+  const provider = await googleStatus.json() as { available?: unknown };
+  assert.equal(typeof provider.available, 'boolean');
+
   const session = await fetch(`${baseUrl}/api/auth`);
   assert.equal(session.status, 401);
-  assert.deepEqual(await session.json(), { error: "Unauthenticated." });
+  assert.deepEqual(await session.json(), { error: "Unauthenticated.", code: "AUTHENTICATION_REQUIRED", retryable: false });
 
   const invalidJson = await fetch(`${baseUrl}/api/auth`, {
     method: "POST",
@@ -60,7 +67,7 @@ test("authentication routes and JSON error middleware remain wired", async () =>
     body: "{",
   });
   assert.equal(invalidJson.status, 400);
-  assert.deepEqual(await invalidJson.json(), { error: "Request body must be valid JSON." });
+  assert.deepEqual(await invalidJson.json(), { error: "Request body must be valid JSON.", code: "BAD_REQUEST", retryable: false });
 });
 
 test("registration rejects weak passwords before persistence", async () => {
@@ -79,5 +86,7 @@ test("registration rejects weak passwords before persistence", async () => {
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), {
     error: "Password must be 8–64 characters and include an uppercase letter, a lowercase letter, a number, and a special character, with no spaces.",
+    code: "BAD_REQUEST",
+    retryable: false,
   });
 });

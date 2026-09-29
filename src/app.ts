@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import {
   allowedOrigins,
+  enforceHttps,
   sameOriginWrites,
   securityHeaders,
 } from "./middlewares/security-middleware.ts";
@@ -12,12 +13,15 @@ import {
 } from "./middlewares/http-middleware.ts";
 import apiRoutes from "./routes/index.ts";
 import systemRoutes from "./routes/system-routes.ts";
+import { requestLogging } from "./middlewares/request-logging-middleware.ts";
 
 const app = express();
 const trustedOrigins = allowedOrigins();
 
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
+app.use(requestLogging);
+app.use(enforceHttps());
 app.use(securityHeaders());
 app.use(cors({
   origin(origin, callback) {
@@ -25,7 +29,7 @@ app.use(cors({
   },
   credentials: true,
 }));
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "12mb" }));
 app.use("/api", sameOriginWrites(trustedOrigins));
 app.use("/api", disableApiCaching);
 app.use(systemRoutes);

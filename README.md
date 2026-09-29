@@ -28,13 +28,22 @@ Dependencies flow inward from routes to controllers, services, and repositories.
 Route files contain no business logic, and `app.ts` owns only global middleware
 and router composition.
 
-Copy `.env.example` to `.env` and add the Neon pooled `DATABASE_URL`, then run:
+Copy `.env.example` to `.env` and add the Neon pooled `DATABASE_URL`. Production
+also requires a Resend API key and verified `EMAIL_FROM` sender for account
+verification and password recovery. Then run:
 
 ```powershell
 npm.cmd install
 npm.cmd run db:setup
 npm.cmd run dev
 ```
+
+Production startup fails fast when `DATABASE_URL` is missing, local, or still a
+placeholder; when session and account-token secrets are unsafe; when frontend
+origins are not canonical HTTPS origins; when transactional email or AI is not
+configured; or when `AI_MOCK_FALLBACK=true`. These checks prove configuration
+shape, not external account ownership or provider availability, which must still
+be verified through the deployment smoke test.
 
 The server listens on port 5000 by default and exposes:
 
@@ -45,6 +54,7 @@ The server listens on port 5000 by default and exposes:
 - `POST /api/itinerary`
 - `GET /api/weather`
 - `GET /api/locations`
+- `GET /api/destination-context`
 - `GET /api/accommodations`
 - `GET /api/travel-options`
 
@@ -60,9 +70,20 @@ Saved-trip actions on `POST /api/platform` are `save-trip`, `update-trip`,
 `duplicate-trip`, and `delete-trip`. Every lookup includes the authenticated
 traveler ID, preventing one traveler from reading or mutating another traveler's
 records. Trip ranges are limited to 1–14 days and stored with both start and end dates.
+Every trip carries one supported ISO currency through generation, budget calculations,
+persistence, and manual edits. Destination selection stores structured city, region,
+country, country code, and coordinates; `/api/destination-context` maps that country
+code to a supported local currency and curated, honestly labeled transport guidance.
+The supported currency set is `PHP`, `USD`, `EUR`, `JPY`, `KRW`, `THB`, `GBP`, `AUD`,
+`CAD`, `SGD`, `CNY`, `HKD`, `TWD`, `MYR`, `IDR`, `VND`, `INR`, `NZD`, `CHF`, and `AED`.
+Stored budgets use PostgreSQL decimal values; zero-decimal currencies use whole units.
+Offers in another currency remain visible for comparison but cannot be silently mixed
+into a trip budget. Unsupported country codes produce an explicit manual fallback;
+the system does not invent exchange rates.
 
-Live Amadeus selections carry a server-generated HMAC token. The itinerary API
-rejects browser-modified offer identities or prices. Without Amadeus credentials,
+Live Amadeus selections carry a server-generated HMAC token that binds identity,
+price, currency, and live/test state. The itinerary API rejects browser-modified
+offer data. Without Amadeus credentials,
 the endpoint returns an explicit `configured: false` response rather than invented
 availability. PayMongo is not integrated; payment states are a labeled simulation.
 
@@ -72,11 +93,68 @@ live/test status, and `fetchedAt` metadata. It also includes approved local acti
 listings when available. Provider failures return explicit unavailable messages and
 never fabricate flight, activity, or price data.
 
+## Provider caching and freshness
+
+Provider responses use a bounded in-process cache with request coalescing. Every
+provider-backed response includes `freshness` metadata with its source, status,
+fetch time, fresh expiry, stale cutoff, and a human-readable policy. A cached
+value is served after its fresh TTL only when the upstream provider fails, and
+only until the stale cutoff. Data older than that cutoff is never returned.
+
+| Data source | Fresh TTL | Stale fallback cutoff |
+| --- | ---: | ---: |
+| Flights | 5 minutes | 15 minutes from fetch |
+| Hotels | 5 minutes | 15 minutes from fetch |
+| Activities | 30 minutes | 2 hours from fetch |
+| Weather | 15 minutes | 1 hour from fetch |
+| Exchange rates | 6 hours | 24 hours from fetch |
+
+The possible statuses are `live`, `fresh-cache`, `stale-cache`, and
+`unavailable`. The frontend permanently displays the status beside each result
+group. `stale-cache` is rendered as an amber warning and is never presented as
+live data. This cache is intentionally per API process; deployments with several
+instances may independently refresh the same provider key.
+
+AI mock itineraries are available only when `AI_MOCK_FALLBACK=true` outside
+production. Production startup requires a configured OpenAI or Gemini provider.
+If a configured provider times out, rejects the request, or fails schema validation
+after one repair attempt, the itinerary endpoint returns a retryable error and never
+replaces the user's current plan with mock data.
+
 Weather uses OpenWeatherMap when configured and keyless Open-Meteo otherwise. It
 returns `forecastAvailable: false` when the requested dates fall outside the live
 forecast window. If both providers fail, it returns an explicit `unavailable` state
-with no fabricated current conditions or forecast. Crowd values are low-confidence,
-deterministic calendar-based estimates, not live foot-traffic or venue-capacity data.
+with no fabricated current conditions or forecast. Condition responses include
+`fetchedAt`, `refreshAfter`, and date-matched crowd snapshots. Crowd values are
+low-confidence, deterministic calendar-based estimates, not live foot-traffic or
+venue-capacity data. Their timing suggestions remain advisory and never rewrite
+itinerary activities automatically.
 
 Run local logic tests with `npm.cmd test`. After seeding the demo records, run
 the Neon-backed persistence checks with `npm.cmd run test:integration`.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs unit tests, TypeScript checks, and the production
+build on pushes and pull requests. Its database job starts an ephemeral PostgreSQL
+16 service, applies every committed Prisma migration, seeds deterministic demo
+records, and runs the integration suite. It never uses the production Neon
+database or production provider secrets.
+
+The frontend repository's E2E workflow checks this repository out beside the
+frontend at `../travelmate-backend-api`. If this repository is private, add a
+frontend repository secret named `BACKEND_REPO_TOKEN` containing a fine-grained,
+read-only token with Contents access to this repository. Public repositories use
+the workflow's normal GitHub token automatically.
+
+Production environment gates, migration order, health monitoring, smoke tests,
+and non-destructive rollback steps are documented in `DEPLOYMENT.md`.
+
+Authentication codes are stored only as SHA-256 hashes in the `account_tokens`
+table. Verification codes expire after 30 minutes; password-reset codes expire
+after 15 minutes and are single-use. A successful password reset increments the
+user session version so previously issued session cookies stop authorizing requests.
+Development responses expose test codes when transactional email is not configured;
+production startup requires `EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, and
+`EMAIL_FROM`. Token hashes use a separate production `ACCOUNT_TOKEN_SECRET` so
+database access alone is not enough to test guessed recovery codes offline.
