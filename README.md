@@ -173,3 +173,15 @@ Travelers submit problem reports from their account page. Migration
 Only admins can read the report queue or resolve reports; each resolution is audited
 and notifies the traveler. System Health shows service configuration and recent
 generation failures, without claiming that configured providers are currently live.
+# Suspension appeals
+
+Suspended travelers can authenticate but cannot use normal platform, planning,
+or profile APIs. They are redirected to `/account/appeal`, where the authenticated
+`/api/account/appeal` endpoint exposes only their own account notices and appeal
+history. One pending appeal per traveler is enforced in the database.
+
+Admins review appeals in Reports using the `review-appeal` platform action, with
+an `approved` or `rejected` decision and a 10–2000 character message. Approval
+restores access; rejection keeps the suspension. Both decisions send an in-app
+notification. Manual restoration also closes pending appeals. Apply all Prisma
+migrations before using this flow.

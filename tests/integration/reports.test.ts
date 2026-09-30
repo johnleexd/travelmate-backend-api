@@ -23,7 +23,7 @@ test('traveler reports persist, remain private, and can only be resolved by an a
     assert.equal((await fetchData(traveler)).moderation.length, 0);
     const adminData = await fetchData(admin);
     assert.ok(adminData.moderation.some((item: { id: string }) => item.id === reportId));
-    assert.ok(adminData.moderation.every((item: { kind: string }) => item.kind === 'report'));
+    assert.ok(adminData.moderation.every((item: { kind: string }) => item.kind === 'report' || item.kind === 'appeal'));
     assert.equal(adminData.bookings.length, 0);
     await assert.rejects(() => executePlatformAction(publicUser(traveler), 'resolve-report', { id: reportId }), /Only admins/);
     await executePlatformAction(publicUser(admin), 'resolve-report', { id: reportId });

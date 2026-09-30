@@ -19,7 +19,7 @@ async function loadDatabase(user?: PublicUser): Promise<Database> {
     prisma.user.findMany({ where: traveler ? { id: user.id } : undefined, select: publicUserSelect, orderBy: { id: "asc" } }),
     user?.role === 'admin' ? Promise.resolve([]) : prisma.listing.findMany({ where: traveler ? { status: 'approved' } : undefined, orderBy: { id: "asc" } }),
     user ? Promise.resolve([]) : prisma.booking.findMany({ orderBy: { createdAt: "asc" } }),
-    prisma.moderation.findMany({ where: user && user.role !== 'admin' ? { id: '__none__' } : { kind: 'report' }, orderBy: { createdAt: "desc" } }),
+    prisma.moderation.findMany({ where: user && user.role !== 'admin' ? { id: '__none__' } : { kind: { in: ['report', 'appeal'] } }, orderBy: { createdAt: "desc" } }),
     prisma.trip.findMany({ where: traveler ? { userId: user.id } : user ? { id: '__none__' } : undefined, orderBy: { createdAt: "asc" } }),
     prisma.itineraryVersion.findMany({ where: traveler ? { trip: { userId: user.id } } : user ? { id: '__none__' } : undefined, orderBy: [{ tripId: "asc" }, { version: "desc" }] }),
     prisma.itineraryGeneration.findMany({ where: traveler ? { userId: user.id } : undefined, select: { id: true, userId: true, destination: true, status: true, errorCode: true, createdAt: true, updatedAt: true }, orderBy: { createdAt: "desc" }, take: 25 }),

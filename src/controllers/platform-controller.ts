@@ -49,7 +49,7 @@ export async function GET(request: Request): Promise<Response> {
       trips: user.role === "traveler" ? db.trips.filter((item) => item.userId === user.id).reverse() : [],
       itineraryVersions: user.role === "traveler" ? db.itineraryVersions.filter((item) => ownedTripIds.has(item.tripId)) : [],
       itineraryGenerations: db.itineraryGenerations.filter((item) => user.role === "admin" || item.userId === user.id).map((item) => ({ id: item.id, destination: item.destination, status: item.status, errorCode: item.errorCode, createdAt: item.createdAt, updatedAt: item.updatedAt })).slice(0, 25),
-      moderation: user.role === "admin" ? db.moderation.filter((item) => item.kind === "report") : [],
+      moderation: user.role === "admin" ? db.moderation.filter((item) => item.kind === "report" || item.kind === 'appeal') : [],
       audit: user.role === "admin" ? db.audit.slice(0, 100) : [],
       blockedDates: db.blockedDates,
       promotions: db.promotions,

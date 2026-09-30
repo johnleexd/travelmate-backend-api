@@ -10,6 +10,7 @@ import { hasValidCurrencyPrecision, normalizeCurrency, publicUser, splitBudget, 
 import { prisma } from "../../lib/prisma.ts";
 import { submitReport, resolveReport } from './report-service.ts';
 import { sendUserWarning } from './user-warning-service.ts';
+import { reviewAppeal } from './appeal-service.ts';
 import { applyManualItineraryChanges } from "../itinerary/itinerary-edit-service.ts";
 import { parseSavedItinerary, parseSavedWeather } from "../itinerary/saved-trip-schema.ts";
 
@@ -385,6 +386,11 @@ async function adminUserStatus(user: PublicUser, action: string, body: Body) {
     const target = await transaction.user.findFirst({ where: { id: targetId, role: { not: "admin" } } });
     if (!target) fail("Managed user not found.");
     const updated = await transaction.user.update({ where: { id: target.id }, data: { accountStatus: body.status === "suspended" ? "suspended" : "active" } });
+    if (updated.accountStatus !== target.accountStatus) {
+      const suspended = updated.accountStatus === 'suspended';
+      await transaction.notification.create({ data: { userId: target.id, title: suspended ? 'Account suspended — you can appeal' : 'Account access restored', body: suspended ? 'Your TravelMate account has been suspended. You can sign in to view your account notices and submit an appeal for admin review. Your saved trips are preserved.' : 'An admin restored your account access. You can use TravelMate again.', href: suspended ? '/account/appeal' : '/dashboard' } });
+      if (!suspended) await transaction.moderation.updateMany({ where: { kind: 'appeal', subjectId: target.id, status: 'pending' }, data: { status: 'approved' } });
+    }
     await audit(transaction, user.id, action, target.id);
     return publicUser(updated);
   });
@@ -409,6 +415,7 @@ export async function executePlatformAction(user: PublicUser, action: string, bo
     case "mark-all-notifications-read": return readNotification(user, action, body);
     case "admin-user-status": return adminUserStatus(user, action, body);
     case 'admin-user-warning': return sendUserWarning(user, body);
+    case 'review-appeal': return reviewAppeal(user, body);
     default: fail("Action is not allowed for this account.");
   }
 }

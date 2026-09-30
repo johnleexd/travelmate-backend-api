@@ -2,6 +2,7 @@
   "openapi": "3.1.0",
   "info": { "title": "TravelMate API", "version": "1.0.0" },
   "paths": {
+    "/api/account/appeal": {"get":{"summary":"Read the signed-in traveler's own appeals and notices, including while suspended","responses":{"200":{"description":"Own account status, appeals, and notifications","content":{"application/json":{"schema":{"type":"object","required":["user","appeals","notifications"],"properties":{"user":{"$ref":"#/components/schemas/PublicUser"},"appeals":{"type":"array","items":{"$ref":"#/components/schemas/ModerationItem"}},"notifications":{"type":"array","items":{"$ref":"#/components/schemas/Notification"}}}}}}},"401":{"$ref":"#/components/responses/Unauthorized"}}},"post":{"summary":"Submit a suspension appeal with no pending appeal","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","required":["message"],"properties":{"message":{"type":"string","minLength":10,"maxLength":2000}}}}}},"responses":{"200":{"description":"Appeal persisted and in-app notices sent"},"400":{"$ref":"#/components/responses/BadRequest"},"401":{"$ref":"#/components/responses/Unauthorized"},"429":{"$ref":"#/components/responses/RateLimited"}}}},
     "/health": { "get": { "summary": "Check API and database health", "responses": { "200": { "description": "Healthy" }, "503": { "description": "Unavailable" } } } },
     "/api/auth": {
       "get": { "summary": "Return the authenticated user", "responses": { "200": { "description": "Current user", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CurrentUserResponse" } } } }, "401": { "$ref": "#/components/responses/Unauthorized" } } },
@@ -705,7 +706,7 @@
       "ModerationItem": {
         "type": "object", "required": ["id", "kind", "subjectId", "title", "details", "status", "createdAt"],
         "properties": {
-          "id": { "type": "string" }, "kind": { "type": "string", "enum": ["profile", "listing", "dispute", "report"] }, "subjectId": { "type": "string" },
+          "id": { "type": "string" }, "kind": { "type": "string", "enum": ["profile", "listing", "dispute", "report", "appeal"] }, "subjectId": { "type": "string" },
           "title": { "type": "string" }, "details": { "type": "string" }, "status": { "type": "string", "enum": ["pending", "approved", "rejected", "resolved"] }, "createdAt": { "type": "string" }
         }
       },

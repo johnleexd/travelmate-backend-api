@@ -69,9 +69,8 @@ export async function GOOGLE_CALLBACK(request: Request): Promise<Response> {
     if (!code || code.length > 4096) return oauthError('oauth_code_invalid');
     const identity = await exchangeGoogleCode(code, flow);
     const authenticated = await findOrCreateGoogleUser(identity);
-    if (authenticated.user.accountStatus === 'suspended') return oauthError('account_suspended');
     await recordAuthAudit(authenticated.user.id, authenticated.created ? 'google-register' : 'google-login').catch(() => undefined);
-    const destination = authenticated.user.role === 'admin' ? '/admin/dashboard' : '/dashboard';
+    const destination = authenticated.user.accountStatus === 'suspended' ? '/account/appeal' : authenticated.user.role === 'admin' ? '/admin/dashboard' : '/dashboard';
     return redirectToFrontend(destination, [
       clearOAuthFlowCookie(),
       sessionCookie(createSessionToken(authenticated.user.id, authenticated.user.role, authenticated.sessionVersion)),

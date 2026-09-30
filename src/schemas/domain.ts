@@ -98,7 +98,7 @@ export interface OwnerDocument { id: string; ownerId: string; type: string; name
 
 export interface ModerationItem {
   id: string;
-  kind: 'profile' | 'listing' | 'dispute' | 'report';
+  kind: 'profile' | 'listing' | 'dispute' | 'report' | 'appeal';
   subjectId: string;
   title: string;
   details: string;

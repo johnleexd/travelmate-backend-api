@@ -39,11 +39,11 @@ function cookieValue(request: Request, name: string): string | undefined {
   return cookies.split(";").map((item) => item.trim()).find((item) => item.startsWith(`${name}=`))?.slice(name.length + 1);
 }
 
-export async function currentUser(request: Request, requiredRole?: Role): Promise<PublicUser | null> {
+export async function currentUser(request: Request, requiredRole?: Role, allowSuspended = false): Promise<PublicUser | null> {
   const session = verifySessionToken(cookieValue(request, SESSION_COOKIE));
   if (!session || (requiredRole && session.role !== requiredRole)) return null;
   const user = await prisma.user.findFirst({
-    where: { id: session.userId, role: session.role, accountStatus: "active", sessionVersion: session.sessionVersion ?? 0 },
+    where: { id: session.userId, role: session.role, ...(allowSuspended ? {} : { accountStatus: 'active' as const }), sessionVersion: session.sessionVersion ?? 0 },
   });
   return user ? publicUser(user) : null;
 }

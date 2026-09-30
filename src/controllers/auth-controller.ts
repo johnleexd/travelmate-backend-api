@@ -32,7 +32,7 @@ const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const fail = (message: string, status = 400) => Response.json({ error: message }, { status });
 
 export async function GET(request: Request) {
-  const user = await currentUser(request);
+  const user = await currentUser(request, undefined, true);
   return user ? Response.json({ user }) : fail('Unauthenticated.', 401);
 }
 
@@ -63,12 +63,11 @@ export async function POST(request: Request) {
     const email = String(body.email || '').trim().toLowerCase();
     const authenticated = await authenticateUser(email, String(body.password || ''));
     if (!authenticated) return fail('Invalid email or password.', 401);
-    if (authenticated.accountStatus === 'suspended') return fail('This account is suspended. Contact TravelMate support.', 403);
     if (!authenticated.emailVerified) return fail('Verify your email before signing in.', 403);
     const { sessionVersion, ...user } = authenticated;
     await recordAuthAudit(user.id, 'login').catch(() => undefined);
     return Response.json(
-      { user, redirect: user.role === 'admin' ? '/admin/dashboard' : '/dashboard' },
+      { user, redirect: user.accountStatus === 'suspended' ? '/account/appeal' : user.role === 'admin' ? '/admin/dashboard' : '/dashboard' },
       { headers: { 'Set-Cookie': sessionCookie(createSessionToken(user.id, user.role, sessionVersion)) } },
     );
   }
