@@ -8,6 +8,7 @@ import platformRoutes from "./platform-routes.ts";
 import profileRoutes from "./profile-routes.ts";
 import travelOptionsRoutes from "./travel-options-routes.ts";
 import weatherRoutes from "./weather-routes.ts";
+import feedbackRoutes from "./feedback-routes.ts";
 
 const apiRoutes = Router();
 apiRoutes.use("/auth", authRoutes);
@@ -19,5 +20,6 @@ apiRoutes.use("/destination-context", destinationContextRoutes);
 apiRoutes.use("/accommodations", accommodationsRoutes);
 apiRoutes.use("/travel-options", travelOptionsRoutes);
 apiRoutes.use("/profile", profileRoutes);
+apiRoutes.use("/feedback", feedbackRoutes);
 
 export default apiRoutes;

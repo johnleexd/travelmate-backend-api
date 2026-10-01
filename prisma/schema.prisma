@@ -128,6 +128,7 @@ model User {
   notifications        Notification[]
   ownerDocuments       OwnerDocument[]
   reviews              Review[]
+  feedback             UserFeedback[]
 
   @@index([accountStatus])
   @@map("users")
@@ -260,6 +261,23 @@ model Review {
   @@map("reviews")
 }
 
+model UserFeedback {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  tripId    String   @map("trip_id")
+  rating    Int
+  category  String   @db.VarChar(40)
+  comment   String   @db.VarChar(2000)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([tripId])
+  @@map("user_feedback")
+}
+
 model Notification {
   id        String    @id @default(uuid())
   userId    String    @map("user_id")
@@ -340,6 +358,7 @@ model Trip {
   updatedAt              DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
   user                   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   versions               ItineraryVersion[]
+  feedback               UserFeedback[]
 
   @@index([userId])
   @@index([userId, status])
