@@ -52,6 +52,8 @@ test('authorization request uses code flow, minimal identity scopes, state, nonc
     const url = new URL(result.authorizationUrl);
     assert.equal(url.origin, 'https://accounts.google.com');
     assert.equal(url.searchParams.get('response_type'), 'code');
+    assert.equal(url.searchParams.get('prompt'), 'select_account');
+    assert.equal(url.searchParams.has('login_hint'), false);
     assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
     assert.ok(url.searchParams.get('code_challenge'));
     assert.ok(url.searchParams.get('state'));

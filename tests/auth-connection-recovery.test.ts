@@ -70,6 +70,27 @@ test('invalid and revoked sessions remain unauthorized', async t => {
   assert.equal(lookup.mock.callCount(), 1);
 });
 
+test('logout clears the app session and pending OAuth flow even while the database is unavailable', async t => {
+  const limiter = mockPrismaMethod(t, prisma, '$queryRaw', async () => { throw { code: 'P1017' }; });
+  const lookup = mockPrismaMethod(t, prisma.user, 'findFirst', async () => { throw new Error('Logout must not require a user lookup.'); });
+  const audit = mockPrismaMethod(t, prisma.auditEvent, 'create', async () => ({}));
+  const response = await fetch(`${baseUrl}/api/auth`, {
+    method: 'POST', headers: { ...sessionHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'logout' }),
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true });
+  const cookies = response.headers.getSetCookie();
+  assert.equal(cookies.length, 2);
+  assert.ok(cookies.some(cookie => cookie.startsWith('travelmate_session=;') && cookie.includes('Max-Age=0')));
+  assert.ok(cookies.some(cookie => cookie.startsWith('travelmate_google_oauth=;') && cookie.includes('Max-Age=0')));
+  assert.equal(limiter.mock.callCount(), 3);
+  assert.equal(lookup.mock.callCount(), 0);
+  assert.equal(audit.mock.callCount(), 0);
+  const session = await fetch(`${baseUrl}/api/auth`);
+  assert.equal(session.status, 401);
+});
+
 test('password login recovers both its rate limiter and credential read', async t => {
   let limiterAttempts = 0;
   let lookupAttempts = 0;
@@ -116,7 +137,24 @@ test('Google sign-in can start after a nested driver connection failure', async 
   mockPrismaMethod(t, prisma, '$executeRaw', async () => 0);
   const response = await fetch(`${baseUrl}/api/auth/oauth/google`, { redirect: 'manual' });
   assert.equal(response.status, 302);
-  assert.equal(new URL(response.headers.get('location')!).origin, 'https://accounts.google.com');
+  const authorization = new URL(response.headers.get('location')!);
+  assert.equal(authorization.origin, 'https://accounts.google.com');
+  assert.equal(authorization.searchParams.get('prompt'), 'select_account');
   assert.match(response.headers.get('set-cookie') || '', /HttpOnly; SameSite=Lax/);
   assert.equal(attempts, 2);
+
+  mockPrismaMethod(t, prisma.auditEvent, 'create', async () => ({}));
+  const logout = await fetch(`${baseUrl}/api/auth`, {
+    method: 'POST', headers: { ...sessionHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'logout' }),
+  });
+  assert.equal(logout.status, 200);
+  const next = await fetch(`${baseUrl}/api/auth/oauth/google`, { redirect: 'manual' });
+  assert.equal(next.status, 302);
+  const nextAuthorization = new URL(next.headers.get('location')!);
+  assert.equal(nextAuthorization.searchParams.get('prompt'), 'select_account');
+  assert.equal(nextAuthorization.searchParams.has('login_hint'), false);
+  assert.notEqual(nextAuthorization.searchParams.get('state'), authorization.searchParams.get('state'));
+  assert.notEqual(nextAuthorization.searchParams.get('nonce'), authorization.searchParams.get('nonce'));
+  assert.ok(next.headers.getSetCookie().every(cookie => !cookie.startsWith('travelmate_session=')));
 });

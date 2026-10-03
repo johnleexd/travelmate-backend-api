@@ -40,8 +40,12 @@ function cookieValue(request: Request, name: string): string | undefined {
   return cookies.split(";").map((item) => item.trim()).find((item) => item.startsWith(`${name}=`))?.slice(name.length + 1);
 }
 
+export function sessionFromRequest(request: Request): Session | null {
+  return verifySessionToken(cookieValue(request, SESSION_COOKIE));
+}
+
 export async function currentUser(request: Request, requiredRole?: Role, allowSuspended = false): Promise<PublicUser | null> {
-  const session = verifySessionToken(cookieValue(request, SESSION_COOKIE));
+  const session = sessionFromRequest(request);
   if (!session || (requiredRole && session.role !== requiredRole)) return null;
   const user = await retryDatabaseOperation(() => prisma.user.findFirst({
     where: { id: session.userId, role: session.role, ...(allowSuspended ? {} : { accountStatus: 'active' as const }), sessionVersion: session.sessionVersion ?? 0 },

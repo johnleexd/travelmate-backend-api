@@ -2,6 +2,7 @@ import {
   clearSessionCookie,
   createSessionToken,
   currentUser,
+  sessionFromRequest,
   sessionCookie,
 } from '../middlewares/auth-middleware.ts';
 import type { Role } from '../schemas/domain.ts';
@@ -27,6 +28,7 @@ import {
   STRONG_PASSWORD_REQUIREMENTS,
 } from '../schemas/auth/password-schema.ts';
 import { createHash } from 'node:crypto';
+import { clearOAuthFlowCookie } from '../services/auth/google-oauth-service.ts';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const fail = (message: string, status = 400) => Response.json({ error: message }, { status });
@@ -38,9 +40,24 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const ip = request.headers.get('x-client-ip') || 'local';
-  if (!await allowRequest(`auth:ip:${ip}`, 20, 60_000)) return fail('Too many attempts. Try again shortly.', 429);
   const body = await request.json().catch(() => ({}));
   const action = String(body.action || '');
+  if (action === 'logout') {
+    // Clearing this browser's cookies must still succeed when audit storage is unavailable.
+    const session = sessionFromRequest(request);
+    if (session) {
+      try {
+        if (await allowRequest(`auth:ip:${ip}`, 20, 60_000)) await recordAuthAudit(session.userId, 'logout');
+      } catch {
+        // Logout auditing is best effort, as it is for other authentication actions.
+      }
+    }
+    const headers = new Headers();
+    headers.append('Set-Cookie', clearSessionCookie());
+    headers.append('Set-Cookie', clearOAuthFlowCookie());
+    return Response.json({ ok: true }, { headers });
+  }
+  if (!await allowRequest(`auth:ip:${ip}`, 20, 60_000)) return fail('Too many attempts. Try again shortly.', 429);
   const normalizedEmail = String(body.email || '').trim().toLowerCase();
   const accountLimits: Record<string, { limit: number; windowMs: number }> = {
     login: { limit: 8, windowMs: 15 * 60_000 }, register: { limit: 4, windowMs: 60 * 60_000 },
@@ -51,12 +68,6 @@ export async function POST(request: Request) {
   if (accountLimit && normalizedEmail) {
     const emailKey = createHash('sha256').update(normalizedEmail).digest('hex');
     if (!await allowRequest(`auth:${action}:email:${emailKey}`, accountLimit.limit, accountLimit.windowMs)) return fail('Too many attempts for this account. Try again later.', 429);
-  }
-
-  if (action === 'logout') {
-    const user = await currentUser(request);
-    if (user) await recordAuthAudit(user.id, 'logout').catch(() => undefined);
-    return Response.json({ ok: true }, { headers: { 'Set-Cookie': clearSessionCookie() } });
   }
 
   if (action === 'login') {
