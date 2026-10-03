@@ -1,5 +1,6 @@
 import type { ErrorRequestHandler, RequestHandler } from "express";
 import { apiErrorPayload } from "../contracts/api-error.ts";
+import { isDatabaseConnectionError } from "../lib/database-retry.ts";
 
 export const disableApiCaching: RequestHandler = (_request, response, next) => {
   response.setHeader("Cache-Control", "no-store");
@@ -13,6 +14,13 @@ export const apiNotFound: RequestHandler = (_request, response) => {
 export const errorHandler: ErrorRequestHandler = (error, _request, response, _next) => {
   if (error instanceof SyntaxError) {
     response.status(400).json(apiErrorPayload("Request body must be valid JSON.", 400));
+    return;
+  }
+
+  if (isDatabaseConnectionError(error)) {
+    console.warn('[TravelMate API] Database connection unavailable.');
+    response.setHeader('Retry-After', '1');
+    response.status(503).json(apiErrorPayload('TravelMate is temporarily unavailable. Please try again shortly.', 503));
     return;
   }
 

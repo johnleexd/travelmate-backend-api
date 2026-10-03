@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { PublicUser, Role } from "../schemas/domain.ts";
 import { publicUser } from "../schemas/domain.ts";
 import { prisma } from "../lib/prisma.ts";
+import { retryDatabaseOperation } from "../lib/database-retry.ts";
 
 export const SESSION_COOKIE = "travelmate_session";
 
@@ -42,9 +43,9 @@ function cookieValue(request: Request, name: string): string | undefined {
 export async function currentUser(request: Request, requiredRole?: Role, allowSuspended = false): Promise<PublicUser | null> {
   const session = verifySessionToken(cookieValue(request, SESSION_COOKIE));
   if (!session || (requiredRole && session.role !== requiredRole)) return null;
-  const user = await prisma.user.findFirst({
+  const user = await retryDatabaseOperation(() => prisma.user.findFirst({
     where: { id: session.userId, role: session.role, ...(allowSuspended ? {} : { accountStatus: 'active' as const }), sessionVersion: session.sessionVersion ?? 0 },
-  });
+  }));
   return user ? publicUser(user) : null;
 }
 

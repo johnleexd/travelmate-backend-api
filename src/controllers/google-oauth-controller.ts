@@ -1,7 +1,7 @@
 import { allowRequest } from '../middlewares/rate-limit-middleware.ts';
 import { createSessionToken, sessionCookie } from '../middlewares/auth-middleware.ts';
 import { recordAuthAudit } from '../services/auth/auth-service.ts';
-import { isDatabaseConnectionError, retryOAuthDatabaseOperation } from '../services/auth/oauth-database-retry.ts';
+import { isDatabaseConnectionError, retryDatabaseOperation } from '../lib/database-retry.ts';
 import {
   OAuthAccountLinkRequiredError,
   OAuthConfigurationError,
@@ -41,7 +41,7 @@ export function GOOGLE_STATUS(): Response {
 export async function GOOGLE_START(request: Request): Promise<Response> {
   const ip = request.headers.get('x-client-ip') || 'local';
   try {
-    if (!await retryOAuthDatabaseOperation(() => allowRequest(`oauth:start:${ip}`, 20, 60_000))) return oauthError('oauth_rate_limited');
+    if (!await allowRequest(`oauth:start:${ip}`, 20, 60_000)) return oauthError('oauth_rate_limited');
     const authorization = await createGoogleAuthorization();
     const headers = new Headers({ Location: authorization.authorizationUrl, 'Cache-Control': 'no-store' });
     headers.append('Set-Cookie', authorization.flowCookie);
@@ -55,7 +55,7 @@ export async function GOOGLE_START(request: Request): Promise<Response> {
 export async function GOOGLE_CALLBACK(request: Request): Promise<Response> {
   const ip = request.headers.get('x-client-ip') || 'local';
   try {
-    if (!await retryOAuthDatabaseOperation(() => allowRequest(`oauth:callback:${ip}`, 30, 60_000))) return oauthError('oauth_rate_limited');
+    if (!await allowRequest(`oauth:callback:${ip}`, 30, 60_000)) return oauthError('oauth_rate_limited');
   } catch (error) {
     console.error('[TravelMate] Google OAuth callback rate limit failed:', error instanceof Error ? error.message : error);
     return oauthError('oauth_unavailable');
@@ -69,7 +69,7 @@ export async function GOOGLE_CALLBACK(request: Request): Promise<Response> {
     const code = url.searchParams.get('code');
     if (!code || code.length > 4096) return oauthError('oauth_code_invalid');
     const identity = await exchangeGoogleCode(code, flow);
-    const authenticated = await retryOAuthDatabaseOperation(() => findOrCreateGoogleUser(identity));
+    const authenticated = await retryDatabaseOperation(() => findOrCreateGoogleUser(identity));
     await recordAuthAudit(authenticated.user.id, authenticated.created ? 'google-register' : 'google-login').catch(() => undefined);
     const destination = authenticated.user.accountStatus === 'suspended' ? '/account/appeal' : authenticated.user.role === 'admin' ? '/admin/dashboard' : '/dashboard';
     return redirectToFrontend(destination, [

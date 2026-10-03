@@ -3,6 +3,7 @@ import { Prisma } from "../../generated/prisma/client.ts";
 import { EmailExistsError } from "../../exceptions/index.ts";
 import { publicUser, type PublicUser, type Role } from "../../schemas/domain.ts";
 import { prisma } from "../../lib/prisma.ts";
+import { retryDatabaseOperation } from "../../lib/database-retry.ts";
 import { password } from "../../repositories/platform-repository.ts";
 
 type AccountTokenKind = "email_verification" | "password_reset";
@@ -32,7 +33,7 @@ function expiresIn(minutes: number): Date {
 }
 
 export async function authenticateUser(email: string, rawPassword: string): Promise<AuthenticatedUser | null> {
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await retryDatabaseOperation(() => prisma.user.findUnique({ where: { email } }));
   if (!user || !user.passwordSalt || !user.passwordHash || password(rawPassword, user.passwordSalt) !== user.passwordHash) return null;
   return { ...publicUser(user), sessionVersion: user.sessionVersion };
 }

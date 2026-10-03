@@ -13,7 +13,14 @@ if (!connectionString) throw new Error("DATABASE_URL is required. Use the pooled
 // driver. The Neon serverless adapter relies on WebSockets, which can be
 // unavailable in local Windows/network environments even when PostgreSQL itself
 // is reachable (Prisma Migrate, for example, still connects successfully).
-const adapter = new PrismaPg({ connectionString });
+const adapter = new PrismaPg({
+  connectionString,
+  connectionTimeoutMillis: 5_000,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10_000,
+}, {
+  onPoolError: () => console.warn('[TravelMate API] An idle database connection was lost; the pool will replace it.'),
+});
 export const prisma = global.travelmatePrisma ?? new PrismaClient({ adapter });
 
 if (process.env.NODE_ENV !== "production") global.travelmatePrisma = prisma;
