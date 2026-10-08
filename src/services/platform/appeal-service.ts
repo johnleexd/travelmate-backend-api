@@ -1,3 +1,4 @@
+import { publishReportChange } from './report-events.ts';
 import { prisma } from '../../lib/prisma.ts';
 import { PlatformActionError } from '../../exceptions/index.ts';
 import type { PublicUser } from '../../schemas/domain.ts';
@@ -11,7 +12,7 @@ export function appealMessage(value: unknown): string {
 export async function submitAppeal(user: PublicUser, body: Record<string, unknown>) {
   if (user.role !== 'traveler' || user.accountStatus !== 'suspended') throw new PlatformActionError('Only suspended travelers can submit an appeal.');
   const details = appealMessage(body.message);
-  return prisma.$transaction(async tx => {
+  const result = await prisma.$transaction(async tx => {
     // Lock the account so concurrent submissions and account restoration cannot
     // create an appeal against an outdated account state.
     const account = await tx.user.updateMany({ where: { id: user.id, role: 'traveler', accountStatus: 'suspended' }, data: { accountStatus: 'suspended' } });
@@ -19,11 +20,13 @@ export async function submitAppeal(user: PublicUser, body: Record<string, unknow
     if (await tx.moderation.findFirst({ where: { kind: 'appeal', subjectId: user.id, status: 'pending' } })) throw new PlatformActionError('Your appeal is already awaiting admin review.');
     const appeal = await tx.moderation.create({ data: { kind: 'appeal', subjectId: user.id, title: 'Account suspension appeal', details, status: 'pending' } });
     const admins = await tx.user.findMany({ where: { role: 'admin', accountStatus: 'active' }, select: { id: true } });
-    if (admins.length) await tx.notification.createMany({ data: admins.map(admin => ({ userId: admin.id, title: 'Suspension appeal received', body: `${user.name} submitted an account suspension appeal. Review it in Reports & appeals.`, href: '/admin/dashboard' })) });
+    if (admins.length) await tx.notification.createMany({ data: admins.map(admin => ({ userId: admin.id, title: 'Suspension appeal received', body: `${user.name} submitted an account suspension appeal. Review it in Reports & appeals.`, href: '/admin/dashboard?tab=reports&category=appeals' })) });
     await tx.notification.create({ data: { userId: user.id, title: 'Appeal received', body: 'Your suspension appeal has been sent to the admins for review. You can check its status on this page.', href: '/account/appeal' } });
     await tx.auditEvent.create({ data: { actorId: user.id, action: 'submit-appeal', targetId: appeal.id } });
     return appeal;
   });
+  publishReportChange();
+  return result;
 }
 
 export async function reviewAppeal(user: PublicUser, body: Record<string, unknown>) {
@@ -32,7 +35,7 @@ export async function reviewAppeal(user: PublicUser, body: Record<string, unknow
   if (!id || !['approved', 'rejected'].includes(String(body.decision))) throw new PlatformActionError('Choose an appeal and a valid decision.');
   const note = appealMessage(body.message);
   const status = body.decision === 'approved' ? 'approved' : 'rejected';
-  return prisma.$transaction(async tx => {
+  const result = await prisma.$transaction(async tx => {
     const appeal = await tx.moderation.findFirst({ where: { id, kind: 'appeal', status: 'pending' } });
     if (!appeal) throw new PlatformActionError('Pending appeal not found.');
     const account = await tx.user.updateMany({ where: { id: appeal.subjectId, role: 'traveler', accountStatus: 'suspended' }, data: { accountStatus: status === 'approved' ? 'active' : 'suspended' } });
@@ -43,4 +46,6 @@ export async function reviewAppeal(user: PublicUser, body: Record<string, unknow
     await tx.auditEvent.create({ data: { actorId: user.id, action: `appeal-${status}`, targetId: id } });
     return { id, status };
   });
+  publishReportChange();
+  return result;
 }

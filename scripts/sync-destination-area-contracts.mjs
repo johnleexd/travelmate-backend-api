@@ -1,0 +1,16 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+const path = new URL('../openapi/travelmate-api.json', import.meta.url);
+const document = JSON.parse(readFileSync(path, 'utf8'));
+const schemas = document.components.schemas;
+const ref = name => ({ $ref: `#/components/schemas/${name}` });
+const object = properties => ({ type: 'object', properties, required: Object.keys(properties) });
+const string = { type: 'string' }, integer = { type: 'integer' };
+schemas.AreaSuggestion = { type: 'object', properties: { ...schemas.LocationSuggestion.properties, description: string, population: { type: 'integer', minimum: 1 }, membership: { type: 'string', enum: ['country-code','administrative-hierarchy','boundary'] } }, required: [...schemas.LocationSuggestion.required, 'description', 'membership'] };
+schemas.DestinationAreasResponse = object({ parentId: integer, countryCode: string, areas: { type: 'array', items: ref('AreaSuggestion') }, total: integer, nextOffset: { anyOf: [integer, { type: 'null' }] }, status: { type: 'string', enum: ['ready','empty'] }, message: string, fetchedAt: { type: 'string', format: 'date-time' }, expiresAt: { type: 'string', format: 'date-time' }, sourceUrls: { type: 'array', items: { type: 'string', format: 'uri' } } });
+schemas.AreaInterestProfile = object({ cityId: integer, foodPlaces: { type: 'integer', minimum: 0 }, culturePlaces: { type: 'integer', minimum: 0 }, naturePlaces: { type: 'integer', minimum: 0 } });
+schemas.AreaComparisonResponse = object({ parentId: integer, countryCode: string, profiles: { type: 'array', items: ref('AreaInterestProfile') }, fetchedAt: { type: 'string', format: 'date-time' }, expiresAt: { type: 'string', format: 'date-time' }, sourceUrl: { type: 'string', format: 'uri' }, radiusKm: { type: 'number' }, disclaimer: string });
+const parameters = [{ name: 'parentId', in: 'query', required: true, schema: integer }, { name: 'countryCode', in: 'query', required: true, schema: { type: 'string', pattern: '^[A-Z]{2}$' } }];
+const get = (summary, schema, extra) => ({ tags: ['Destination'], summary, security: [{ cookieAuth: [] }], parameters: [...parameters, ...extra], responses: { 200: { description: 'Validated geographic data with source timestamps', content: { 'application/json': { schema: ref(schema) } } }, 400: { description: 'Invalid parent, search or city identifiers' }, 401: { description: 'Authentication required' }, 429: { description: 'Rate limited; Retry-After indicates cooldown' }, 502: { description: 'Provider error; do not fabricate suggestions' } } });
+document.paths['/api/locations/areas'] = { get: get('Browse/search verified cities within a selected country, region or island', 'DestinationAreasResponse', [{ name: 'query', in: 'query', schema: { type: 'string', maxLength: 80 } }, { name: 'offset', in: 'query', schema: { type: 'integer', minimum: 0, maximum: 1000 } }]) };
+document.paths['/api/locations/areas/compare'] = { get: get('Compare a mapped-interest sample for up to six validated cities without choosing one', 'AreaComparisonResponse', [{ name: 'cityIds', in: 'query', required: true, schema: { type: 'string', pattern: '^-?\\d+(,-?\\d+){0,5}$' } }]) };
+writeFileSync(path, JSON.stringify(document, null, 2) + '\n');

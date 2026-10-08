@@ -3,6 +3,66 @@
 This is the TravelMate backend: Express 5 with strict TypeScript, Prisma ORM,
 and Neon PostgreSQL.
 
+GPS uses signed traveler-only `POST /api/navigation/search` and
+`POST /api/navigation/route`. Explicit place/address searches share the existing
+Nominatim queue; no public-geocoder autocomplete is added. Routes use OSRM/FOSSGIS
+walking, cycling and driving datasets with validated geometry and maneuvers. GPS
+coordinates are accepted in request bodies, used transiently and never stored in
+trips, visits or audit records. Request logs omit bodies and query parameters.
+The routing provider can log route queries; the UI links to its privacy information.
+Each endpoint permits 12 requests per traveler per minute; a database bucket also
+limits all instances to one public routing request per 1.1 seconds. 429 responses
+include Retry-After. Unreachable routes, invalid data and provider failures are
+reported without invented path geometry.
+
+`NAVIGATION_ROUTING_BASE_URL` defaults to `https://routing.openstreetmap.de/` for
+this non-commercial capstone. That public service has usage limits and no uptime
+guarantee. For production/heavier use, configure a controlled deployment exposing
+`routed-foot`, `routed-bike` and `routed-car` OSRM paths. `DESTINATION_GEOCODER_URL`
+can similarly select a controlled geocoder. No paid subscription or new secret
+API key is required. Frontend routing requests do not run for every GPS fix.
+
+Manual destinations resolve through `/api/locations/resolve` before confirmation.
+Suggestions and resolved entries share validated coordinates, ISO country codes
+and provider IDs. Explicit lookups can use keyless Nominatim when GeoNames lacks
+a locality; public Nominatim is not used for autocomplete. Compound country and
+region qualifiers are retained. Ambiguous names require the traveler to choose.
+Country/region/island selections offer city/town narrowing instead of searching
+a broad geographic center for hotels.
+
+`GET /api/locations/areas` automatically browses verified cities/towns within the
+selected parent, supports `query` and paginated `offset`, and returns membership
+evidence, source links and timestamps. Country membership uses the worldwide
+GeoNames catalogue; ADM1 regions use administrative membership; islands and other
+regions use a matching OSM boundary and point-in-polygon checks. The catalogue is
+not exhaustive. Searches can retrieve additional GeoNames settlements, and areas
+without catalogue cities can retrieve mapped towns inside their verified boundary.
+
+`GET /api/locations/areas/compare` retrieves a sample of mapped food, culture and
+nature places within 1 km of up to six validated city centres. The UI compares four
+current suggestions and uses the entered budget as a per-person daily allowance,
+not a researched price. Neither browsing nor comparison chooses a city. Geographic
+data is cached for 24 hours; interest samples for six hours; in-flight requests are
+shared and provider errors have a cooldown. Set `DESTINATION_AREAS_PLACES_URL` for
+a compatible hosted/private Overpass interpreter; otherwise the existing
+`ACCOMMODATION_PLACES_URL` or the public development endpoint is used.
+
+Public Nominatim boundary lookups run only after explicit area selection, share
+the manual-resolution queue (at least 1.1 seconds apart), and are cached; typing
+uses GeoNames/Open-Meteo, never public Nominatim autocomplete. Follow the
+[public Nominatim policy](https://operations.osmfoundation.org/policies/nominatim/).
+Configure a hosted/private `DESTINATION_GEOCODER_URL` for production capacity or
+multiple app instances; the public service's limit applies across the application.
+
+Mapped accommodation searches start within 1 km, expanding to 3/10/30 km only
+when the smaller area has no named properties. Results retain their OSM IDs,
+actual mapped addresses/localities or coordinates, and distance from the chosen
+center. They never imply a room price, vacancy or a reservation. Responses
+distinguish ready, no-results, provider-error and needs-area states. Amadeus room
+quotes additionally require `AMADEUS_API_KEY` and `AMADEUS_API_SECRET`.
+Configure `DESTINATION_GEOCODER_URL`, `ACCOMMODATION_PLACES_URL` and optionally
+`ACCOMMODATION_PLACES_FALLBACK_URL` for hosted/private provider capacity.
+
 The codebase follows the same layered organization as Express Breeze while
 keeping TravelMate's existing API contracts and providers:
 
@@ -38,6 +98,23 @@ npm.cmd run db:setup
 npm.cmd run dev
 ```
 
+`db:setup` applies the schema without creating demo users. Demo seeding is
+disabled in production and requires an explicit local opt-in:
+`TRAVELMATE_ALLOW_DEMO_SEED=true`, with distinct `DEMO_ADMIN_PASSWORD` and
+`DEMO_TRAVELER_PASSWORD` values of 16–64 characters satisfying the password rules.
+Supply these through local environment variables, then run `npm run db:seed`.
+The seed never resets an existing account or reactivates a disabled one.
+
+For databases created using the old public demo password, run
+`npm run security:disable-demo-logins` to inspect the affected seed identities,
+then append `-- --apply` to disable those logins and invalidate their sessions.
+Owned data and audit history are retained. Accounts already using a different
+password are skipped. Real administrator accounts should be provisioned separately.
+
+Logout revokes the current session on the server. If the database is unavailable,
+browser cookies still clear and the UI explains that server revocation could not
+be confirmed; it does not claim the copied token was invalidated.
+
 Production startup fails fast when `DATABASE_URL` is missing, local, or still a
 placeholder; when session and account-token secrets are unsafe; when frontend
 origins are not canonical HTTPS origins; when transactional email or AI is not
@@ -56,6 +133,67 @@ The server listens on port 5000 by default and exposes:
 - `GET /api/locations`
 - `GET /api/destination-context`
 - `GET /api/accommodations`
+
+## Docker
+
+With Docker Engine and Docker Compose v2.20 or newer installed, configure the
+backend `.env` as above and run from this backend directory:
+
+```powershell
+docker compose up --build --detach --wait
+docker compose logs --follow app
+```
+
+Compose applies the existing Prisma migrations before starting the compiled API.
+The API is available at `http://localhost:5000`; set `TRAVELMATE_PORT` to another
+host port if a local Node backend already uses 5000. The Next.js frontend can
+continue running on the host with its `BACKEND_URL` pointing to this port.
+This container uses development settings with production build artifacts;
+source edits require rebuilding the image.
+
+The multi-stage Dockerfile uses Node.js 22, runs the API as the `node` user,
+and checks both API and database readiness. Prisma is a production dependency
+so the same image can run the one-shot migration service. Provider secrets are
+supplied at runtime; `.dockerignore` excludes environment files and local dependencies.
+
+For Docker Hub publishing, SSH deployment, required GitHub secrets, server
+configuration, and rollback, see [DEPLOYMENT.md](DEPLOYMENT.md#docker-hub-and-ssh-deployment).
+
+Accommodation discovery uses destination coordinates worldwide. Country-level
+selections require choosing a city or area first. OpenStreetMap/Overpass supplies
+nearby hotel, hostel, resort, guesthouse, motel, and apartment names and locations;
+these listings carry **no price or availability claim**. Listings are cached for
+24 hours and the shared public endpoint is capped at 100 uncached searches/day.
+Set backend `ACCOMMODATION_PLACES_URL` to a hosted/private Overpass interpreter
+for production or greater traffic. The development default requires no API key.
+Attribution is shown in the planner; data is © OpenStreetMap contributors (ODbL).
+
+Traveler workspace reads support `GET /api/platform?scope=traveler&summary=true`
+with an optional owned-trip `cursor`: each page contains at most 20 trip summaries
+and `tripsPage` metadata, without itinerary/weather snapshots. The frontend uses
+this mode; the original full workspace response remains available for compatibility.
+`GET /api/platform/trips/:id` loads one owned plan, and
+`GET /api/platform/trips/:id/versions` loads pages of 50 version metadata records.
+`GET /api/platform/notifications` reads only the current account's latest 50 notices.
+Saved budget summaries, shares, and optimization suggestions are recalculated
+server-side from validated item and selected-travel costs.
+
+New itinerary versions store a versioned envelope inside the existing JSON column,
+including original trip metadata. Restore validates the envelope and atomically
+recovers the plan and its matching context. No new database migration is required.
+Older plain-itinerary versions recover recorded core details; unrecorded geographic
+details and interests are cleared, and the response flags `legacyContextRecovered`.
+If a legacy snapshot did not record its party details, restoration fails safely
+without modifying the current trip; those historical values cannot be inferred.
+
+Optional Amadeus room offers require backend `AMADEUS_API_KEY`,
+`AMADEUS_API_SECRET`, and `AMADEUS_ENV=production` for real availability.
+`AMADEUS_ENV=test` produces explicitly labeled test offers, not real availability.
+Hotel Search access and inventory coverage depend on the Amadeus account.
+Quoted totals cover the requested rooms and are counted once in the budget.
+Mapped or manually entered stays are saved as unpriced planning preferences;
+no lodging quote is fabricated. Outages and empty results allow manual entry
+or choosing accommodation later. Restart the API after changing environment settings.
 - `GET /api/travel-options`
 
 `DATABASE_URL` is used by Prisma Migrate and at runtime through Prisma's standard
@@ -66,10 +204,23 @@ Database writes use targeted Prisma operations. Related changes such as a
 booking plus its capacity adjustment and audit event run in one transaction;
 the API never rebuilds whole tables to persist a single action.
 
-Saved-trip actions on `POST /api/platform` are `save-trip`, `update-trip`,
-`duplicate-trip`, and `delete-trip`. Every lookup includes the authenticated
+Saved-trip actions on `POST /api/platform` include `save-trip`, `update-trip`,
+`delete-trip`, and the completion, archive, and version-restoration actions. Trip
+duplication has been removed. Every lookup includes the authenticated
 traveler ID, preventing one traveler from reading or mutating another traveler's
-records. Trip ranges are limited to 1–14 days and stored with both start and end dates.
+records. Trip ranges support 1–31 calendar days, counting both start and end dates,
+and are stored with both dates. Longer AI itineraries use consecutive batches of at
+most seven days. Each batch selects only backend-supplied place IDs and excludes
+already used places. The server validates dates, participants, geographic transfer
+time and available opening-hour references, and repairs invalid batches once.
+Prices and group totals are calculated by backend code; failed or incomplete plans never replace
+the current plan. Generation may take several minutes for a month-long trip.
+Accommodation uses 30 nights for 31 travel days (a selected overnight stay on a
+one-day trip retains the existing one-night behavior). Run `npm run db:migrate`
+to apply `20261006000200_trip_duration_31_days`, which extends the existing trip
+date constraint without changing saved accounts or itineraries. Weather requests
+accept the full trip range but retain only actual provider forecast dates; Open-Meteo
+still requests 14 days and dates outside coverage are labeled unavailable.
 Every trip carries one supported ISO currency through generation, budget calculations,
 persistence, and manual edits. Destination selection stores structured city, region,
 country, country code, and coordinates; `/api/destination-context` maps that country
@@ -87,11 +238,49 @@ offer data. Without Amadeus credentials,
 the endpoint returns an explicit `configured: false` response rather than invented
 availability. PayMongo is not integrated; payment states are a labeled simulation.
 
+### Grounded itinerary generation
+
+`POST /api/itinerary` requires `startingLocation`, `destinationDetails`
+(city/country/countryCode/latitude/longitude), matching top-level coordinates and
+valid dates. AI arranges a Wikipedia/Wikidata catalog; it does not generate prices,
+venue facts or photos. Exact place-linked Commons files carry attribution, and
+missing photos use placeholders. Conservative reference coverage can leave days
+without supported attractions. Opening hours, access and estimated walking
+transfers still need confirmation.
+
+Optional `rooms`, `nightlyRoomEstimate`, `foodDailyPerPerson`, `transportFare`,
+`transportFareType`, `fees` and `contingencyPercent` set explicit user assumptions.
+Without researched prices, the plan labels budget allowances and their basis,
+never confirmed market prices. Rooms × nights, daily food × party × days,
+participating activity travelers and shared/per-person fares are computed on the
+backend. Group totals and equal shares include contingency (10% of the subtotal
+by default). Selected quote amounts are included once; activity group amounts
+assume per-person headline fares and require confirmation of coverage.
+
+The signed `grounding`/`groundingProof` metadata fits existing itinerary/version
+JSON storage; it adds no migration. Saving validates formulas and category totals
+independently. Manual changes downgrade unsupported claims to user estimates.
+Reference caches are backend-only, bounded and keyed by destination/coordinates
+(6 hours fresh, 24 hours stale fallback). Existing quote caches use trip parameters.
+Food menus, local fares, complete mandatory fees and street/transit routing need
+additional source integrations. Amadeus credentials enable provider quotes;
+neither AI nor a venue price level establishes an actual price.
+
 The unified travel-options endpoint normalizes Amadeus Flight Offers Search and
 Tours and Activities results into stable comparison fields with provider, currency,
 live/test status, and `fetchedAt` metadata. It also includes approved local activity
 listings when available. Provider failures return explicit unavailable messages and
 never fabricate flight, activity, or price data.
+
+Starting locations use worldwide destination search or browser geolocation requested
+only when the traveler clicks **Use my current location**. Reverse geocoding uses
+OpenStreetMap Nominatim to label the supplied coordinates; it does not supply a
+default location. Permission denial or provider failure leaves manual entry available.
+Selected origin coordinates drive Amadeus nearest-airport lookup, independently
+of destination coordinates. Live flight comparisons still require the existing
+`AMADEUS_API_KEY` and `AMADEUS_API_SECRET`; no new location credentials are required.
+Origin selections and pending lookups are cleared when the authenticated account
+changes. Saved trip data remains associated with its own account.
 
 ## Provider caching and freshness
 
@@ -130,15 +319,17 @@ low-confidence, deterministic calendar-based estimates, not live foot-traffic or
 venue-capacity data. Their timing suggestions remain advisory and never rewrite
 itinerary activities automatically.
 
-Run local logic tests with `npm.cmd test`. After seeding the demo records, run
-the Neon-backed persistence checks with `npm.cmd run test:integration`.
+Run local logic tests with `npm.cmd test`. Run persistence checks only against
+an isolated test database. Seed it using the explicit demo opt-in and unique
+passwords described above, then export the same values when running
+`npm.cmd run test:integration`.
 
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs unit tests, TypeScript checks, and the production
 build on pushes and pull requests. Its database job starts an ephemeral PostgreSQL
-16 service, applies every committed Prisma migration, seeds deterministic demo
-records, and runs the integration suite. It never uses the production Neon
+16 service, applies every committed Prisma migration, generates unique passwords,
+seeds demo records, and runs the integration suite. It never uses the production Neon
 database or production provider secrets.
 
 The frontend repository's E2E workflow checks this repository out beside the
@@ -150,14 +341,167 @@ the workflow's normal GitHub token automatically.
 Production environment gates, migration order, health monitoring, smoke tests,
 and non-destructive rollback steps are documented in `DEPLOYMENT.md`.
 
-Authentication codes are stored only as SHA-256 hashes in the `account_tokens`
-table. Verification codes expire after 30 minutes; password-reset codes expire
+Authentication codes are stored only as HMAC-SHA-256 hashes in the `account_tokens`
+table. Verification codes are bound to the user and email-verification purpose,
+expire after 5 minutes, and allow at most 5 attempts per issued code. Resending
+requires a 60-second cooldown and replaces the previous code. Consumption is
+atomic, including overlapping requests. Password-reset codes expire
 after 15 minutes and are single-use. A successful password reset increments the
 user session version so previously issued session cookies stop authorizing requests.
-Development responses expose test codes when transactional email is not configured;
-production startup requires `EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, and
-`EMAIL_FROM`. Token hashes use a separate production `ACCOUNT_TOKEN_SECRET` so
+Codes are delivered only by email and never returned to the browser, in any
+environment. Missing configuration or delivery failures return an error; failed
+verification deliveries invalidate the undelivered code and leave the account
+unverified. Configure backend `.env` with `EMAIL_PROVIDER=resend`, `RESEND_API_KEY`,
+and `EMAIL_FROM` using a sender verified in Resend, or use the development Gmail
+SMTP option below, then restart the API.
+Production startup also requires a separate `ACCOUNT_TOKEN_SECRET` so
 database access alone is not enough to test guessed recovery codes offline.
+
+If registration returns 503 while `/health` returns 200, inspect the auth error
+response: database health does not check email configuration. The
+`configuration_required` email error means setup is needed, rather than a wrong
+password or a temporary failure to retry. Configure the selected provider's
+variables below. For Resend, obtain a sending API key, verify the sender domain,
+and use an address on that domain for `EMAIL_FROM`; Gmail development uses an
+App Password instead. Restart the backend after
+editing `.env`. Set `EMAIL_SMOKE_TO` to an inbox you control and run
+`npm run email:smoke` to check delivery. Never put these credentials in frontend
+environment variables. Production also requires separate strong `SESSION_SECRET`
+and `ACCOUNT_TOKEN_SECRET` values (at least 32 characters each).
+
+### Development Gmail SMTP without purchasing a domain
+
+The explicit `gmail` provider sends real messages through `smtp.gmail.com:465`
+with authenticated TLS. No domain purchase or Resend key is needed. It is for
+development only; production continues to require Resend and a verified domain.
+Existing pending accounts can use Resend Code after changing providers; do not
+delete accounts, change verification status, or re-register to switch providers.
+
+1. Choose a personal Gmail account to send TravelMate emails. Enable
+   [Google 2-Step Verification](https://myaccount.google.com/security), then create
+   an [App Password](https://myaccount.google.com/apppasswords) named TravelMate
+   development. Use that 16-character App Password, never the normal Google
+   password. Spaces Google shows between groups may be included. If the option
+   is absent, organization policies, Advanced Protection, or security-key-only
+   2-Step Verification may prevent it; use an eligible personal account.
+   [Google setup instructions](https://support.google.com/accounts/answer/185833).
+2. Edit **backend `.env` only**, replacing placeholders locally:
+
+   ```dotenv
+   NODE_ENV=development
+   EMAIL_PROVIDER=gmail
+   SMTP_USER=YOUR_SENDING_ACCOUNT@gmail.com
+   SMTP_PASS=YOUR_GOOGLE_APP_PASSWORD
+   EMAIL_FROM="TravelMate <YOUR_SENDING_ACCOUNT@gmail.com>"
+   EMAIL_SMOKE_TO=bjake1051@gmail.com
+   ```
+
+   `EMAIL_FROM` must match `SMTP_USER`. The recipient may be a different email
+   address. `EMAIL_SMOKE_TO` is only for the smoke test; registration and resend
+   always deliver to the pending user's stored registration email. Leave existing
+   Resend settings intact if desired; they are ignored while `gmail` is selected.
+   Keep credentials out of frontend variables, Git, logs, and chat. Gmail App
+   Passwords are revoked when the Google account password changes.
+3. Restart the backend. Run `npm.cmd run email:check`, then
+   `npm.cmd run email:smoke` from the backend directory. The first command only
+   validates configuration; the second sends a harmless email without a code.
+   Check the recipient inbox/spam folder. SMTP acceptance does not prove inbox
+   delivery. Outbound TLS connections to `smtp.gmail.com:465` must be allowed.
+4. Use Resend Code for an existing pending account, wait for its real email, and
+   enter the emailed code within 5 minutes. The 60-second resend cooldown,
+   3-per-hour account limit, 5 verification attempts, single use, and replacement
+   of older codes apply to both providers. Failed SMTP sends return an error and
+   expire the undelivered code. An already verified account should sign in.
+
+`email:check` reports missing/invalid variable names without printing values.
+`smtp_authentication_failed` means check the sending account and App Password;
+`smtp_connection_or_delivery_failed` means inspect connectivity or Gmail sending
+limits. SMTP raw responses and credentials are never written to application logs.
+The API and smoke script load backend `.env` by file location; injected process
+environment variables take precedence. No provider switches automatically.
+
+`npm run dev` watches backend `src/` and `.env` and restarts the API when they change.
+Dependency changes in `node_modules/` do not trigger restarts during sign-in.
+This also works when launched by the frontend development script. Development startup
+logs `email_configuration` with the provider, invalid/missing variable names,
+and names of process environment variables overriding `.env`; values are never
+logged. If the smoke test works but a running API still uses old settings,
+restart an API started before this watcher was installed. A frontend launcher
+may reuse an independently running API; its `/health` check alone does not
+validate email configuration. Confirm `BACKEND_URL` points to that backend.
+Remove obsolete process-level overrides from the terminal used to start the API
+and restart it; `.env` intentionally does not override injected deployment values.
+
+### Saved-trip feedback
+
+Travelers can use **Rate this trip** on a saved trip or its itinerary workspace.
+The form loads existing feedback and lets the traveler update its interactive
+1–5 star rating, category, and 10–2000 character comment. The backend uses the
+session's user ID and checks saved-trip ownership; client-supplied identity or
+sentiment is ignored. A database unique constraint and transaction lock enforce
+one entry per user/trip, including simultaneous submissions.
+
+`GET /api/feedback/itinerary/:id` reads the traveler's own existing feedback;
+`POST /api/feedback` creates or updates it. Admin-only `GET /api/feedback` provides
+the paginated, filtered User Feedback table, and `GET /api/feedback/:id/itinerary`
+opens the linked itinerary. Ratings do not imply sentiment analysis: entries
+show **Not analyzed** until an actual analysis service is integrated. Submission
+time is preserved when editing; edits also have an updated timestamp and audit.
+
+Deploy with `npm run db:migrate` and `npm run db:generate`. The new migrations add
+the per-user/trip uniqueness constraint, update timestamp, and `not_analyzed`
+sentiment. Old sentiment labels inferred solely from stars are reset. The
+configured development database migrations have already been applied.
+
+### Configure Resend and run the email smoke test
+
+1. In the [Resend Domains dashboard](https://resend.com/domains), add a domain or
+   subdomain you own. Copy the exact DKIM and SPF DNS records shown by Resend to
+   your DNS host and wait until sending is verified. Your personal Gmail address
+   can be the recipient, but Gmail's domain cannot be your verified sender domain.
+   See [Resend's domain verification instructions](https://resend.com/docs/add-a-domain).
+2. In the [Resend API Keys dashboard](https://resend.com/api-keys), create a key
+   with **Sending access** in the same account/team that owns the verified domain.
+   If the key is restricted to a domain, select the domain used by `EMAIL_FROM`.
+   Store the real key privately when it is created; it is shown only once.
+   See [Resend's API key instructions](https://resend.com/docs/create-an-api-key).
+3. Edit the existing **backend** `.env`; do not overwrite your database or other
+   settings. If no `.env` exists, copy `.env.example` first. Set:
+   - `EMAIL_PROVIDER=resend`
+   - `RESEND_API_KEY` to your real Resend key.
+   - `EMAIL_FROM` to a sender on the verified domain, optionally formatted as
+     `TravelMate <your-sender@your-verified-domain>` with your real address.
+   - `EMAIL_SMOKE_TO` to a real inbox you control. This is required only for testing.
+   The template deliberately leaves the last three values empty. Editing
+   `.env.example` alone does not configure the application.
+4. From the backend directory, run `npm.cmd run email:check` to validate local
+   configuration without sending. Then run `npm.cmd run email:smoke`, check the
+   inbox/spam folder and Resend delivery status, and restart the API.
+
+The script loads `travelmate-backend-api/.env` relative to its own location,
+including when launched from another working directory. Existing process/host
+environment variables take precedence over the file. If a corrected `.env` still
+fails validation, correct or unset the corresponding old shell/host variable.
+No values are printed. Local checks validate syntax and required settings; only
+Resend can confirm key validity, permissions, and sender-domain verification.
+API acceptance is distinct from inbox delivery. Credentials stay in backend
+environment variables; never use `NEXT_PUBLIC_` for them or commit your `.env`.
+
+The `resend.dev` test sender is not accepted for account email configuration:
+Resend restricts it to your Resend account inbox, which can make a smoke test work
+while verification fails for a different registration address. Use your own
+verified sender domain. See [Resend's test-domain restriction](https://resend.com/docs/knowledge-base/403-error-resend-dev-domain).
+Sending-only API keys cannot retrieve delivery history; inspect email events in
+the Resend dashboard without changing the app key's permissions. Provider-accepted
+verification requests return `emailAccepted=true`; an ineligible/already verified
+account returns `emailAccepted=false` and never claims that an email was sent.
+Safe logs record provider status/reason and, when present, the provider receipt ID.
+They omit credentials, message bodies, codes, and recipient addresses.
+
+Safe `auth_dependency_unavailable` log events identify the auth action and failed
+operation (email configuration, rate-limit database writes, account lookup, or
+token operations), and share the HTTP request ID without logging account inputs,
+passwords, codes, or credential values.
 # Account roles
 
 TravelMate supports traveler and admin accounts through one login endpoint.
@@ -185,3 +529,22 @@ an `approved` or `rejected` decision and a 10–2000 character message. Approval
 restores access; rejection keeps the suspension. Both decisions send an in-app
 notification. Manual restoration also closes pending appeals. Apply all Prisma
 migrations before using this flow.
+
+Trip completion uses the additive 20261008000000_completed_trips migration (TripStatus.completed and trips.completed_at). The owned traveler actions complete-trip and reopen-trip persist completion or undo it. Lifecycle writes acquire a row lock; repeated completion preserves its timestamp. Archiving keeps completion metadata, and restore-trip returns completed travel to Completed. Updates and version restoration require active status. Summary and detail responses expose optional completedAt.
+
+
+## Planning and visited-place improvements (2026-10-08)
+
+- Paid subscriptions are excluded at the user's request. No paid plans, checkout, billing status, or entitlements are implemented.
+- Cloudinary is not configured: no SDK, integration, cloud name, or credentials were found in the code or environment. Licensed Commons and local images use Next's responsive optimizer at quality 75, AVIF/WebP negotiation, four-hour minimum server cache, native lazy loading, eager modal heroes, stable placeholders and retry fallbacks. Real-provider hotel photos continue to display directly under provider terms; URL metadata and attribution are preserved without downloading/storing hotel images.
+- An optional starting city is in the planner and is sent to the grounded AI request even without a flight selection. The same origin remains available in flight comparison. It gives departure context; intercity arrival times and routes are not claimed as verified.
+- Travel pace caps catalog stops at 2 (relaxed), 3 (balanced), or 4 (active) per day. Relaxed schedules add a 30-minute transfer buffer. The existing city/country grounding, duplicate-place, opening-reference, date and party checks remain in place.
+- Daily cards and details show activity order, proposed local time, duration, location, photo/fallback, source-aware cost, map and explicit visit controls. Timing-only edits retain verified place/photo data. Custom identity changes remove verification. Reordering reschedules timed stops; legacy visits get an explicit 30-minute estimate requiring review. Browser and server enforce same-day duration and transfer/overlap checks. Buffers based on straight-line walking are estimates, not live routes. Flexible entries and daily allowances have no fixed time slot.
+- Save retries use a canonical content hash by default, or a payload-bound saveKey. The database unique key is per user; concurrent retries return one saved trip and create one version. Use Duplicate for an intentional identical copy. Existing historical trips remain untouched.
+- Visited places are stored separately from saved/completed plans. Recording a visit requires an explicit past/current date. Unique user/place/date keys prevent duplicates and retain return visits on different dates. Known Wikidata identities and coordinates are derived only from server-signed saved itineraries. Manual records are labeled as entered by the user. History supports search, pagination, removal and reopening an associated trip; deleting a trip retains its visits with the association cleared.
+- Visit opens Google Maps directly using verified coordinates or place plus destination. It never records a visit. Mark as visited is a separate confirmation. Save itinerary changes before recording a place from that plan; stale activity identity is rejected.
+- Traveler navigation now includes Visited places, Preferences and Feedback, preserving Home, Planner, Saved trips, Notifications, Budget review, Travel options and Account. The remaining itinerary hotel booking button is removed; map access remains. Backend booking actions remain disabled.
+
+Optional Cloudinary integration would need a cloud name and an approved delivery/upload strategy for licensed assets. Authenticated uploads require an API key and API secret held only on the server. Do not proxy or upload provider hotel media without permission. See [Cloudinary image transformations](https://cloudinary.com/documentation/image_transformations) and [Google Maps URL parameters](https://developers.google.com/maps/documentation/urls/get-started).
+
+Database migration: 20261008120000_visited_places_save_keys (additive; applied to the configured database). Routes: GET /api/platform/visited-places?q=&cursor= and authenticated platform actions record-visit / remove-visit. Record from a saved trip with tripId, dayIndex, activityIndex, activityTitle, optional placeId; or manually with name and destination. Both require visitDate and optional IANA timeZone. Only the current traveler can read/remove records. API contracts are regenerated from OpenAPI.

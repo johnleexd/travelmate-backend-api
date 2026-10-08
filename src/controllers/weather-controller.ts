@@ -1,5 +1,5 @@
 import { allowRequest } from '../middlewares/rate-limit-middleware.ts';
-import { requireUser } from '../middlewares/auth-middleware.ts';
+import { currentUser } from '../middlewares/auth-middleware.ts';
 import { validateWeatherDateRange, weatherForTripDates } from '../services/weather/weather-domain.ts';
 import { configuredWeatherProviders, resolveWeather } from '../services/weather/weather-service.ts';
 import { estimateCrowdRange } from '../services/crowd/crowd-service.ts';
@@ -8,7 +8,7 @@ import { PROVIDER_CACHE_POLICIES } from '../services/cache/policies.ts';
 import { cachePolicyLabel, withProviderCache, type FreshnessMetadata } from '../services/cache/provider-cache.ts';
 
 export async function GET(request: Request) {
-  const user = await requireUser(request, 'traveler').catch(() => null);
+  const user = await currentUser(request, 'traveler');
   if (!user) return Response.json({ error: 'Unauthorized.' }, { status: 401 });
   if (!await allowRequest(`weather:${user.id}`, 30, 60_000)) return Response.json({ error: 'Too many weather requests.' }, { status: 429 });
 

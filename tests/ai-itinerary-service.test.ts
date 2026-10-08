@@ -3,7 +3,8 @@ import test from 'node:test';
 import { generateValidatedItinerary } from '../src/services/ai/itinerary-generator.ts';
 import { ItinerarySchemaError, parseGeneratedItinerary } from '../src/services/ai/itinerary-schema.ts';
 import type { AIGenerationRequest, AIItineraryProvider } from '../src/services/ai/provider.ts';
-import { GeminiItineraryProvider, mockItinerariesEnabled, resolveAIProviders } from '../src/services/ai/provider.ts';
+import { GeminiItineraryProvider, OpenAIItineraryProvider, mockItinerariesEnabled, resolveAIProviders } from '../src/services/ai/provider.ts';
+import { AIProviderError } from '../src/services/ai/provider-error.ts';
 
 function validItinerary() {
   const activities = (label: string) => [
@@ -88,6 +89,62 @@ test('Gemini errors retain the provider diagnostic without exposing credentials'
     assert.doesNotMatch((error as Error).message, /secret-key/);
     return true;
   });
+});
+
+test('Gemini generation constrains every day, including the final day, to 3–5 activities', async () => {
+  let body: Record<string, any> = {};
+  const provider = new GeminiItineraryProvider('fixture-key', undefined, async (_input, init) => {
+    body = JSON.parse(String(init?.body));
+    return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(validItinerary()) }] } }] });
+  });
+  await generateValidatedItinerary({ provider, systemPrompt: 'Rules', userPrompt: 'Trip', ...context });
+  const days = body.generationConfig.responseJsonSchema.properties.days;
+  assert.match(days.description, new RegExp(`Exactly ${context.tripDays} consecutive days`));
+  assert.equal(days.minItems, undefined);
+  assert.equal(days.maxItems, undefined);
+  assert.equal(days.items.properties.activities.minItems, 3);
+  assert.equal(days.items.properties.activities.maxItems, 5);
+});
+
+test('an incomplete final day is repaired before an itinerary can be returned', async () => {
+  const incomplete = validItinerary();
+  incomplete.days[1].activities.pop();
+  incomplete.days[1].totalCost = incomplete.days[1].activities.reduce((sum, item) => sum + item.estimatedCost, 0);
+  const provider = new SequenceProvider([JSON.stringify(incomplete), JSON.stringify(validItinerary())]);
+  const result = await generateValidatedItinerary({ provider, systemPrompt: 'Rules', userPrompt: 'Trip', ...context });
+  assert.equal(result.days[1].activities.length, 3);
+  assert.equal(provider.requests.length, 2);
+  assert.match(provider.requests[1].userPrompt, /days\.1\.activities/);
+});
+
+test('temporary provider failures are retried once without changing the trip request', async () => {
+  let requests = 0;
+  const provider = new OpenAIItineraryProvider('fixture-key', undefined, async () => ++requests === 1
+    ? Response.json({ error: { message: 'Temporarily overloaded.' } }, { status: 503, headers: { 'retry-after': '0' } })
+    : Response.json({ choices: [{ message: { content: JSON.stringify(validItinerary()) } }] }));
+  const result = await generateValidatedItinerary({ provider, systemPrompt: 'Rules', userPrompt: 'Trip', ...context });
+  assert.equal(requests, 2);
+  assert.equal(result.days.length, context.tripDays);
+});
+
+test('authentication, billing, and long retry delays do not trigger automatic paid requests', async () => {
+  for (const [status, code, retryAfter] of [[401, '', '0'], [429, 'insufficient_quota', '0'], [503, '', '30']] as const) {
+    let requests = 0;
+    const provider = new OpenAIItineraryProvider('fixture-key', undefined, async () => {
+      requests++;
+      return Response.json({ error: { code, message: 'Service rejected the request.' } }, { status, headers: { 'retry-after': retryAfter } });
+    });
+    await assert.rejects(generateValidatedItinerary({ provider, systemPrompt: '', userPrompt: '', ...context }), AIProviderError);
+    assert.equal(requests, 1);
+  }
+});
+
+test('an expired generation deadline prevents starting another provider request', async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const provider = new SequenceProvider([JSON.stringify(validItinerary())]);
+  await assert.rejects(generateValidatedItinerary({ provider, systemPrompt: '', userPrompt: '', ...context, signal: controller.signal }));
+  assert.equal(provider.requests.length, 0);
 });
 
 test('strict itinerary schema enforces the requested currency', () => {

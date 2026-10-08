@@ -1,3 +1,5 @@
+import { providerResponseError } from './provider-error.ts';
+
 export type AIProviderName = 'openai' | 'gemini';
 
 export interface AIGenerationRequest {
@@ -5,6 +7,8 @@ export interface AIGenerationRequest {
   userPrompt: string;
   tripDays: number;
   mode: 'initial' | 'repair';
+  responseSchema?: Record<string, unknown>;
+  signal?: AbortSignal;
 }
 
 export interface AIItineraryProvider {
@@ -43,18 +47,6 @@ function geminiContent(value: unknown): string {
   }).join('');
 }
 
-async function geminiError(response: Response): Promise<Error> {
-  let message = '';
-  try {
-    const payload = object(await response.json());
-    const error = object(payload?.error);
-    if (typeof error?.message === 'string') message = error.message.trim().slice(0, 500);
-  } catch {
-    // Preserve the HTTP status when Gemini returns a non-JSON error.
-  }
-  return new Error(`Gemini request failed (${response.status})${message ? `: ${message}` : '.'}`);
-}
-
 export class OpenAIItineraryProvider implements AIItineraryProvider {
   readonly name = 'openai' as const;
   private readonly apiKey: string;
@@ -78,16 +70,16 @@ export class OpenAIItineraryProvider implements AIItineraryProvider {
       body: JSON.stringify({
         model: this.model,
         temperature: request.mode === 'repair' ? 0.2 : 0.7,
-        max_tokens: Math.min(8192, 2048 + request.tripDays * 450),
+        max_tokens: Math.min(8192, 2048 + request.tripDays * 800),
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: request.systemPrompt },
           { role: 'user', content: request.userPrompt },
         ],
       }),
-      signal: AbortSignal.timeout(45_000),
+      signal: request.signal ? AbortSignal.any([request.signal, AbortSignal.timeout(45_000)]) : AbortSignal.timeout(45_000),
     });
-    if (!response.ok) throw new Error(`OpenAI request failed (${response.status}).`);
+    if (!response.ok) throw await providerResponseError('OpenAI', response, this.apiKey);
     const content = openAIContent(await response.json());
     if (!content.trim()) throw new Error('OpenAI returned an empty response.');
     return content;
@@ -123,12 +115,13 @@ export class GeminiItineraryProvider implements AIItineraryProvider {
             temperature: 1,
             maxOutputTokens: Math.min(32_768, 4_096 + request.tripDays * 2_048),
             responseMimeType: 'application/json',
+            ...(request.responseSchema ? { responseJsonSchema: request.responseSchema } : {}),
           },
         }),
-        signal: AbortSignal.timeout(45_000),
+        signal: request.signal ? AbortSignal.any([request.signal, AbortSignal.timeout(45_000)]) : AbortSignal.timeout(45_000),
       },
     );
-    if (!response.ok) throw await geminiError(response);
+    if (!response.ok) throw await providerResponseError('Gemini', response, this.apiKey);
     const content = geminiContent(await response.json());
     if (!content.trim()) throw new Error('Gemini returned an empty response.');
     return content;

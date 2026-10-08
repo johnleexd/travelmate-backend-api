@@ -1,3 +1,5 @@
+import { countryForQuery } from '../destination/destination-index.ts';
+
 export interface FlightOption {
   id: string;
   provider: 'amadeus';
@@ -34,13 +36,19 @@ export interface ActivityOption {
 }
 
 export interface AccommodationOffer {
+  originalName?: string;
+  nameSource?: 'provider-english' | 'transliterated' | 'unavailable';
   id: string;
   hotelId: string;
   offerId: string;
   name: string;
-  type: 'Hotel' | 'Hostel' | 'Condo' | 'Apartment' | 'Resort' | 'Accommodation';
+    type: 'Hotel' | 'Hostel' | 'Condo' | 'Apartment' | 'Resort' | 'Guesthouse' | 'Accommodation';
   typeSource: 'name-inferred';
   rating?: number;
+  amenities?: string[];
+  latitude?: number;
+  longitude?: number;
+  distanceKm?: number;
   address: string;
   checkInDate: string;
   checkOutDate: string;
@@ -62,6 +70,8 @@ export interface FlightSearchInput {
   returnDate?: string;
   adults: number;
   currency: string;
+  originCoordinates?: { latitude: number; longitude: number };
+  originCountryCode?: string;
 }
 
 export interface ActivitySearchInput {
@@ -77,6 +87,7 @@ export interface AccommodationSearchInput {
   checkInDate: string;
   checkOutDate: string;
   adults: number;
+  roomQuantity?: number;
   nights: number;
   currency: string;
 }
@@ -125,6 +136,7 @@ function safeUrl(value: unknown): string | undefined {
 
 export function inferAccommodationType(name: string): AccommodationOffer['type'] {
   const normalized = name.toLowerCase();
+  if (/\b(guesthouse|guest house|guest-house)\b/.test(normalized)) return 'Guesthouse';
   if (/\bhostel\b/.test(normalized)) return 'Hostel';
   if (/\b(condo|condominium)\b/.test(normalized)) return 'Condo';
   if (/\b(apartment|apartments|aparthotel|apart-hotel|residence)\b/.test(normalized)) return 'Apartment';
@@ -200,7 +212,7 @@ export function normalizeActivityOffers(payload: unknown, destination: string, f
 
 export function normalizeAccommodationOffers(
   payload: unknown,
-  input: Pick<AccommodationSearchInput, 'destination' | 'nights' | 'currency'>,
+    input: Pick<AccommodationSearchInput, 'destination' | 'nights' | 'currency'> & { roomQuantity?: number },
   fetchedAt: string,
   isLive: boolean,
 ): AccommodationOffer[] {
@@ -217,11 +229,12 @@ export function normalizeAccommodationOffers(
     const hotelId = text(hotel?.hotelId);
     const offerId = text(offer?.id);
     const name = text(hotel?.name).trim();
-    const rating = Number(hotel?.rating);
+    const rating = hotel?.rating === undefined || hotel?.rating === null || hotel?.rating === '' ? NaN : Number(hotel.rating);
     const addressData = object(hotel?.address);
     const address = array(addressData?.lines).map(text).filter(Boolean).join(', ');
-    const total = amount(price?.total);
-    if (!hotelId || !offerId || !name || total === undefined || total <= 0) return [];
+      const roomTotal = amount(price?.total);
+      if (!hotelId || !offerId || !name || roomTotal === undefined || roomTotal <= 0 || hotelResult?.available !== true || !text(price?.currency)) return [];
+      const total = Math.round(roomTotal * (input.roomQuantity || 1) * 100) / 100;
     return [{
       id: `amadeus:${hotelId}:${offerId}`,
       hotelId,
@@ -229,16 +242,18 @@ export function normalizeAccommodationOffers(
       name,
       type: inferAccommodationType(name),
       typeSource: 'name-inferred',
-      ...(Number.isFinite(rating) && rating >= 0 && rating <= 5 ? { rating } : {}),
-      address: address || input.destination,
+      ...(Number.isFinite(rating) && rating > 0 && rating <= 5 ? { rating } : {}),
+      ...(Array.isArray(hotel?.amenities) ? { amenities: hotel.amenities.filter((item): item is string => typeof item === 'string' && item.length <= 100).slice(0, 12) } : {}),
+      ...(typeof hotel?.latitude === 'number' && Number.isFinite(hotel.latitude) && Math.abs(hotel.latitude) <= 90 && typeof hotel?.longitude === 'number' && Number.isFinite(hotel.longitude) && Math.abs(hotel.longitude) <= 180 ? { latitude: hotel.latitude, longitude: hotel.longitude } : {}),
+      address: address || 'Not available; confirm with the hotel',
       checkInDate: text(offer?.checkInDate),
       checkOutDate: text(offer?.checkOutDate),
-      nightlyRate: Math.round(total / input.nights),
-      total: Math.round(total),
+        nightlyRate: Math.round(total / input.nights * (['JPY','KRW'].includes(text(price?.currency)) ? 1 : 100)) / (['JPY','KRW'].includes(text(price?.currency)) ? 1 : 100),
+        total,
       currency: text(price?.currency) || input.currency,
       roomDescription: text(description?.text).replace(/\s+/g, ' ').trim() || 'Available room',
       cancellationPolicy: text(cancellationDescription?.text) || 'Check the provider terms before booking.',
-      available: hotelResult?.available !== false,
+        available: true,
       isLive,
       source: 'amadeus',
       fetchedAt,
@@ -266,9 +281,11 @@ export class AmadeusTravelProvider implements TravelProvider {
   readonly isLive: boolean;
 
   private async locationCode(place: string): Promise<string | null> {
-    const keywords = place.split(',').map((part) => part.replace(/[^a-z\s-]/gi, '').trim()).filter((part) => part.length >= 2);
+    const parts = place.split(',').map(part => part.trim());
+    const countryCode = parts.length > 1 ? countryForQuery(parts.at(-1)!) : undefined;
+    const keywords = [parts[0].replace(/[^\p{L}\p{N}\s-]/gu, '').trim()].filter(part => part.length >= 2);
     for (const keyword of keywords) {
-      const params = new URLSearchParams({ subType: 'CITY,AIRPORT', keyword: keyword.slice(0, 40), view: 'LIGHT' });
+      const params = new URLSearchParams({ subType: 'CITY,AIRPORT', keyword: keyword.slice(0, 40), view: 'LIGHT', ...(countryCode ? { countryCode } : {}) });
       const response = await this.fetchImplementation(`${this.baseUrl}/v1/reference-data/locations?${params}`, {
         headers: { Authorization: `Bearer ${this.accessToken}` }, signal: AbortSignal.timeout(12_000),
       });
@@ -280,14 +297,32 @@ export class AmadeusTravelProvider implements TravelProvider {
     return null;
   }
 
+  private async originAirport(input: FlightSearchInput): Promise<string | null> {
+    if (!input.originCoordinates) return this.locationCode(input.origin);
+    const { latitude, longitude } = input.originCoordinates;
+    if (!Number.isFinite(latitude) || Math.abs(latitude) > 90 || !Number.isFinite(longitude) || Math.abs(longitude) > 180) throw new Error('Invalid origin coordinates.');
+    // Resolve the user's selected point, not the first airport sharing a city name.
+    const params = new URLSearchParams({ latitude: String(latitude), longitude: String(longitude), radius: '500', sort: 'distance' });
+    const response = await this.fetchImplementation(`${this.baseUrl}/v1/reference-data/locations/airports?${params}`, {
+      headers: { Authorization: `Bearer ${this.accessToken}` }, signal: AbortSignal.timeout(12000),
+    });
+    if (!response.ok) throw new Error(`Origin airport lookup failed (${response.status}).`);
+    const airports = array(object(await response.json())?.data).map(object).filter((item): item is Record<string, unknown> => Boolean(item));
+    const valid = airports.filter(item => /^[A-Z]{3}$/.test(text(item.iataCode)));
+    const domestic = input.originCountryCode ? valid.filter(item => text(object(item.address)?.countryCode).toUpperCase() === input.originCountryCode) : [];
+    // Places without a commercial airport can use a nearby airport across a border.
+    const candidates = domestic.length ? domestic : valid;
+    return candidates.length ? text(candidates[0].iataCode) : null;
+  }
+
   async searchFlights(input: FlightSearchInput, fetchedAt: string): Promise<FlightOption[]> {
-    const [originCode, destinationCode] = await Promise.all([this.locationCode(input.origin), this.locationCode(input.destination)]);
+    const [originCode, destinationCode] = await Promise.all([this.originAirport(input), this.locationCode(input.destination)]);
     if (!originCode || !destinationCode) throw new Error('No airport or city code was found for the selected route.');
     const params = new URLSearchParams({
       originLocationCode: originCode,
       destinationLocationCode: destinationCode,
       departureDate: input.departureDate,
-      adults: String(input.adults),
+        adults: String(input.adults),
       currencyCode: input.currency,
       max: '10',
     });
@@ -308,6 +343,20 @@ export class AmadeusTravelProvider implements TravelProvider {
     return normalizeActivityOffers(await response.json(), input.destination, fetchedAt, this.isLive).slice(0, 12);
   }
 
+  async revalidateAccommodationOffer(offerId: string, input: AccommodationSearchInput, expectedHotelId: string) {
+    const response = await this.fetchImplementation(this.baseUrl + '/v3/shopping/hotel-offers/' + encodeURIComponent(offerId) + '?lang=EN', {
+      headers: { Authorization: 'Bearer ' + this.accessToken, 'Accept-Language': 'en' }, cache: 'no-store', signal: AbortSignal.timeout(20000),
+    });
+    if (!response.ok) throw new Error('This room quote is no longer available. Refresh accommodations.');
+    const payload = object(await response.json());
+    const raw = object(payload?.data);
+    const result = normalizeAccommodationOffers({ data: raw ? [raw] : [] }, input, new Date().toISOString(), this.isLive).find(offer => offer.hotelId === expectedHotelId && offer.offerId === offerId);
+    if (!result) throw new Error('The room is no longer available for your dates. Refresh accommodations.');
+    const { localizePropertyNames } = await import('../destination/accommodation-localization.ts');
+    const localized = (await localizePropertyNames([{ ...result, nameSource: 'provider-english' as AccommodationOffer['nameSource'] }]))[0];
+    return { ...localized, name: localized.nameSource === 'unavailable' ? 'Accommodation name unavailable in English' : localized.name };
+  }
+
   async searchAccommodations(input: AccommodationSearchInput, fetchedAt: string): Promise<AccommodationSearchResult> {
     const hotelListParams = new URLSearchParams({
       latitude: String(input.latitude),
@@ -316,7 +365,7 @@ export class AmadeusTravelProvider implements TravelProvider {
       radiusUnit: 'KM',
       hotelSource: 'ALL',
     });
-    const headers = { Authorization: `Bearer ${this.accessToken}` };
+    const headers = { Authorization: `Bearer ${this.accessToken}`, 'Accept-Language': 'en' };
     const hotelListResponse = await this.fetchImplementation(`${this.baseUrl}/v1/reference-data/locations/hotels/by-geocode?${hotelListParams}`, {
       headers, cache: 'no-store', signal: AbortSignal.timeout(15_000),
     });
@@ -330,22 +379,25 @@ export class AmadeusTravelProvider implements TravelProvider {
       .slice(0, 20);
     if (hotelIds.length === 0) return { accommodations: [], inventoryAvailable: true, hotelsFound: false };
 
-    const rooms = Math.min(9, Math.max(1, Math.ceil(input.adults / 2)));
+    const rooms = input.roomQuantity ?? Math.min(9, Math.max(1, Math.ceil(input.adults / 2)));
     const offerParams = new URLSearchParams({
       hotelIds: hotelIds.join(','),
-      adults: String(input.adults),
+      adults: String(Math.ceil(input.adults / rooms)),
       checkInDate: input.checkInDate,
       checkOutDate: input.checkOutDate,
       roomQuantity: String(rooms),
       currency: input.currency,
       bestRateOnly: 'true',
+      lang: 'EN',
     });
     const offersResponse = await this.fetchImplementation(`${this.baseUrl}/v3/shopping/hotel-offers?${offerParams}`, {
       headers, cache: 'no-store', signal: AbortSignal.timeout(20_000),
     });
-    if (!offersResponse.ok) return { accommodations: [], inventoryAvailable: true, hotelsFound: true };
+    if (!offersResponse.ok) return { accommodations: [], inventoryAvailable: false, hotelsFound: true };
+    const { localizePropertyNames } = await import('../destination/accommodation-localization.ts');
+    const localized = await localizePropertyNames(normalizeAccommodationOffers(await offersResponse.json(), { ...input, roomQuantity: rooms }, fetchedAt, this.isLive).filter(offer => hotelIds.includes(offer.hotelId)).map(offer => ({ ...offer, nameSource: 'provider-english' as AccommodationOffer['nameSource'] })));
     return {
-      accommodations: normalizeAccommodationOffers(await offersResponse.json(), input, fetchedAt, this.isLive),
+      accommodations: localized.map(offer => ({ ...offer, name: offer.nameSource === 'unavailable' ? 'Accommodation name unavailable in English' : offer.name })),
       inventoryAvailable: true,
       hotelsFound: true,
     };

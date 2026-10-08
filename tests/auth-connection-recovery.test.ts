@@ -36,7 +36,9 @@ after(async () => {
 test('session check recovers from P1017 without invalidating the session', async t => {
   let attempts = 0;
   const lookup = mockPrismaMethod(t, prisma.user, 'findFirst', async (query: { where: unknown }) => {
-    assert.deepEqual(query.where, { id: user.id, role: 'traveler', sessionVersion: 2 });
+    const { revokedSessions, ...where } = query.where as { revokedSessions: { none: { tokenHash: string } } };
+    assert.deepEqual(where, { id: user.id, role: 'traveler', sessionVersion: 2 });
+    assert.match(revokedSessions.none.tokenHash, /^[a-f0-9]{64}$/);
     if (++attempts === 1) throw { code: 'P1017' };
     return user;
   });
@@ -70,7 +72,30 @@ test('invalid and revoked sessions remain unauthorized', async t => {
   assert.equal(lookup.mock.callCount(), 1);
 });
 
+test('failed POST rate-limit database writes return retryable 503 with safe operation diagnostics', async t => {
+  const warnings: string[] = [];
+  t.mock.method(console, 'warn', (...args) => warnings.push(args.join(' ')));
+  mockPrismaMethod(t, prisma, '$queryRaw', async () => { throw { code: 'P1017' }; });
+  const lookup = mockPrismaMethod(t, prisma.user, 'findUnique', async () => { throw new Error('Must not reach password validation.'); });
+  const response = await fetch(`${baseUrl}/api/auth`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'login', email: user.email, password: 'PrivatePassword123!' }),
+  });
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).retryable, true);
+  assert.equal(response.headers.get('set-cookie'), null);
+  assert.equal(lookup.mock.callCount(), 0);
+  const diagnostic = warnings.find(value => value.startsWith('{'));
+  assert.ok(diagnostic);
+  assert.equal(JSON.parse(diagnostic).operation, 'rate_limit_ip');
+  assert.equal(JSON.parse(diagnostic).requestId, response.headers.get('x-request-id'));
+  assert.equal(warnings.join(' ').includes('PrivatePassword123!'), false);
+  assert.equal(warnings.join(' ').includes(user.email), false);
+});
+
 test('logout clears the app session and pending OAuth flow even while the database is unavailable', async t => {
+  t.mock.method(console, 'warn', () => {});
+  const revocation = mockPrismaMethod(t, prisma.revokedSession, 'upsert', async () => { throw { code: 'P1017' }; });
   const limiter = mockPrismaMethod(t, prisma, '$queryRaw', async () => { throw { code: 'P1017' }; });
   const lookup = mockPrismaMethod(t, prisma.user, 'findFirst', async () => { throw new Error('Logout must not require a user lookup.'); });
   const audit = mockPrismaMethod(t, prisma.auditEvent, 'create', async () => ({}));
@@ -79,12 +104,13 @@ test('logout clears the app session and pending OAuth flow even while the databa
     body: JSON.stringify({ action: 'logout' }),
   });
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { ok: true });
+  assert.deepEqual(await response.json(), { ok: true, sessionRevoked: false });
   const cookies = response.headers.getSetCookie();
   assert.equal(cookies.length, 2);
   assert.ok(cookies.some(cookie => cookie.startsWith('travelmate_session=;') && cookie.includes('Max-Age=0')));
   assert.ok(cookies.some(cookie => cookie.startsWith('travelmate_google_oauth=;') && cookie.includes('Max-Age=0')));
   assert.equal(limiter.mock.callCount(), 3);
+  assert.equal(revocation.mock.callCount(), 3);
   assert.equal(lookup.mock.callCount(), 0);
   assert.equal(audit.mock.callCount(), 0);
   const session = await fetch(`${baseUrl}/api/auth`);
@@ -144,11 +170,14 @@ test('Google sign-in can start after a nested driver connection failure', async 
   assert.equal(attempts, 2);
 
   mockPrismaMethod(t, prisma.auditEvent, 'create', async () => ({}));
+  mockPrismaMethod(t, prisma.revokedSession, 'upsert', async () => ({}));
+  mockPrismaMethod(t, prisma.revokedSession, 'deleteMany', async () => ({ count: 0 }));
   const logout = await fetch(`${baseUrl}/api/auth`, {
     method: 'POST', headers: { ...sessionHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'logout' }),
   });
   assert.equal(logout.status, 200);
+  assert.equal((await logout.json()).sessionRevoked, true);
   const next = await fetch(`${baseUrl}/api/auth/oauth/google`, { redirect: 'manual' });
   assert.equal(next.status, 302);
   const nextAuthorization = new URL(next.headers.get('location')!);

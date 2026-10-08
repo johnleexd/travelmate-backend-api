@@ -1,0 +1,28 @@
+name: travelmate-backend-api
+
+x-api: &api
+  image: ${TRAVELMATE_IMAGE:?Set TRAVELMATE_IMAGE to the Docker Hub image digest or release tag}
+  env_file:
+    - ${TRAVELMATE_ENV_FILE:-/root/env/travelmate-backend-api/.env}
+  environment:
+    NODE_ENV: production
+    PORT: "5000"
+  init: true
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  migrate:
+    <<: *api
+    profiles: ["tools"]
+    command: ["npm", "run", "db:migrate"]
+    restart: "no"
+    healthcheck:
+      disable: true
+
+  app:
+    <<: *api
+    ports:
+      - "127.0.0.1:${TRAVELMATE_PORT:-5000}:5000"
+    restart: unless-stopped
+    stop_grace_period: 30s

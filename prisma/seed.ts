@@ -1,9 +1,7 @@
 import 'dotenv/config';
-import { scryptSync } from 'node:crypto';
+import { randomBytes, scryptSync } from 'node:crypto';
 import { prisma } from '../src/lib/prisma.ts';
-
-const salt = 'travelmate-demo-salt';
-const passwordHash = scryptSync('Travel123!', salt, 64).toString('hex');
+import { demoSeedPasswords } from '../src/services/auth/demo-seed-policy.ts';
 
 const demoUsers = [
   { id: 'usr_traveler', name: 'Demo Traveler', email: 'traveler@travelmate.test', role: 'traveler' as const, trustScore: 72 },
@@ -23,7 +21,10 @@ const stays = [
 ];
 
 async function seed() {
+  const passwords = demoSeedPasswords(process.env);
   for (const user of demoUsers) {
+    const salt = randomBytes(16).toString('hex');
+    const passwordHash = scryptSync(passwords[user.role], salt, 64).toString('hex');
     await prisma.user.upsert({
       where: { email: user.email },
       update: {},
@@ -47,4 +48,5 @@ async function seed() {
 
 seed()
   .then(() => console.log('TravelMate Neon demo data is ready.'))
+  .catch(error => { console.error(error instanceof Error ? error.message : 'Demo seeding failed.'); process.exitCode = 1; })
   .finally(() => prisma.$disconnect());

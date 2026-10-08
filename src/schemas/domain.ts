@@ -1,6 +1,6 @@
 export type Role = 'traveler' | 'admin';
 export type ProfileStatus = 'unverified' | 'pending' | 'verified' | 'rejected';
-export type TripStatus = 'active' | 'archived';
+export type TripStatus = 'active' | 'archived' | 'completed';
 export type ItineraryVersionKind = 'saved' | 'regenerated' | 'manual_edit' | 'duplicated' | 'restored';
 export type GenerationStatus = 'pending' | 'completed' | 'failed';
 export type PaymentStatus = 'PENDING' | 'PAID_HELD' | 'Released' | 'FROZEN_HELD' | 'REFUNDED';
@@ -42,6 +42,8 @@ export interface PublicUser {
   profileStatus: ProfileStatus;
   trustScore: number;
   accountStatus: 'active' | 'suspended';
+  avatarUrl?: string;
+  createdAt?: string;
   bio?: string;
   phone?: string;
 }
@@ -124,9 +126,11 @@ export interface SavedTrip {
   partyType: PartyType;
   interests: string[];
   itinerary: unknown;
+  selectedAccommodation?: { name: string; address: string; selectionKind: 'planned' | 'quoted' };
   weather: unknown;
   status: TripStatus;
   archivedAt?: string;
+  completedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -189,7 +193,7 @@ export interface BudgetSplit {
 export function splitBudget(total: number, travelers = 1, days = 7): BudgetSplit {
   if (!Number.isFinite(total) || total <= 0) throw new Error('Budget must be positive.');
   if (!Number.isInteger(travelers) || travelers < 1 || travelers > 20) throw new Error('Travelers must be between 1 and 20.');
-  if (!Number.isInteger(days) || days < 1 || days > 14) throw new Error('Trip length must be between 1 and 14 days.');
+  if (!Number.isInteger(days) || days < 1 || days > 31) throw new Error('Trip length must be between 1 and 31 days.');
   const weights = { accommodation: 0.34, food: 0.22, activities: 0.2, transport: 0.14 };
   const accommodation = Math.round(total * weights.accommodation);
   const food = Math.round(total * weights.food);
@@ -231,6 +235,16 @@ export function allocateEqualShares(total: number, travelers: number, currency: 
   return Array.from({ length: travelers }, (_, index) => (base + (index < remainder ? 1 : 0)) / scale);
 }
 
+/** Allocate a stay quote across nights without treating nights as travelers. */
+export function allocateNightlyCosts(total: number, nights: number, currency: CurrencyCode): number[] {
+  if (!Number.isInteger(nights) || nights < 1 || nights > 30) throw new Error('Accommodation must cover between 1 and 30 nights.');
+  if (total < 0 || !hasValidCurrencyPrecision(total, currency)) throw new Error('Accommodation total has invalid currency precision.');
+  const scale = 10 ** currencyFractionDigits(currency);
+  const units = Math.round(total * scale);
+  const base = Math.floor(units / nights);
+  return Array.from({ length: nights }, (_, i) => (base + (i < units % nights ? 1 : 0)) / scale);
+}
+
 /** Preserve the relative mix of estimates while keeping their exact whole-peso sum under a cap. */
 export function capCostsToBudget(costs: number[], cap: number): number[] {
   const safeCosts = costs.map((cost) => Math.max(0, Math.round(Number.isFinite(cost) ? cost : 0)));
@@ -252,7 +266,7 @@ export function capCostsToBudget(costs: number[], cap: number): number[] {
 const DAILY_SPEND_WEIGHTS = [11, 14, 16, 13, 19, 17, 10] as const;
 
 export function allocateDailyBudget(total: number, reserve: number, days = 7): number[] {
-  if (!Number.isInteger(days) || days < 1 || days > 14) throw new Error('Trip length must be between 1 and 14 days.');
+  if (!Number.isInteger(days) || days < 1 || days > 31) throw new Error('Trip length must be between 1 and 31 days.');
   const spendable = Math.max(0, Math.round(total - reserve));
   const weights = Array.from({ length: days }, (_, index) => DAILY_SPEND_WEIGHTS[index % DAILY_SPEND_WEIGHTS.length]);
   const weightTotal = weights.reduce((sum, weight) => sum + weight, 0);
@@ -265,7 +279,9 @@ export function allocateDailyBudget(total: number, reserve: number, days = 7): n
   return daily;
 }
 
-type PublicUserSource = Omit<PublicUser, 'bio' | 'phone'> & {
+type PublicUserSource = Omit<PublicUser, 'bio' | 'phone' | 'avatarUrl' | 'createdAt'> & {
+  avatarUrl?: string | null;
+  createdAt?: Date | string | null;
   bio?: string | null;
   phone?: string | null;
 };
@@ -280,6 +296,8 @@ export function publicUser(user: PublicUserSource): PublicUser {
     profileStatus: user.profileStatus,
     trustScore: user.trustScore,
     accountStatus: user.accountStatus,
+    avatarUrl: user.avatarUrl ?? undefined,
+    createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt ?? undefined,
     bio: user.bio ?? undefined,
     phone: user.phone ?? undefined,
   };

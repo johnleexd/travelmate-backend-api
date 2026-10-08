@@ -44,7 +44,7 @@ export function validateWeatherDateRange(startDate: string | null, endDate: stri
     return { error: 'Provide a valid weather start and end date.' };
   }
   const days = Math.floor((new Date(`${endDate}T00:00:00.000Z`).getTime() - new Date(`${startDate}T00:00:00.000Z`).getTime()) / 86_400_000) + 1;
-  if (days > 14) return { error: 'Weather date range cannot exceed 14 days.' };
+  if (days > 31) return { error: 'Weather date range cannot exceed 31 days.' };
   return { startDate, endDate };
 }
 

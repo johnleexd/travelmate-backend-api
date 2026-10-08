@@ -1,4 +1,6 @@
 import { Router } from "express";
+import feedbackRoutes from './feedback-routes.ts';
+import navigationRoutes from './navigation-routes.ts';
 import appealRoutes from './appeal-routes.ts';
 import accommodationsRoutes from "./accommodations-routes.ts";
 import authRoutes from "./auth-routes.ts";
@@ -14,9 +16,11 @@ const apiRoutes = Router();
 apiRoutes.use('/account/appeal', appealRoutes);
 apiRoutes.use("/auth", authRoutes);
 apiRoutes.use("/platform", platformRoutes);
+apiRoutes.use("/feedback", feedbackRoutes);
 apiRoutes.use("/itinerary", itineraryRoutes);
 apiRoutes.use("/weather", weatherRoutes);
 apiRoutes.use("/locations", locationsRoutes);
+apiRoutes.use('/navigation', navigationRoutes);
 apiRoutes.use("/destination-context", destinationContextRoutes);
 apiRoutes.use("/accommodations", accommodationsRoutes);
 apiRoutes.use("/travel-options", travelOptionsRoutes);

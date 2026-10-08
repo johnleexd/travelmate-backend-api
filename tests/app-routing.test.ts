@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import { after, before, test } from "node:test";
 import app from "../src/app.ts";
+import { prisma } from "../src/lib/prisma.ts";
 
 let baseUrl = "";
 const server = app.listen(0);
@@ -19,6 +20,7 @@ after(async () => {
   await new Promise<void>((resolve, reject) => {
     server.close((error) => error ? reject(error) : resolve());
   });
+  await prisma.$disconnect();
 });
 
 test("system and API fallback routes remain wired", async () => {
@@ -70,7 +72,18 @@ test("authentication routes and JSON error middleware remain wired", async () =>
   assert.deepEqual(await invalidJson.json(), { error: "Request body must be valid JSON.", code: "BAD_REQUEST", retryable: false });
 });
 
-test("registration rejects weak passwords before persistence", async () => {
+test("registration rejects weak passwords before account persistence", async (t) => {
+  // Throttling uses storage even when account input is rejected.
+  const methods = [
+    [prisma, '$queryRaw', async () => [{ count: 1, reset_at: new Date() }]],
+    [prisma, '$executeRaw', async () => 0],
+    [prisma.revokedSession, 'deleteMany', async () => ({ count: 0 })],
+  ] as const;
+  for (const [target, key, implementation] of methods) {
+    const previous = Reflect.get(target, key);
+    Reflect.set(target, key, t.mock.fn(implementation));
+    t.after(() => Reflect.set(target, key, previous));
+  }
   const response = await fetch(`${baseUrl}/api/auth`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -85,7 +98,7 @@ test("registration rejects weak passwords before persistence", async () => {
 
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), {
-    error: "Password must be 8–64 characters and include an uppercase letter, a lowercase letter, a number, and a special character, with no spaces.",
+    error: "Password must include an uppercase letter.",
     code: "BAD_REQUEST",
     retryable: false,
   });

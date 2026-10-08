@@ -1,10 +1,10 @@
-import { requireUser } from '../middlewares/auth-middleware.ts';
+import { currentUser } from '../middlewares/auth-middleware.ts';
 import { allowRequest } from '../middlewares/rate-limit-middleware.ts';
 import { resolveDestinationContext } from '../services/destination/destination-context-service.ts';
-import { getExchangeRate } from '../services/currency/exchange-rate-service.ts';
+import { ExchangeRateProviderRateLimit, getExchangeRate } from '../services/currency/exchange-rate-service.ts';
 
 export async function GET(request: Request) {
-  const user = await requireUser(request, 'traveler').catch(() => null);
+  const user = await currentUser(request, 'traveler');
   if (!user) return Response.json({ error: 'Unauthorized.' }, { status: 401 });
   if (!await allowRequest(`destination-context:${user.id}`, 60, 60_000)) return Response.json({ error: 'Too many destination requests.' }, { status: 429 });
 
@@ -18,14 +18,19 @@ export async function GET(request: Request) {
 }
 
 export async function GET_EXCHANGE_RATE(request: Request) {
-  const user = await requireUser(request, 'traveler').catch(() => null);
+  const user = await currentUser(request, 'traveler');
   if (!user) return Response.json({ error: 'Unauthorized.' }, { status: 401 });
-  if (!await allowRequest(`exchange-rate:${user.id}`, 60, 60_000)) return Response.json({ error: 'Too many exchange-rate requests.' }, { status: 429 });
+  if (!await allowRequest(`exchange-rate:${user.id}`, 60, 60_000)) return Response.json({ error: 'Too many exchange-rate requests.' }, {
+    status: 429, headers: { 'Retry-After': '60', 'X-Rate-Limit-Source': 'backend' },
+  });
 
   const params = new URL(request.url).searchParams;
   try {
     return Response.json(await getExchangeRate(params.get('base') || '', params.get('quote') || ''));
   } catch (error) {
+    if (error instanceof ExchangeRateProviderRateLimit) return Response.json({ error: 'Reference currency provider is temporarily rate limited.' }, {
+      status: 429, headers: { 'Retry-After': String(Math.max(1, Math.ceil((error.retryAt - Date.now()) / 1_000))), 'X-Rate-Limit-Source': 'upstream' },
+    });
     const message = error instanceof Error ? error.message : '';
     if (message.startsWith('Currency must be one of:')) return Response.json({ error: message }, { status: 400 });
     console.error('[TravelMate] Exchange-rate lookup failed:', message || error);

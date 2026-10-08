@@ -26,7 +26,8 @@ class StubProvider implements WeatherProvider {
 
 test('weather date validation rejects malformed and oversized ranges', () => {
   assert.equal(validateWeatherDateRange('2026-10-10', '2026-10-01').error, 'Provide a valid weather start and end date.');
-  assert.equal(validateWeatherDateRange('2026-10-01', '2026-10-20').error, 'Weather date range cannot exceed 14 days.');
+  assert.equal(validateWeatherDateRange('2026-10-01', '2026-11-01').error, 'Weather date range cannot exceed 31 days.');
+  assert.deepEqual(validateWeatherDateRange('2026-10-01', '2026-10-31'), { startDate: '2026-10-01', endDate: '2026-10-31' });
   assert.deepEqual(validateWeatherDateRange('2026-10-01', '2026-10-02'), { startDate: '2026-10-01', endDate: '2026-10-02' });
 });
 

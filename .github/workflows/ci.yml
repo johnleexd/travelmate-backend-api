@@ -18,6 +18,10 @@ jobs:
     name: Unit, typecheck, and build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      NODE_ENV: test
+      # Unit tests replace persistence; this address cannot reach a real database.
+      DATABASE_URL: postgresql://unused:unused@127.0.0.1:1/travelmate_unit
     steps:
       - name: Check out backend
         uses: actions/checkout@v7
@@ -63,6 +67,7 @@ jobs:
       SESSION_SECRET: travelmate-ci-session-secret-at-least-32-characters
       ACCOUNT_TOKEN_SECRET: travelmate-ci-account-token-secret-at-least-32-characters
       AI_MOCK_FALLBACK: "true"
+      TRAVELMATE_ALLOW_DEMO_SEED: "true"
     steps:
       - name: Check out backend
         uses: actions/checkout@v7
@@ -75,7 +80,79 @@ jobs:
         run: npm ci
       - name: Apply all migrations
         run: npm run db:migrate
-      - name: Seed deterministic test data
+      - name: Generate unique test passwords
+        # These credentials exist only in this job's ephemeral database.
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs';
+          import { randomBytes } from 'node:crypto';
+          appendFileSync(process.env.GITHUB_ENV, [
+            `DEMO_ADMIN_PASSWORD=CiAdmin1!${randomBytes(18).toString('hex')}`,
+            `DEMO_TRAVELER_PASSWORD=CiTraveler2!${randomBytes(18).toString('hex')}`,
+          ].join('\n') + '\n');
+          NODE
+      - name: Seed isolated test accounts
         run: npm run db:seed
       - name: Run database integration tests
         run: npm run test:integration
+
+  container:
+    name: Docker image, migrations, and health
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: travelmate_container_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d travelmate_container_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/travelmate_container_ci?schema=public
+    steps:
+      - name: Check out backend
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the production image without publishing
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: runner
+          load: true
+          tags: travelmate-backend-api:ci
+          cache-from: type=gha,scope=travelmate-backend
+          cache-to: type=gha,mode=max,scope=travelmate-backend
+      - name: Verify migrations using the production image
+        run: docker run --rm --network host --env DATABASE_URL travelmate-backend-api:ci npm run db:migrate
+      - name: Start the compiled API against the isolated database
+        # Test mode permits the CI-local database and requires no paid provider keys.
+        run: >-
+          docker run --detach --name travelmate-container-ci --network host
+          --env NODE_ENV=test --env PORT=5000 --env DATABASE_URL
+          travelmate-backend-api:ci
+      - name: Require a healthy API and database
+        run: |
+          for attempt in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' travelmate-container-ci)
+            if [ "$status" = healthy ]; then
+              curl --fail --silent http://127.0.0.1:5000/health
+              exit 0
+            fi
+            sleep 3
+          done
+          echo 'Container did not become healthy.' >&2
+          exit 1
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs --tail 100 travelmate-container-ci || true
+      - name: Stop the CI container
+        if: always()
+        run: docker rm --force travelmate-container-ci || true

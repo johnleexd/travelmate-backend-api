@@ -6,6 +6,7 @@ import { authenticateUser } from "../../src/services/auth/auth-service.ts";
 import { executePlatformAction } from "../../src/services/platform/platform-service.ts";
 import * as authRoute from "../../src/controllers/auth-controller.ts";
 import { beginGeneration, completeGeneration } from "../../src/controllers/itinerary-controller.ts";
+import { demoPassword } from './demo-credentials.ts';
 
 async function tableCounts() {
   const [users, listings, bookings, moderation, trips, audit] = await Promise.all([
@@ -21,13 +22,27 @@ async function tableCounts() {
 
 test("seeded roles authenticate through targeted user queries", async () => {
   for (const role of ["traveler", "admin"] as const) {
-    const user = await authenticateUser(`${role}@travelmate.test`, "Travel123!");
+    const user = await authenticateUser(`${role}@travelmate.test`, demoPassword(role));
     assert.equal(user?.role, role);
     assert.equal(user && "passwordHash" in user, false);
   }
 });
 
-test("registration requires verification before login", async () => {
+test("registration requires verification before login", async t => {
+  const previous = { ...process.env };
+  process.env.EMAIL_PROVIDER = 'resend';
+  process.env.RESEND_API_KEY = 're_test_transport';
+  process.env.EMAIL_FROM = 'noreply@example.test';
+  let deliveredCode = '';
+  t.mock.method(globalThis, 'fetch', async (_url, init) => {
+    deliveredCode = JSON.parse(String(init?.body)).text.match(/code is ([A-F0-9]{8})/)[1];
+    return Response.json({ id: 'test-email' });
+  });
+  t.after(() => {
+    for (const key of ['EMAIL_PROVIDER', 'RESEND_API_KEY', 'EMAIL_FROM']) {
+      if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key];
+    }
+  });
   const email = `registration-${Date.now()}@travelmate.test`;
   try {
     const registration = await authRoute.POST(new Request("http://localhost:5000/api/auth", {
@@ -36,7 +51,9 @@ test("registration requires verification before login", async () => {
       body: JSON.stringify({ action: "register", name: "Registration Test", email, password: "Travel123!", role: "traveler" }),
     }));
     assert.equal(registration.status, 201);
-    const created = await registration.json() as { verificationCode: string };
+    const created = await registration.json();
+    assert.equal('verificationCode' in created, false);
+    const verificationCode = deliveredCode;
     const blockedLogin = await authRoute.POST(new Request("http://localhost:5000/api/auth", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-forwarded-for": `integration-login-${Date.now()}` },
@@ -47,7 +64,7 @@ test("registration requires verification before login", async () => {
     const verification = await authRoute.POST(new Request("http://localhost:5000/api/auth", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-forwarded-for": `integration-verify-${Date.now()}` },
-      body: JSON.stringify({ action: "verify-email", email, code: created.verificationCode }),
+      body: JSON.stringify({ action: "verify-email", email, code: verificationCode }),
     }));
     assert.equal(verification.status, 200);
     const verifiedLogin = await authRoute.POST(new Request("http://localhost:5000/api/auth", {
@@ -65,13 +82,15 @@ test("registration requires verification before login", async () => {
       body: JSON.stringify({ action: "forgot-password", email }),
     }));
     assert.equal(forgot.status, 200);
-    const recovery = await forgot.json() as { resetCode: string };
-    assert.match(recovery.resetCode, /^[A-F0-9]{8}$/);
+    const recovery = await forgot.json();
+    assert.equal('resetCode' in recovery, false);
+    const resetCode = deliveredCode;
+    assert.match(resetCode, /^[A-F0-9]{8}$/);
 
     const reset = await authRoute.POST(new Request("http://localhost:5000/api/auth", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "reset-password", email, code: recovery.resetCode, password: "NewTravel123!" }),
+      body: JSON.stringify({ action: "reset-password", email, code: resetCode, password: "NewTravel123!" }),
     }));
     assert.equal(reset.status, 200);
 
@@ -243,14 +262,11 @@ test("saved-trip CRUD enforces traveler ownership", async () => {
     assert.equal(await prisma.itineraryVersion.count({ where: { tripId: created.id } }), 4);
     assert.equal((await prisma.itineraryVersion.findFirstOrThrow({ where: { tripId: created.id }, orderBy: { version: "desc" } })).kind, "restored");
 
-    const duplicate = await executePlatformAction(publicUser(owner), "duplicate-trip", { id: created.id }) as { id: string; currency: string };
-    ids.push(duplicate.id);
-    assert.notEqual(duplicate.id, created.id);
-    assert.equal(duplicate.currency, "EUR");
-    assert.equal(await prisma.itineraryVersion.count({ where: { tripId: duplicate.id } }), 1);
+    await assert.rejects(executePlatformAction(publicUser(owner), "duplicate-trip", { id: created.id }), /no longer available/);
+    assert.equal(await prisma.itineraryVersion.count({ where: { tripId: created.id } }), 4);
 
-    await executePlatformAction(publicUser(owner), "delete-trip", { id: duplicate.id });
-    assert.equal(await prisma.trip.findUnique({ where: { id: duplicate.id } }), null);
+    await executePlatformAction(publicUser(owner), "delete-trip", { id: created.id });
+    assert.equal(await prisma.trip.findUnique({ where: { id: created.id } }), null);
   } finally {
     await prisma.auditEvent.deleteMany({ where: { OR: [{ targetId: { in: ids } }, { actorId: other.id }] } });
     await prisma.trip.deleteMany({ where: { id: { in: ids } } });
@@ -267,7 +283,7 @@ test("generation idempotency replays completed results and rejects key reuse", a
     const started = await beginGeneration(traveler.id, "Tokyo", body, key);
     assert.ok("recordId" in started);
     if (!("recordId" in started)) return;
-    await completeGeneration(started.recordId, { destination: "Tokyo", days: [] });
+    await completeGeneration(started.recordId, started.attemptId, { destination: "Tokyo", days: [] });
 
     const replay = await beginGeneration(traveler.id, "Tokyo", body, key);
     assert.ok("replay" in replay);

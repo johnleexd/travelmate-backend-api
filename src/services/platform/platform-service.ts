@@ -1,3 +1,6 @@
+import { publishReportChange } from './report-events.ts';
+import { recordVisit, removeVisit } from './visited-place-service.ts';
+import { saveIdentity } from './save-idempotency.ts';
 import {
   Prisma,
   type Trip as PrismaTrip,
@@ -13,6 +16,7 @@ import { sendUserWarning } from './user-warning-service.ts';
 import { reviewAppeal } from './appeal-service.ts';
 import { applyManualItineraryChanges } from "../itinerary/itinerary-edit-service.ts";
 import { parseSavedItinerary, parseSavedWeather } from "../itinerary/saved-trip-schema.ts";
+import { createVersionSnapshot, readVersionSnapshot } from '../itinerary/version-snapshot.ts';
 
 type Body = Record<string, unknown>;
 type Transaction = Prisma.TransactionClient;
@@ -56,19 +60,19 @@ function dateOnly(value: unknown, field: string): Date {
 
 function tripLength(startDate: Date, endDate: Date): number {
   const days = Math.floor((endDate.getTime() - startDate.getTime()) / 86_400_000) + 1;
-  if (!Number.isInteger(days) || days < 1 || days > 14) fail("Trip dates must cover between 1 and 14 days.");
+  if (!Number.isInteger(days) || days < 1 || days > 31) fail("Trip dates must cover between 1 and 31 days.");
   return days;
 }
 
 
 function stringList(value: unknown, maximum = 20): string[] {
   const items = Array.isArray(value) ? value : String(value || "").split(",");
-  return items.map(String).map((item) => item.trim()).filter(Boolean).slice(0, maximum);
+  return items.map(String).map((item) => item.trim().slice(0, 200)).filter(Boolean).slice(0, maximum);
 }
 
-function itineraryInput(value: unknown, days: number, currency: CurrencyCode, budget: number, travelers: number, partyType: PartyType): Prisma.InputJsonValue {
+function itineraryInput(value: unknown, days: number, currency: CurrencyCode, budget: number, travelers: number, partyType: PartyType, startDate: Date, destination: string): Prisma.InputJsonValue {
   try {
-    return parseSavedItinerary(value, { days, currency, budget, travelers, partyType }) as Prisma.InputJsonValue;
+    return parseSavedItinerary(value, { days, currency, budget, travelers, partyType, destination, startDate: startDate.toISOString().slice(0, 10) }) as unknown as Prisma.InputJsonValue;
   } catch (error) {
     fail(error instanceof Error ? error.message : "Itinerary is invalid.");
   }
@@ -82,6 +86,13 @@ function weatherInput(value: unknown): Prisma.InputJsonValue | typeof Prisma.DbN
   } catch (error) {
     fail(error instanceof Error ? error.message : "Weather snapshot is invalid.");
   }
+}
+
+function groundedDestination(itinerary: Prisma.InputJsonValue, submitted: ReturnType<typeof destinationContext>) {
+  const anchor = (itinerary as unknown as import('../../controllers/itinerary-controller.ts').ItineraryResponse).grounding?.destination;
+  if (!anchor) return submitted;
+  if ('destinationCity' in submitted && (submitted.destinationCity !== anchor.city || submitted.destinationCountryCode !== anchor.countryCode || submitted.latitude !== anchor.latitude || submitted.longitude !== anchor.longitude)) fail('Saved destination details do not match the grounded itinerary.');
+  return { ...submitted, destinationCity: anchor.city, destinationCountry: anchor.country, destinationCountryCode: anchor.countryCode, latitude: anchor.latitude, longitude: anchor.longitude };
 }
 
 function tripCurrency(value: unknown): CurrencyCode {
@@ -132,8 +143,9 @@ function destinationContext(value: unknown) {
 
 
 function serializeTrip(row: PrismaTrip) {
+  const { saveKey: _key, saveRequestHash: _hash, ...publicTrip } = row;
   return {
-    ...row,
+    ...publicTrip,
     budget: Number(row.budget),
     latitude: row.latitude == null ? undefined : Number(row.latitude),
     longitude: row.longitude == null ? undefined : Number(row.longitude),
@@ -141,12 +153,13 @@ function serializeTrip(row: PrismaTrip) {
     endDate: row.endDate.toISOString().slice(0, 10),
     interests: Array.isArray(row.interests) ? row.interests.map(String) : [],
     archivedAt: row.archivedAt?.toISOString(),
+    completedAt: row.completedAt?.toISOString(),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
 }
 
-async function createItineraryVersion(transaction: Transaction, trip: PrismaTrip, kind: "saved" | "regenerated" | "manual_edit" | "duplicated" | "restored") {
+async function createItineraryVersion(transaction: Transaction, trip: PrismaTrip, kind: "saved" | "regenerated" | "manual_edit" | "restored") {
   await transaction.$queryRaw`SELECT "id" FROM "trips" WHERE "id" = ${trip.id} FOR UPDATE`;
   const latest = await transaction.itineraryVersion.aggregate({ where: { tripId: trip.id }, _max: { version: true } });
   return transaction.itineraryVersion.create({
@@ -154,7 +167,7 @@ async function createItineraryVersion(transaction: Transaction, trip: PrismaTrip
       tripId: trip.id,
       version: (latest._max.version || 0) + 1,
       kind,
-      itinerary: trip.itinerary as Prisma.InputJsonValue,
+      itinerary: createVersionSnapshot(trip) as Prisma.InputJsonValue,
       weather: trip.weather == null ? Prisma.DbNull : trip.weather as Prisma.InputJsonValue,
     },
   });
@@ -166,6 +179,14 @@ async function audit(transaction: Transaction, actorId: string, action: string, 
 
 async function saveTrip(user: PublicUser, action: string, body: Body) {
   requireRole(user, "traveler");
+  const { key, hash } = saveIdentity(body);
+  const replay = async () => {
+    const existing = await prisma.trip.findUnique({ where: { userId_saveKey: { userId: user.id, saveKey: key } } });
+    if (existing && existing.saveRequestHash !== hash) fail('This save request key was already used for a different plan.');
+    return existing ? serializeTrip(existing) : null;
+  };
+  const previous = await replay();
+  if (previous) return previous;
   const destination = String(body.destination || "").trim().slice(0, 120);
   if (destination.length < 2) fail("Destination is required.");
   const budget = positiveMoney(body.budget, "Budget");
@@ -182,16 +203,17 @@ async function saveTrip(user: PublicUser, action: string, body: Body) {
   } catch (error) {
     fail(error instanceof Error ? error.message : "Trip budget is invalid.");
   }
-  const itinerary = itineraryInput(body.itinerary, days, currency, budget, travelers, partyType);
+  const itinerary = itineraryInput(body.itinerary, days, currency, budget, travelers, partyType, startDate, destination);
   const weather = weatherInput(body.weather);
   const interests = stringList(body.interests);
 
-  return prisma.$transaction(async (transaction) => {
+  try { return await prisma.$transaction(async (transaction) => {
     const trip = await transaction.trip.create({
       data: {
+        saveKey: key, saveRequestHash: hash,
         userId: user.id,
         destination,
-        ...selectedDestination,
+        ...groundedDestination(itinerary, selectedDestination),
         budget,
         currency,
         startDate,
@@ -207,6 +229,12 @@ async function saveTrip(user: PublicUser, action: string, body: Body) {
     await audit(transaction, user.id, action, trip.id);
     return serializeTrip(trip);
   });
+  } catch (error) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') throw error;
+    const existing = await replay();
+    if (!existing) throw error;
+    return existing;
+  }
 }
 
 async function updateTrip(user: PublicUser, action: string, body: Body) {
@@ -223,7 +251,7 @@ async function updateTrip(user: PublicUser, action: string, body: Body) {
   const startDate = dateOnly(body.startDate, "Start date");
   const endDate = dateOnly(body.endDate, "End date");
   const days = tripLength(startDate, endDate);
-  const itinerary = itineraryInput(body.itinerary, days, currency, budget, travelers, partyType);
+  const itinerary = itineraryInput(body.itinerary, days, currency, budget, travelers, partyType, startDate, destination);
   const weather = weatherInput(body.weather);
   const interests = stringList(body.interests);
 
@@ -234,7 +262,7 @@ async function updateTrip(user: PublicUser, action: string, body: Body) {
       where: { id: existing.id },
       data: {
         destination,
-        ...selectedDestination,
+        ...groundedDestination(itinerary, selectedDestination),
         budget,
         currency,
         startDate,
@@ -262,7 +290,7 @@ async function updateTripItinerary(user: PublicUser, action: string, body: Body)
     let itinerary: Prisma.InputJsonValue;
     try {
       const edited = applyManualItineraryChanges(existing.itinerary, body.itinerary, days, Number(existing.budget), existing.travelers, normalizeCurrency(existing.currency));
-      itinerary = parseSavedItinerary(edited, { days, currency: normalizeCurrency(existing.currency), budget: Number(existing.budget), travelers: existing.travelers, partyType: existing.partyType }) as Prisma.InputJsonValue;
+      itinerary = parseSavedItinerary(edited, { days, currency: normalizeCurrency(existing.currency), budget: Number(existing.budget), travelers: existing.travelers, partyType: existing.partyType, destination: existing.destination, startDate: existing.startDate.toISOString().slice(0, 10) }) as unknown as Prisma.InputJsonValue;
     } catch (error) {
       if (error instanceof ItineraryEditValidationError) fail(error.message);
       throw error;
@@ -286,56 +314,27 @@ async function deleteTrip(user: PublicUser, action: string, body: Body) {
   });
 }
 
-async function duplicateTrip(user: PublicUser, action: string, body: Body) {
-  requireRole(user, "traveler");
-  const tripId = identifier(body.id);
-  return prisma.$transaction(async (transaction) => {
-    const existing = await transaction.trip.findFirst({ where: { id: tripId, userId: user.id } });
-    if (!existing) fail("Saved trip not found.");
-    const copy = await transaction.trip.create({
-      data: {
-        userId: user.id,
-        destination: existing.destination,
-        destinationCity: existing.destinationCity,
-        destinationRegion: existing.destinationRegion,
-        destinationCountry: existing.destinationCountry,
-        destinationCountryCode: existing.destinationCountryCode,
-        latitude: existing.latitude,
-        longitude: existing.longitude,
-        budget: existing.budget,
-        currency: existing.currency,
-        startDate: existing.startDate,
-        endDate: existing.endDate,
-        travelers: existing.travelers,
-        partyType: existing.partyType,
-        interests: existing.interests as Prisma.InputJsonValue,
-        itinerary: existing.itinerary as Prisma.InputJsonValue,
-        weather: existing.weather == null ? Prisma.DbNull : existing.weather as Prisma.InputJsonValue,
-      },
-    });
-    await createItineraryVersion(transaction, copy, "duplicated");
-    await audit(transaction, user.id, action, copy.id);
-    return serializeTrip(copy);
-  });
-}
-
-
 function dateRange(start: Date, end: Date): Date[] {
   const dates: Date[] = [];
   for (let cursor = new Date(start); cursor < end; cursor = new Date(cursor.getTime() + 86_400_000)) dates.push(cursor);
   return dates;
 }
 
-async function setTripArchiveStatus(user: PublicUser, action: string, body: Body) {
+async function setTripLifecycleStatus(user: PublicUser, action: string, body: Body) {
   requireRole(user, "traveler");
   const tripId = identifier(body.id);
-  const archive = action === "archive-trip";
   return prisma.$transaction(async (transaction) => {
+    await transaction.$queryRaw`SELECT "id" FROM "trips" WHERE "id" = ${tripId} AND "user_id" = ${user.id} FOR UPDATE`;
     const existing = await transaction.trip.findFirst({ where: { id: tripId, userId: user.id } });
     if (!existing) fail("Saved trip not found.");
+    if (existing.status === "archived" && (action === "complete-trip" || action === "reopen-trip")) fail("Restore this archived trip first.");
+    const completedAt = action === "complete-trip" ? existing.completedAt ?? new Date()
+      : action === "reopen-trip" ? null : existing.completedAt;
+    const archivedAt = action === "archive-trip" ? existing.archivedAt ?? new Date() : null;
+    const status = action === "archive-trip" ? "archived" : completedAt ? "completed" : "active";
     const trip = await transaction.trip.update({
       where: { id: existing.id },
-      data: { status: archive ? "archived" : "active", archivedAt: archive ? new Date() : null },
+      data: { status, archivedAt, completedAt },
     });
     await audit(transaction, user.id, action, trip.id);
     return serializeTrip(trip);
@@ -349,33 +348,47 @@ async function restoreItineraryVersion(user: PublicUser, action: string, body: B
   return prisma.$transaction(async (transaction) => {
     const existing = await transaction.trip.findFirst({ where: { id: tripId, userId: user.id } });
     if (!existing) fail("Saved trip not found.");
+    if (existing.status !== "active") fail("Reopen this trip before restoring an itinerary version.");
     const version = await transaction.itineraryVersion.findFirst({ where: { id: versionId, tripId: existing.id } });
     if (!version) fail("Itinerary version not found.");
-    const days = tripLength(existing.startDate, existing.endDate);
+    let restored: Prisma.TripUpdateInput;
+    let legacy = false;
     try {
-      parseSavedItinerary(version.itinerary, { days, currency: normalizeCurrency(existing.currency), budget: Number(existing.budget), travelers: existing.travelers, partyType: existing.partyType });
-      parseSavedWeather(version.weather);
+      const snapshot = readVersionSnapshot(version.itinerary);
+      const context = snapshot.context;
+      const startDate = dateOnly(context.startDate, 'Snapshot start date');
+      const endDate = dateOnly(context.endDate, 'Snapshot end date');
+      const days = tripLength(startDate, endDate);
+      const currency = tripCurrency(context.currency);
+      if (!hasValidCurrencyPrecision(context.budget, currency)) fail('Snapshot budget has invalid currency precision.');
+      const partyType = tripParty(context.partyType, context.travelers);
+      const itinerary = parseSavedItinerary(snapshot.itinerary, { ...context, days, currency, partyType });
+      const weather = parseSavedWeather(version.weather);
+      restored = { ...context, startDate, endDate, itinerary: itinerary as unknown as Prisma.InputJsonValue, weather: weather == null ? Prisma.DbNull : weather as Prisma.InputJsonValue };
+      legacy = snapshot.legacy;
     } catch (error) {
       fail(error instanceof Error ? `That itinerary version cannot be restored: ${error.message}` : "That itinerary version is invalid.");
     }
     const trip = await transaction.trip.update({
       where: { id: existing.id },
-      data: { itinerary: version.itinerary as Prisma.InputJsonValue, weather: version.weather == null ? Prisma.DbNull : version.weather as Prisma.InputJsonValue },
+      data: restored,
     });
     await createItineraryVersion(transaction, trip, "restored");
     await audit(transaction, user.id, action, trip.id);
-    return serializeTrip(trip);
+    return { ...serializeTrip(trip), legacyContextRecovered: legacy };
   });
 }
 
 async function readNotification(user: PublicUser, action: string, body: Body) {
   if (action === "mark-all-notifications-read") {
     await prisma.notification.updateMany({ where: { userId: user.id, readAt: null }, data: { readAt: new Date() } });
+    if (user.role === 'admin') publishReportChange();
     return { all: true };
   }
   const id = identifier(body.id);
   const result = await prisma.notification.updateMany({ where: { id, userId: user.id }, data: { readAt: new Date() } });
   if (!result.count) fail("Notification not found.");
+  if (user.role === 'admin') publishReportChange();
   return { id };
 }
 
@@ -397,19 +410,23 @@ async function adminUserStatus(user: PublicUser, action: string, body: Body) {
 }
 
 export async function executePlatformAction(user: PublicUser, action: string, body: Body): Promise<unknown> {
+  if (action === 'duplicate-trip') fail('Trip duplication is no longer available.');
   if (['book', 'request-change', 'request-cancel', 'create-listing', 'update-listing', 'delete-listing', 'owner-request-decision', 'admin-booking-decision', 'release-payment', 'block-date', 'unblock-date', 'create-promotion', 'delete-promotion', 'submit-review', 'view-listing', 'submit-profile', 'moderate', 'resolve-dispute', 'admin-trust-score', 'admin-listing-status', 'admin-payment-status', 'submit-owner-document'].includes(action)) {
     fail('This workflow is no longer available.');
   }
   switch (action) {
+    case 'record-visit': return recordVisit(user, body);
+    case 'remove-visit': return removeVisit(user, body);
     case 'submit-report': return submitReport(user, body);
     case 'resolve-report': return resolveReport(user, body);
     case "save-trip": return saveTrip(user, action, body);
     case "update-trip": return updateTrip(user, action, body);
     case "update-trip-itinerary": return updateTripItinerary(user, action, body);
     case "delete-trip": return deleteTrip(user, action, body);
-    case "duplicate-trip": return duplicateTrip(user, action, body);
     case "archive-trip":
-    case "restore-trip": return setTripArchiveStatus(user, action, body);
+    case "restore-trip":
+    case "complete-trip":
+    case "reopen-trip": return setTripLifecycleStatus(user, action, body);
     case "restore-itinerary-version": return restoreItineraryVersion(user, action, body);
     case "mark-notification-read":
     case "mark-all-notifications-read": return readNotification(user, action, body);

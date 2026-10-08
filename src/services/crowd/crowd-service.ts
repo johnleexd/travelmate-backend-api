@@ -39,7 +39,7 @@ export function estimateCrowdRange(startDate: string | undefined, endDate: strin
   const end = new Date(`${endDate}T00:00:00.000Z`);
   if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start > end) return [];
   const result: CrowdCondition[] = [];
-  for (let cursor = start; cursor <= end && result.length < 14; cursor = new Date(cursor.getTime() + 86_400_000)) {
+  for (let cursor = start; cursor <= end && result.length < 31; cursor = new Date(cursor.getTime() + 86_400_000)) {
     result.push(estimateCrowd(cursor.toISOString().slice(0, 10), destination, retrievedAt));
   }
   return result;

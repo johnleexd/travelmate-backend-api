@@ -26,6 +26,9 @@ export interface LocationSuggestion {
   label: string;
   placeType: string;
   contextLabel: string;
+  provider?: 'geonames' | 'openstreetmap';
+  providerId?: string;
+  bounds?: { south: number; north: number; west: number; east: number };
 }
 
 export interface ReverseGeocodingResponse {
@@ -36,6 +39,7 @@ export interface ReverseGeocodingResponse {
     municipality?: string;
     county?: string;
     state?: string;
+    region?: string;
     country?: string;
     country_code?: string;
   };
@@ -62,7 +66,7 @@ function normalize(value: string | undefined): string {
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLocaleLowerCase('en')
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
 }
 
@@ -77,7 +81,7 @@ function uniqueParts(parts: Array<string | undefined>): string[] {
 }
 
 function isDestinationFeature(featureCode: string): boolean {
-  return COUNTRY_FEATURE.test(featureCode) || ADMIN_FEATURE.test(featureCode) || POPULATED_FEATURE.test(featureCode) || ISLAND_FEATURE.test(featureCode);
+  return COUNTRY_FEATURE.test(featureCode) || ADMIN_FEATURE.test(featureCode) || POPULATED_FEATURE.test(featureCode) || ISLAND_FEATURE.test(featureCode) || /^(MT|MTS|VLC|PRK|RESN|RESV|BCH|NATF|CNYN|LK)$/.test(featureCode);
 }
 
 function typeWeight(featureCode: string): number {
@@ -98,6 +102,13 @@ function placeType(featureCode: string): string {
   if (/^PPLA/.test(featureCode)) return 'Administrative capital';
   if (ADMIN_FEATURE.test(featureCode)) return 'Region';
   if (ISLAND_FEATURE.test(featureCode)) return 'Island';
+  if (/^(MT|MTS|VLC)$/.test(featureCode)) return 'Mountain';
+  if (/^(PRK|RESN|RESV)$/.test(featureCode)) return 'Park or nature reserve';
+  if (featureCode === 'BCH') return 'Beach';
+  if (featureCode === 'LK') return 'Lake';
+  if (featureCode === 'NATF') return 'Waterfall';
+  if (featureCode === 'CNYN') return 'Canyon';
+  if (featureCode === 'PPLX') return 'Neighborhood';
   if (POPULATED_FEATURE.test(featureCode)) return 'City or locality';
   return 'Destination';
 }
@@ -145,10 +156,11 @@ function toSuggestion(place: GeocodingPlace): LocationSuggestion {
   const region = place.admin1 || '';
   const label = uniqueParts([place.name, region, country]).join(', ');
   const type = placeType(featureCode);
-  return { id: place.id, name: place.name, region, country, countryCode: place.country_code || '', latitude: place.latitude, longitude: place.longitude, label, placeType: type, contextLabel: `${type} • ${label}` };
+  return { id: place.id, name: place.name, region, country, countryCode: place.country_code || '', latitude: place.latitude, longitude: place.longitude, label, placeType: type, contextLabel: `${type} • ${label}`, provider: 'geonames', providerId: String(place.id) };
 }
 
 export async function reverseGeocodeLocation(latitude: number, longitude: number, fetchImplementation: typeof fetch = fetch): Promise<LocationSuggestion | null> {
+  if (!Number.isFinite(latitude) || Math.abs(latitude) > 90 || !Number.isFinite(longitude) || Math.abs(longitude) > 180) return null;
   const params = new URLSearchParams({ format: 'jsonv2', lat: latitude.toFixed(6), lon: longitude.toFixed(6), zoom: '10', addressdetails: '1' });
   const response = await fetchImplementation(`https://nominatim.openstreetmap.org/reverse?${params}`, { headers: { Accept: 'application/json', 'User-Agent': 'TravelMate/1.0 (travel planning application)' }, signal: AbortSignal.timeout(8_000) });
   if (!response.ok) return null;
@@ -158,7 +170,7 @@ export async function reverseGeocodeLocation(latitude: number, longitude: number
   const country = address.country || '';
   const countryCode = (address.country_code || '').toUpperCase();
   if (!name || !country || !/^[A-Z]{2}$/.test(countryCode)) return null;
-  const region = address.state || '';
+  const region = address.state || address.region || '';
   const label = uniqueParts([name, region, country]).join(', ');
   return { id: -1, name, region, country, countryCode, latitude, longitude, label, placeType: 'Current location', contextLabel: `Current location • ${label}` };
 }

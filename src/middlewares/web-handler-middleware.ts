@@ -3,7 +3,7 @@ import { normalizeApiError } from "../contracts/api-error.ts";
 
 export type WebHandler = (request: Request) => Promise<Response> | Response;
 
-function toWebRequest(request: ExpressRequest): Request {
+export function toWebRequest(request: ExpressRequest): Request {
   const protocol = request.protocol || "http";
   const host = request.get("host") || "localhost:5000";
   const headers = new Headers();

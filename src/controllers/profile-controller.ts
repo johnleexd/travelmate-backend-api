@@ -1,8 +1,10 @@
 import { requireUser } from "../middlewares/auth-middleware.ts";
 import { ProfileValidationError } from "../exceptions/index.ts";
 import { updateProfile } from "../services/profile/profile-service.ts";
+import { isDatabaseConnectionError } from "../lib/database-retry.ts";
 
 function profileError(error: unknown): Response {
+  if (isDatabaseConnectionError(error)) throw error;
   if (error instanceof Error && error.message === "UNAUTHORIZED") {
     return Response.json({ error: "Unauthorized." }, { status: 401 });
   }

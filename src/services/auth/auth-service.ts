@@ -1,10 +1,29 @@
-import { createHmac, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { Prisma } from "../../generated/prisma/client.ts";
 import { EmailExistsError } from "../../exceptions/index.ts";
 import { publicUser, type PublicUser, type Role } from "../../schemas/domain.ts";
 import { prisma } from "../../lib/prisma.ts";
 import { retryDatabaseOperation } from "../../lib/database-retry.ts";
 import { password } from "../../repositories/platform-repository.ts";
+import { allowRequest } from '../../middlewares/rate-limit-middleware.ts';
+
+export class VerificationCooldownError extends Error {}
+export class VerificationRateLimitError extends Error {}
+export const VERIFICATION_LIFETIME_MS = 5 * 60_000;
+export const VERIFICATION_COOLDOWN_MS = 60_000;
+export const VERIFICATION_ATTEMPTS = 5;
+
+export function hashVerificationCode(userId: string, code: string): string {
+  return hashAccountToken(`${userId}:email_verification:${code.trim().toUpperCase()}`);
+}
+
+export async function invalidateVerificationCode(userId: string, code: string): Promise<void> {
+  // Preserve createdAt for cooldown enforcement; never invalidate a newer resend.
+  await prisma.accountToken.updateMany({
+    where: { userId, kind: 'email_verification', tokenHash: hashVerificationCode(userId, code) },
+    data: { expiresAt: new Date(0) },
+  });
+}
 
 type AccountTokenKind = "email_verification" | "password_reset";
 
@@ -65,8 +84,8 @@ export async function registerUser(input: {
         data: {
           userId: created.id,
           kind: "email_verification",
-          tokenHash: hashAccountToken(input.verificationCode),
-          expiresAt: expiresIn(30),
+          tokenHash: hashVerificationCode(created.id, input.verificationCode),
+          expiresAt: expiresIn(5),
         },
       });
       return created;
@@ -81,30 +100,48 @@ export async function registerUser(input: {
 }
 
 export async function verifyEmail(email: string, code: string): Promise<PublicUser | null> {
+  const token = await prisma.accountToken.findFirst({
+    where: {
+      kind: 'email_verification', expiresAt: { gt: new Date() },
+      createdAt: { gt: new Date(Date.now() - VERIFICATION_LIFETIME_MS) },
+      user: { email, emailVerified: false, accountStatus: 'active' },
+    },
+  });
+  if (!token) return null;
+  const allowed = await allowRequest(`verification:${token.id}:${token.tokenHash}`, VERIFICATION_ATTEMPTS, VERIFICATION_LIFETIME_MS);
+  if (!allowed) {
+    await prisma.accountToken.updateMany({ where: { id: token.id, tokenHash: token.tokenHash }, data: { expiresAt: new Date(0) } });
+    return null;
+  }
   return prisma.$transaction(async (transaction) => {
-    const token = await transaction.accountToken.findFirst({
+    // Use the same lock order as resending to avoid a verify/resend deadlock.
+    await transaction.$queryRaw`SELECT id FROM users WHERE id = ${token.userId} FOR UPDATE`;
+    // DELETE locks the row, so only one concurrent request can consume the code.
+    const consumed = await transaction.accountToken.deleteMany({
       where: {
-        kind: "email_verification",
-        tokenHash: hashAccountToken(code),
+        id: token.id, kind: 'email_verification',
+        tokenHash: hashVerificationCode(token.userId, code),
         expiresAt: { gt: new Date() },
-        user: { email, emailVerified: false },
+        createdAt: { gt: new Date(Date.now() - VERIFICATION_LIFETIME_MS) },
+        user: { email, emailVerified: false, accountStatus: 'active' },
       },
-      include: { user: true },
     });
-    const user = token?.user;
-    if (!user) return null;
+    if (consumed.count !== 1) return null;
 
     const verified = await transaction.user.update({
-      where: { id: user.id },
+      where: { id: token.userId },
       data: { emailVerified: true },
     });
-    await transaction.accountToken.deleteMany({ where: { userId: user.id, kind: "email_verification" } });
     return publicUser(verified);
   });
 }
 
 async function issueTokenForEmail(email: string, kind: AccountTokenKind, code: string, lifetimeMinutes: number): Promise<PublicUser | null> {
   return prisma.$transaction(async (transaction) => {
+    if (kind === 'email_verification') {
+      // Serialize resends for this account across all API instances.
+      await transaction.$queryRaw`SELECT id FROM users WHERE email = ${email} FOR UPDATE`;
+    }
     const user = await transaction.user.findFirst({
       where: {
         email,
@@ -113,17 +150,29 @@ async function issueTokenForEmail(email: string, kind: AccountTokenKind, code: s
       },
     });
     if (!user) return null;
+    if (kind === 'email_verification') {
+      const previous = await transaction.accountToken.findUnique({ where: { userId_kind: { userId: user.id, kind } } });
+      if (previous && Date.now() - previous.createdAt.getTime() < VERIFICATION_COOLDOWN_MS) {
+        throw new VerificationCooldownError('Wait 60 seconds before requesting another verification email.');
+      }
+      // Count issuance attempts, not clicks rejected by cooldown or ineligibility.
+      const emailKey = createHash('sha256').update(email).digest('hex');
+      if (!await allowRequest(`auth:resend-verification:email:${emailKey}`, 3, 60 * 60_000)) {
+        throw new VerificationRateLimitError('The hourly verification email limit has been reached. Try again in one hour.');
+      }
+    }
+    const tokenHash = kind === 'email_verification' ? hashVerificationCode(user.id, code) : hashAccountToken(code);
     await transaction.accountToken.upsert({
       where: { userId_kind: { userId: user.id, kind } },
-      create: { userId: user.id, kind, tokenHash: hashAccountToken(code), expiresAt: expiresIn(lifetimeMinutes) },
-      update: { tokenHash: hashAccountToken(code), expiresAt: expiresIn(lifetimeMinutes), createdAt: new Date() },
+      create: { userId: user.id, kind, tokenHash, expiresAt: expiresIn(lifetimeMinutes) },
+      update: { tokenHash, expiresAt: expiresIn(lifetimeMinutes), createdAt: new Date() },
     });
     return publicUser(user);
   });
 }
 
 export function reissueVerificationCode(email: string, code: string): Promise<PublicUser | null> {
-  return issueTokenForEmail(email, "email_verification", code, 30);
+  return issueTokenForEmail(email, "email_verification", code, 5);
 }
 
 export function issuePasswordResetCode(email: string, code: string): Promise<PublicUser | null> {
@@ -142,6 +191,15 @@ export async function resetPassword(email: string, code: string, rawPassword: st
       include: { user: true },
     });
     if (!token) return false;
+
+    // DELETE locks the token row. Only one concurrent transaction can consume it.
+    const consumed = await transaction.accountToken.deleteMany({
+      where: {
+        id: token.id, kind: 'password_reset', tokenHash: hashAccountToken(code), expiresAt: { gt: new Date() },
+        user: { email, emailVerified: true, accountStatus: 'active' },
+      },
+    });
+    if (consumed.count !== 1) return false;
 
     const salt = randomBytes(16).toString("hex");
     await transaction.user.update({

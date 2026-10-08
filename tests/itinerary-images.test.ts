@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { attachPlaceImages, imageResultMatches, type ItineraryResponse } from '../src/controllers/itinerary-controller.ts';
+import { attachPlaceImages, imageResultMatches, searchCommonsImages, type ItineraryResponse } from '../src/controllers/itinerary-controller.ts';
 
 function itinerary(): ItineraryResponse {
   return {
@@ -87,4 +87,34 @@ test('a failed image provider does not fail the itinerary', async () => {
   const result = await attachPlaceImages(itinerary(), async () => { throw new Error('Provider unavailable'); });
   assert.equal(result.days[0].activities.length, 2);
   assert.equal(result.days[0].activities[0].imageAttribution, undefined);
+});
+
+test('a stalled photo search cannot stall a valid itinerary and keeps photos already found', async () => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25);
+  try {
+    const result = await attachPlaceImages(itinerary(), async query => query.startsWith('Shinjuku') ? [{
+      imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/garden.jpg',
+      attribution: { creator: 'Photographer', license: 'CC BY', sourceUrl: 'https://commons.wikimedia.org/wiki/File:garden.jpg' },
+    }] : new Promise(() => {}), { signal: controller.signal });
+    assert.match(result.days[0].activities[0].imageUrl || '', /garden.jpg/);
+    assert.equal(result.days[0].activities[1].imageUrl, '/travel-illustration.png');
+    assert.equal(result.days[0].activities.length, 2);
+  } finally { clearTimeout(timer); }
+});
+
+test('Commons caches successful searches but a failed search can recover immediately', async t => {
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => {
+    calls++;
+    if (calls === 1) return new Response(null, { status: 503 });
+    return Response.json({ query: { pages: { '123': {
+      pageid: 123, title: 'File:Tokyo Hachiko Statue.jpg',
+      imageinfo: [{ thumburl: 'https://upload.wikimedia.org/wikipedia/commons/hachiko.jpg', extmetadata: {} }],
+    } } } });
+  });
+  assert.deepEqual(await searchCommonsImages('Tokyo Hachiko Statue fixture-cache', 5), []);
+  assert.equal((await searchCommonsImages('Tokyo Hachiko Statue fixture-cache', 5)).length, 1);
+  assert.equal((await searchCommonsImages('Tokyo Hachiko Statue fixture-cache', 5)).length, 1);
+  assert.equal(calls, 2);
 });

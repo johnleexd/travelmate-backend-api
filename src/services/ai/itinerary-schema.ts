@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SUPPORTED_CURRENCIES, type CurrencyCode } from '../../schemas/domain.ts';
+import { SUPPORTED_CURRENCIES, hasValidCurrencyPrecision, type CurrencyCode } from '../../schemas/domain.ts';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^(0?[1-9]|1[0-2]):[0-5]\d\s?(AM|PM)$/i;
@@ -20,7 +20,7 @@ const activitySchema = z.object({
 }).strict();
 
 const daySchema = z.object({
-  day: z.number().int().min(1).max(14),
+  day: z.number().int().min(1).max(31),
   date: z.string().regex(ISO_DATE),
   theme: z.string().trim().min(1).max(120),
   travelNote: z.string().trim().min(1).max(500),
@@ -44,17 +44,53 @@ const generatedItinerarySchema = z.object({
   destination: z.string().trim().min(2).max(120),
   totalBudget: money(1_000_000_000, true),
   currency: z.enum(SUPPORTED_CURRENCIES),
-  days: z.array(daySchema).min(1).max(14),
+  days: z.array(daySchema).min(1).max(31),
   budgetSummary: budgetSummarySchema,
 }).strict();
 
 export type GeneratedItinerary = z.infer<typeof generatedItinerarySchema>;
+
+/** Keep the supported provider constraints; full validation still runs locally. */
+function providerSchema(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const result: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    // Gemini does not accept these string constraints. The parser enforces them.
+    if (['$schema', 'minLength', 'maxLength', 'pattern'].includes(key)) continue;
+    if (key === 'properties') result[key] = Object.fromEntries(Object.entries(item as Record<string, unknown>).map(([name, schema]) => [name, providerSchema(schema)]));
+    else if (key === 'items') result[key] = providerSchema(item);
+    else result[key] = item;
+  }
+  return result;
+}
+
+/** Enforce each day's activity count; exact trip length is validated locally. */
+export function generatedItineraryJsonSchema(tripDays: number): Record<string, unknown> {
+  const schema = providerSchema(z.toJSONSchema(generatedItinerarySchema, { target: 'draft-7' })) as Record<string, unknown>;
+  const properties = schema.properties as Record<string, unknown>;
+  const daysSchema = properties.days;
+  if (typeof daysSchema !== 'object' || daysSchema === null) throw new Error('Missing itinerary days schema.');
+  // Bounding both nested arrays rejects longer trips with Gemini's schema complexity limit.
+  // Keep 3–5 activities enforced by the provider and check exact dates/day count locally.
+  delete (daysSchema as Record<string, unknown>).minItems;
+  delete (daysSchema as Record<string, unknown>).maxItems;
+  return {
+    ...schema,
+    properties: {
+      ...properties,
+      days: { ...daysSchema, description: `Exactly ${tripDays} consecutive days, starting on the requested start date.` },
+    },
+  };
+}
 
 export interface ItineraryValidationContext {
   tripDays: number;
   startDate: string;
   totalBudget: number;
   currency: CurrencyCode;
+  /** Activity costs are per traveler; accommodation and committed travel are separate. */
+  maxActivitySpend?: number;
+  previousActivityTitles?: string[];
 }
 
 export class ItinerarySchemaError extends Error {
@@ -116,6 +152,9 @@ export function parseGeneratedItinerary(rawContent: string, context: ItineraryVa
       issues.push(`days.${index}.activities must not include accommodation`);
     }
     day.activities.forEach((activity, activityIndex) => {
+      if (!hasValidCurrencyPrecision(activity.estimatedCost, context.currency)) {
+        issues.push(`days.${index}.activities.${activityIndex}.estimatedCost must use the supported currency precision for ${context.currency}`);
+      }
       if (GENERIC_ACTIVITY_TITLE.test(activity.title.trim())) {
         issues.push(`days.${index}.activities.${activityIndex}.title must name a specific real place`);
       }
@@ -128,12 +167,18 @@ export function parseGeneratedItinerary(rawContent: string, context: ItineraryVa
     }
   });
 
-  const seenActivities = new Set<string>();
+  const activityKey = (title: string) => title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const seenActivities = new Set((context.previousActivityTitles ?? []).map(activityKey));
   itinerary.days.forEach((day, dayIndex) => day.activities.forEach((activity, activityIndex) => {
-    const key = activity.title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    const key = activityKey(activity.title);
     if (seenActivities.has(key)) issues.push(`days.${dayIndex}.activities.${activityIndex}.title duplicates another itinerary activity`);
     seenActivities.add(key);
   }));
+
+  const activitySpend = itinerary.days.reduce((sum, day) => sum + minorUnits(day.totalCost), 0);
+  if (context.maxActivitySpend !== undefined && activitySpend > minorUnits(context.maxActivitySpend)) {
+    issues.push(`Activity estimates exceed the available per-traveler budget of ${context.maxActivitySpend} ${context.currency}. Choose realistically priced affordable alternatives; do not falsify prices.`);
+  }
 
   if (issues.length) throw new ItinerarySchemaError(issues.slice(0, 12));
   return itinerary;

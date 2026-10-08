@@ -4,12 +4,13 @@ import { prisma } from '../../src/lib/prisma.ts';
 import { POST } from '../../src/controllers/auth-controller.ts';
 import { registerUser } from '../../src/services/auth/auth-service.ts';
 import { GET as platform } from '../../src/controllers/platform-controller.ts';
+import { demoPassword } from './demo-credentials.ts';
 
 test('one login routes travelers and admins using the stored role', async () => {
   for (const role of ['traveler', 'admin'] as const) {
     const response = await POST(new Request('http://localhost/api/auth', {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-client-ip': `role-login-${role}-${Date.now()}` },
-      body: JSON.stringify({ action: 'login', email: `${role}@travelmate.test`, password: 'Travel123!' }),
+      body: JSON.stringify({ action: 'login', email: `${role}@travelmate.test`, password: demoPassword(role) }),
     }));
     assert.equal(response.status, 200);
     const body = await response.json();

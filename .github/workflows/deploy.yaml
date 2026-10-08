@@ -1,0 +1,106 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["Backend CI"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: travelmate-backend-production
+  cancel-in-progress: false
+
+jobs:
+  build-and-push:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      revision: ${{ steps.revision.outputs.sha }}
+    steps:
+      - name: Check out the verified release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+      - name: Record release revision
+        id: revision
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Require successful CI for a manual release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.revision.outputs.sha }}
+        run: |
+          conclusion=$(gh run list --workflow ci.yml --commit "$RELEASE_SHA" --event push --limit 1 --json conclusion --jq '.[0].conclusion')
+          test "$conclusion" = success || { echo 'Backend CI must pass for this revision before deployment.' >&2; exit 1; }
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Log in to Docker Hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build and push release image
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: runner
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/travelmate-backend-api:${{ steps.revision.outputs.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/travelmate-backend-api:latest
+          cache-from: type=gha,scope=travelmate-backend
+          cache-to: type=gha,mode=max,scope=travelmate-backend
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      TRAVELMATE_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/travelmate-backend-api@${{ needs.build-and-push.outputs.digest }}
+      TRAVELMATE_DEPLOY_DIR: ${{ vars.DEPLOY_PATH || '/root/travelmate-backend-api' }}
+      TRAVELMATE_ENV_FILE: ${{ vars.SERVER_ENV_FILE || '/root/env/travelmate-backend-api/.env' }}
+    steps:
+      - name: Check out the same release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build-and-push.outputs.revision }}
+          persist-credentials: false
+      - name: Copy Compose and deployment script to the server
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          fingerprint: ${{ secrets.SSH_FINGERPRINT }}
+          port: ${{ vars.SSH_PORT || '22' }}
+          source: docker/docker-compose.yaml,scripts/deploy.sh
+          target: ${{ env.TRAVELMATE_DEPLOY_DIR }}
+      - name: Apply migrations and deploy the release
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          fingerprint: ${{ secrets.SSH_FINGERPRINT }}
+          port: ${{ vars.SSH_PORT || '22' }}
+          command_timeout: 10m
+          envs: TRAVELMATE_IMAGE,TRAVELMATE_DEPLOY_DIR,TRAVELMATE_ENV_FILE
+          script: |
+            set -eu
+            sh "$TRAVELMATE_DEPLOY_DIR/scripts/deploy.sh"

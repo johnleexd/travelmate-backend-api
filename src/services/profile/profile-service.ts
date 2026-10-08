@@ -39,6 +39,16 @@ export function validateProfileUpdate(value: unknown): Prisma.UserUpdateInput {
     data.phone = phone;
   }
 
+  const avatarUrl = optionalText(input.avatarUrl, "Avatar URL", 2048);
+  if (avatarUrl !== undefined) {
+    if (avatarUrl) {
+      let url: URL;
+      try { url = new URL(avatarUrl); } catch { throw new ProfileValidationError("Avatar URL must be a valid HTTPS URL."); }
+      if (url.protocol !== 'https:' || url.username || url.password) throw new ProfileValidationError("Avatar URL must be a valid HTTPS URL.");
+    }
+    data.avatarUrl = avatarUrl;
+  }
+
   const bio = optionalText(input.bio, "Bio", 500);
   if (bio !== undefined) data.bio = bio;
 
@@ -60,6 +70,8 @@ const safeUserSelect = {
   accountStatus: true,
   bio: true,
   phone: true,
+  avatarUrl: true,
+  createdAt: true,
 } satisfies Prisma.UserSelect;
 
 type SelectedUser = Prisma.UserGetPayload<{ select: typeof safeUserSelect }>;
@@ -74,6 +86,8 @@ function toPublicUser(user: SelectedUser): PublicUser {
     profileStatus: user.profileStatus,
     trustScore: user.trustScore,
     accountStatus: user.accountStatus,
+    avatarUrl: user.avatarUrl ?? undefined,
+    createdAt: user.createdAt?.toISOString(),
     bio: user.bio ?? undefined,
     phone: user.phone ?? undefined,
   };

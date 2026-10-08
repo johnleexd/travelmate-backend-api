@@ -6,6 +6,7 @@ const requestIdPattern = /^[A-Za-z0-9._-]{8,100}$/;
 export function requestLogging(request: Request, response: Response, next: NextFunction): void {
   const supplied = request.get('x-request-id')?.trim();
   const requestId = supplied && requestIdPattern.test(supplied) ? supplied : randomUUID();
+  request.headers['x-request-id'] = requestId;
   const startedAt = Date.now();
   response.setHeader('X-Request-Id', requestId);
   response.on('finish', () => {

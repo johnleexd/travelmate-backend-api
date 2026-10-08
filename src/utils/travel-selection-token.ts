@@ -1,4 +1,5 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac } from 'node:crypto';
+import { constantTimeEqual } from './constant-time-equal.ts';
 
 export interface TravelSelectionTokenData {
   kind: 'flight' | 'activity';
@@ -7,6 +8,9 @@ export interface TravelSelectionTokenData {
   price: number;
   currency: string;
   fetchedAt: string;
+  isLive?: boolean;
+  destination?: string;
+  tripContext?: string;
 }
 
 function secret(): string {
@@ -14,7 +18,7 @@ function secret(): string {
 }
 
 function payload(data: TravelSelectionTokenData): string {
-  return [data.kind, data.id, data.name, String(data.price), data.currency, data.fetchedAt].join('|');
+  return [data.kind, data.id, data.name, String(data.price), data.currency, data.fetchedAt, data.isLive, data.destination, data.tripContext].join('|');
 }
 
 export function createTravelSelectionToken(data: TravelSelectionTokenData): string {
@@ -23,6 +27,8 @@ export function createTravelSelectionToken(data: TravelSelectionTokenData): stri
 
 export function verifyTravelSelectionToken(data: TravelSelectionTokenData, token: unknown): boolean {
   if (typeof token !== 'string' || token.length < 20 || token.length > 200) return false;
+  const age = Date.now() - Date.parse(data.fetchedAt);
+  if (!Number.isFinite(age) || age < -300000 || age > (data.kind === 'flight' ? 15 * 60000 : 2 * 3600000)) return false;
   const expected = createTravelSelectionToken(data);
-  return token.length === expected.length && timingSafeEqual(Buffer.from(token), Buffer.from(expected));
+  return constantTimeEqual(expected, token);
 }

@@ -1,4 +1,5 @@
 import { SUPPORTED_CURRENCIES, type CurrencyCode } from '../../schemas/domain.ts';
+import { countries, type TCountryCode } from 'countries-list';
 
 export interface TransportationOption {
   id: string;
@@ -55,7 +56,7 @@ function transportFor(countryCode: string, city: string): TransportationOption[]
 
 export function resolveDestinationContext(countryCodeValue: string, city: string): DestinationContext {
   const countryCode = countryCodeValue.trim().toUpperCase();
-  const currency = COUNTRY_CURRENCIES[countryCode] || null;
+  const currency = (countries[countryCode as TCountryCode]?.currency.find(value => SUPPORTED_CURRENCIES.includes(value as CurrencyCode)) as CurrencyCode | undefined) || COUNTRY_CURRENCIES[countryCode] || null;
   const transportation = transportFor(countryCode, city);
   return {
     currency: currency && SUPPORTED_CURRENCIES.includes(currency) ? currency : null,

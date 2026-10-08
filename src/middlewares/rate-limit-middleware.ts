@@ -17,6 +17,9 @@ export async function allowRequest(key: string, limit = 20, windowMs = 60_000): 
       "reset_at" = CASE WHEN "rate_limit_buckets"."reset_at" <= ${now} THEN ${resetAt} ELSE "rate_limit_buckets"."reset_at" END
     RETURNING "count", "reset_at"
   `);
-  if (Math.random() < 0.01) void prisma.$executeRaw`DELETE FROM "rate_limit_buckets" WHERE "reset_at" < ${new Date(now.getTime() - 86_400_000)}`.catch(() => undefined);
+  if (Math.random() < 0.01) {
+    void prisma.$executeRaw`DELETE FROM "rate_limit_buckets" WHERE "reset_at" < ${new Date(now.getTime() - 86_400_000)}`.catch(() => undefined);
+    void prisma.revokedSession.deleteMany({ where: { expiresAt: { lt: now } } }).catch(() => undefined);
+  }
   return (rows[0]?.count ?? limit + 1) <= limit;
 }

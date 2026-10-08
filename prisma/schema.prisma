@@ -36,6 +36,7 @@ enum OAuthProvider {
 enum TripStatus {
   active
   archived
+  completed
 }
 
 enum PartyType {
@@ -105,6 +106,41 @@ enum ModerationStatus {
   resolved
 }
 
+enum FeedbackSentiment {
+  not_analyzed
+  positive
+  neutral
+  negative
+}
+
+enum FeedbackCategory {
+  budget_accuracy
+  weather_info
+  ai_cohesion
+  route_efficiency
+}
+
+model Feedback {
+  id          String            @id @default(uuid())
+  userId      String?           @map("user_id")
+  itineraryId String?           @map("itinerary_id")
+  rating      Int
+  sentiment   FeedbackSentiment @default(not_analyzed)
+  category    FeedbackCategory
+  comment     String
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  user        User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  itinerary   Trip?             @relation(fields: [itineraryId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt(sort: Desc), id])
+  @@index([rating, sentiment, createdAt(sort: Desc)])
+  @@index([userId])
+  @@index([itineraryId])
+  @@unique([userId, itineraryId])
+  @@map("feedback")
+}
+
 model User {
   id                   String                @id @default(uuid())
   name                 String
@@ -117,21 +153,45 @@ model User {
   passwordHash         String?               @map("password_hash")
   passwordSalt         String?               @map("password_salt")
   sessionVersion       Int                   @default(0) @map("session_version")
+  avatarUrl            String?               @map("avatar_url")
+  createdAt            DateTime?             @default(now()) @map("created_at") @db.Timestamptz(6)
   bio                  String?
   phone                String?
+  feedback             Feedback[]
   listings             Listing[]
   bookings             Booking[]
   trips                Trip[]
+  visitedPlaces        VisitedPlace[]
   itineraryGenerations ItineraryGeneration[]
   auditEvents          AuditEvent[]
   accountTokens        AccountToken[]
   oauthAccounts        OAuthAccount[]
+  revokedSessions      RevokedSession[]
   notifications        Notification[]
   ownerDocuments       OwnerDocument[]
   reviews              Review[]
 
   @@index([accountStatus])
   @@map("users")
+}
+
+model RateLimitBucket {
+  key     String   @id @db.VarChar(300)
+  count   Int
+  resetAt DateTime @map("reset_at") @db.Timestamptz(6)
+
+  @@index([resetAt])
+  @@map("rate_limit_buckets")
+}
+
+model RevokedSession {
+  tokenHash String   @id @map("token_hash") @db.VarChar(64)
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("revoked_sessions")
 }
 
 model OAuthAccount {
@@ -318,6 +378,8 @@ model Moderation {
 
 model Trip {
   id                     String             @id @default(uuid())
+  saveKey                String?            @map("save_key") @db.VarChar(100)
+  saveRequestHash        String?            @map("save_request_hash") @db.VarChar(64)
   userId                 String             @map("user_id")
   destination            String
   destinationCity        String?            @map("destination_city")
@@ -337,14 +399,37 @@ model Trip {
   weather                Json?
   status                 TripStatus         @default(active)
   archivedAt             DateTime?          @map("archived_at") @db.Timestamptz(6)
+  completedAt            DateTime?          @map("completed_at") @db.Timestamptz(6)
   createdAt              DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
   user                   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feedback               Feedback[]
   versions               ItineraryVersion[]
+  visitedPlaces          VisitedPlace[]
 
+  @@unique([userId, saveKey])
   @@index([userId])
   @@index([userId, status])
   @@map("trips")
+}
+
+model VisitedPlace {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  tripId      String?  @map("trip_id")
+  placeKey    String   @map("place_key") @db.VarChar(100)
+  name        String   @db.VarChar(160)
+  destination String   @db.VarChar(120)
+  visitDate   DateTime @map("visit_date") @db.Date
+  latitude    Float?
+  longitude   Float?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trip        Trip?    @relation(fields: [tripId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, placeKey, visitDate])
+  @@index([userId, visitDate(sort: Desc), id])
+  @@map("visited_places")
 }
 
 model ItineraryVersion {
@@ -371,6 +456,7 @@ model ItineraryGeneration {
   status         GenerationStatus @default(pending)
   response       Json?
   errorCode      String?          @map("error_code") @db.VarChar(80)
+  attemptId      String           @default(uuid()) @map("attempt_id")
   createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
   user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --watch --experimental-strip-types src/server.ts",
+    "dev": "node scripts/dev.mjs",
     "build": "prisma generate && tsc",
     "postinstall": "prisma generate",
     "start": "node ./dist/server.js",
@@ -14,8 +14,10 @@
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
     "db:seed": "node --experimental-strip-types prisma/seed.ts",
-    "db:setup": "npm run db:generate && npm run db:migrate && npm run db:seed",
+    "db:setup": "npm run db:generate && npm run db:migrate",
+    "security:disable-demo-logins": "node --experimental-strip-types scripts/disable-demo-logins.ts",
     "email:smoke": "node --experimental-strip-types scripts/send-email-smoke.ts",
+    "email:check": "node --experimental-strip-types scripts/send-email-smoke.ts --check",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -26,15 +28,24 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "google-auth-library": "^11.1.0",
+    "nodemailer": "^10.0.15",
     "pg": "^8.23.0",
+    "prisma": "^7.10.0",
     "zod": "^4.6.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^26.1.1",
-    "prisma": "^7.10.0",
+    "@types/nodemailer": "^8.0.2",
     "tsx": "^4.23.0",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "deepmerge-ts": "8.0.2",
+    "mysql2": "3.24.5",
+    "fast-uri": "3.1.8",
+    "qs": "6.16.0",
+    "proxy-addr": "2.0.8"
   }
 }

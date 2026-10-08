@@ -1,7 +1,9 @@
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 import { CodeChallengeMethod, OAuth2Client } from 'google-auth-library';
 import { prisma } from '../../lib/prisma.ts';
 import { publicUser, type PublicUser } from '../../schemas/domain.ts';
+import type { Prisma } from '../../generated/prisma/client.ts';
+import { constantTimeEqual } from '../../utils/constant-time-equal.ts';
 
 const FLOW_COOKIE = 'travelmate_google_oauth';
 const FLOW_LIFETIME_SECONDS = 10 * 60;
@@ -61,10 +63,11 @@ export function sealOAuthFlow(flow: OAuthFlowState, secret: string): string {
 
 export function unsealOAuthFlow(value: string | undefined, secret: string, now = Date.now()): OAuthFlowState | null {
   if (!value) return null;
-  const [payload, suppliedSignature] = value.split('.');
-  if (!payload || !suppliedSignature) return null;
+  const parts = value.split('.');
+  const [payload, suppliedSignature] = parts;
+  if (parts.length !== 2 || !payload || !suppliedSignature) return null;
   const expectedSignature = signature(payload, secret);
-  if (suppliedSignature.length !== expectedSignature.length || !timingSafeEqual(Buffer.from(suppliedSignature), Buffer.from(expectedSignature))) return null;
+  if (!constantTimeEqual(expectedSignature, suppliedSignature)) return null;
   try {
     const flow = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as Partial<OAuthFlowState>;
     return typeof flow.state === 'string' && flow.state.length >= 32
@@ -119,8 +122,7 @@ export function oauthFlowFromRequest(request: Request, secret: string): OAuthFlo
 }
 
 export function safeStateMatches(expected: string, supplied: string | null): boolean {
-  if (!supplied || supplied.length !== expected.length) return false;
-  return timingSafeEqual(Buffer.from(supplied), Buffer.from(expected));
+  return Boolean(supplied) && constantTimeEqual(expected, supplied);
 }
 
 export async function exchangeGoogleCode(code: string, flow: OAuthFlowState): Promise<VerifiedGoogleIdentity> {
@@ -138,35 +140,65 @@ export async function exchangeGoogleCode(code: string, flow: OAuthFlowState): Pr
   return { subject: payload.sub, email, name: name.length >= 2 ? name : 'Traveler', authoritativeEmail: email.endsWith('@gmail.com') || Boolean(payload.hd) };
 }
 
-export async function findOrCreateGoogleUser(identity: VerifiedGoogleIdentity): Promise<{ user: PublicUser; sessionVersion: number; created: boolean }> {
-  return prisma.$transaction(async (transaction) => {
-    const linked = await transaction.oAuthAccount.findUnique({
-      where: { provider_providerAccountId: { provider: 'google', providerAccountId: identity.subject } },
-      include: { user: true },
-    });
-    if (linked) return { user: publicUser(linked.user), sessionVersion: linked.user.sessionVersion, created: false };
+type DatabaseUser = Awaited<ReturnType<typeof prisma.user.findUniqueOrThrow>>;
 
-    const existingEmail = await transaction.user.findUnique({ where: { email: identity.email } });
-    if (existingEmail) {
-      if (!identity.authoritativeEmail) throw new OAuthAccountLinkRequiredError('Sign in with your existing password before linking Google.');
-      await transaction.oAuthAccount.create({ data: { userId: existingEmail.id, provider: 'google', providerAccountId: identity.subject } });
-      return { user: publicUser(existingEmail), sessionVersion: existingEmail.sessionVersion, created: false };
-    }
-
-    const created = await transaction.user.create({
-      data: {
-        name: identity.name,
-        email: identity.email,
-        role: 'traveler',
-        emailVerified: true,
-        profileStatus: 'unverified',
-        trustScore: 50,
-        accountStatus: 'active',
-        passwordHash: null,
-        passwordSalt: null,
-        oauthAccounts: { create: { provider: 'google', providerAccountId: identity.subject } },
-      },
-    });
-    return { user: publicUser(created), sessionVersion: created.sessionVersion, created: true };
+async function verifyGoogleLinkedUser(transaction: Prisma.TransactionClient, user: DatabaseUser, identity: VerifiedGoogleIdentity): Promise<DatabaseUser> {
+  if (user.emailVerified) return user;
+  if (!identity.authoritativeEmail || identity.email !== user.email) {
+    throw new OAuthAccountLinkRequiredError('Verify the existing account email before linking Google.');
+  }
+  // Someone may have registered this email before its owner signed in with Google.
+  // Discard that unverified password and pending codes before enabling the account.
+  const verified = await transaction.user.updateMany({
+    where: { id: user.id, emailVerified: false },
+    data: { emailVerified: true, passwordHash: null, passwordSalt: null, sessionVersion: { increment: 1 } },
   });
+  if (verified.count === 1) await transaction.accountToken.deleteMany({ where: { userId: user.id } });
+  return transaction.user.findUniqueOrThrow({ where: { id: user.id } });
+}
+
+export async function findOrCreateGoogleUser(identity: VerifiedGoogleIdentity): Promise<{ user: PublicUser; sessionVersion: number; created: boolean }> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await prisma.$transaction(async (transaction) => {
+        const linked = await transaction.oAuthAccount.findUnique({
+          where: { provider_providerAccountId: { provider: 'google', providerAccountId: identity.subject } },
+          include: { user: true },
+        });
+        if (linked) {
+          const user = await verifyGoogleLinkedUser(transaction, linked.user, identity);
+          return { user: publicUser(user), sessionVersion: user.sessionVersion, created: false };
+        }
+
+        const existingEmail = await transaction.user.findUnique({ where: { email: identity.email } });
+        if (existingEmail) {
+          if (!identity.authoritativeEmail) throw new OAuthAccountLinkRequiredError('Sign in with your existing password before linking Google.');
+          await transaction.oAuthAccount.create({ data: { userId: existingEmail.id, provider: 'google', providerAccountId: identity.subject } });
+          const user = await verifyGoogleLinkedUser(transaction, existingEmail, identity);
+          return { user: publicUser(user), sessionVersion: user.sessionVersion, created: false };
+        }
+
+        const created = await transaction.user.create({
+          data: {
+            name: identity.name,
+            email: identity.email,
+            role: 'traveler',
+            emailVerified: true,
+            profileStatus: 'unverified',
+            trustScore: 50,
+            accountStatus: 'active',
+            passwordHash: null,
+            passwordSalt: null,
+            oauthAccounts: { create: { provider: 'google', providerAccountId: identity.subject } },
+          },
+        });
+        return { user: publicUser(created), sessionVersion: created.sessionVersion, created: true };
+      });
+    } catch (error) {
+      // A simultaneous first sign-in may create the same user/link. Re-read it.
+      if (attempt === 0 && (error as { code?: string })?.code === 'P2002') continue;
+      throw error;
+    }
+  }
+  throw new Error('Google account could not be linked.');
 }

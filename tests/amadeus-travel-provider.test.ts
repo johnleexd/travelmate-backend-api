@@ -44,8 +44,8 @@ test('Amadeus hotel offers normalize price, room details, availability, and sour
 
   assert.deepEqual(result[0], {
     id: 'amadeus:CEB123:room-1', hotelId: 'CEB123', offerId: 'room-1', name: 'Harbor Test Hotel', type: 'Hotel', typeSource: 'name-inferred',
-    address: 'Cordova, Cebu, Philippines', checkInDate: '2026-10-01', checkOutDate: '2026-10-04',
-    nightlyRate: 2500, total: 7500, currency: 'PHP', roomDescription: 'Deluxe sea-view room',
+    address: 'Not available; confirm with the hotel', checkInDate: '2026-10-01', checkOutDate: '2026-10-04',
+    nightlyRate: 2500.13, total: 7500.4, currency: 'PHP', roomDescription: 'Deluxe sea-view room',
     cancellationPolicy: 'Free cancellation before arrival.', available: true, isLive: false,
     source: 'amadeus', fetchedAt,
   });
@@ -55,7 +55,7 @@ test('provider accommodation names are classified without inventing availability
   assert.equal(inferAccommodationType('Shibuya Capsule Hostel'), 'Hostel');
   assert.equal(inferAccommodationType('Makati Executive Condominium'), 'Condo');
   assert.equal(inferAccommodationType('Island Beach Resort'), 'Resort');
-  assert.equal(inferAccommodationType('Central Guesthouse'), 'Accommodation');
+  assert.equal(inferAccommodationType('Central Guesthouse'), 'Guesthouse');
 });
 
 test('shared Amadeus provider authenticates once before hotel inventory and offer searches', async () => {
@@ -85,6 +85,7 @@ test('shared Amadeus provider authenticates once before hotel inventory and offe
   assert.match(requestedUrls[1], /hotels\/by-geocode\?/);
   assert.match(requestedUrls[2], /roomQuantity=2/);
   assert.equal(result.accommodations[0].hotelId, 'CEB123');
+  assert.equal(result.accommodations[0].total, 15000);
   assert.equal(result.inventoryAvailable, true);
   assert.equal(result.hotelsFound, true);
 });
@@ -93,4 +94,10 @@ test('normalizers discard malformed prices instead of inventing values', () => {
   assert.deepEqual(normalizeFlightOffers({ data: [{ id: 'bad', price: { total: 'unknown' }, itineraries: [] }] }, fetchedAt, false), []);
   assert.deepEqual(normalizeActivityOffers({ data: [{ id: 'bad', name: 'Unknown', price: { amount: 'call us' } }] }, 'Cebu', fetchedAt, false), []);
   assert.deepEqual(normalizeAccommodationOffers({ data: [{ hotel: { hotelId: 'bad', name: 'Unknown' }, offers: [{ id: 'bad', price: { total: 'call us' } }] }] }, { destination: 'Cebu', nights: 2, currency: 'PHP' }, fetchedAt, false), []);
+});
+
+test('hotel offers without confirmed availability or currency are excluded', () => {
+  const hotel = { hotel: { hotelId:'hotel', name:'Hotel' }, offers:[{ id:'offer',price:{ total:'100',currency:'USD' } }] };
+  assert.deepEqual(normalizeAccommodationOffers({data:[hotel]}, {destination:'Paris',nights:2,currency:'USD'},fetchedAt,true),[]);
+  assert.deepEqual(normalizeAccommodationOffers({data:[{...hotel,available:false}]}, {destination:'Paris',nights:2,currency:'USD'},fetchedAt,true),[]);
 });

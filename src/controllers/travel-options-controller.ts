@@ -1,6 +1,6 @@
 import { coordinatesForCebuDestination } from '../constants/cebu-locations.ts';
 import { allowRequest } from '../middlewares/rate-limit-middleware.ts';
-import { requireUser } from '../middlewares/auth-middleware.ts';
+import { currentUser } from '../middlewares/auth-middleware.ts';
 import { createAmadeusTravelProvider, type ActivityOption, type FlightOption } from '../services/travel/amadeus-provider.ts';
 import { readApprovedListings } from '../repositories/platform-repository.ts';
 import { PROVIDER_CACHE_POLICIES } from '../services/cache/policies.ts';
@@ -30,12 +30,23 @@ function validDate(value: string): boolean {
 }
 
 export async function GET(request: Request) {
-  const user = await requireUser(request, 'traveler').catch(() => null);
+  const user = await currentUser(request, 'traveler');
   if (!user) return Response.json({ error: 'Unauthorized.' }, { status: 401 });
   if (!await allowRequest(`travel-options:${user.id}`, 10, 60_000)) return Response.json({ error: 'Too many travel-option searches.' }, { status: 429 });
 
   const params = new URL(request.url).searchParams;
   const origin = params.get('origin')?.trim() || '';
+  const originLatitudeText = params.get('originLatitude');
+  const originLongitudeText = params.get('originLongitude');
+  const originCountryCode = params.get('originCountryCode')?.trim().toUpperCase() || undefined;
+  const originCoordinates = originLatitudeText !== null || originLongitudeText !== null ? {
+    latitude: originLatitudeText?.trim() ? Number(originLatitudeText) : NaN,
+    longitude: originLongitudeText?.trim() ? Number(originLongitudeText) : NaN,
+  } : undefined;
+  if ((originCoordinates && (!Number.isFinite(originCoordinates.latitude) || Math.abs(originCoordinates.latitude) > 90 || !Number.isFinite(originCoordinates.longitude) || Math.abs(originCoordinates.longitude) > 180))
+    || (originCountryCode && !/^[A-Z]{2}$/.test(originCountryCode))) {
+    return Response.json({ error: 'Provide valid starting-location coordinates and country code, or enter the origin manually.' }, { status: 400 });
+  }
   const destination = params.get('destination')?.trim() || '';
   const departureDate = params.get('departureDate') || '';
   const returnDate = params.get('returnDate') || '';
@@ -67,7 +78,7 @@ export async function GET(request: Request) {
       id: `travelmate:${listing.id}`, provider: 'travelmate', name: listing.name, location: listing.address,
       description: listing.description, price: listing.price, currency: 'PHP', fetchedAt, isLive: false,
     }));
-  const signedLocalActivities = localActivities.map((activity) => ({ ...activity, selectionToken: createTravelSelectionToken({ kind: 'activity', id: activity.id, name: activity.name, price: activity.price, currency: activity.currency, fetchedAt: activity.fetchedAt }) }));
+  const signedLocalActivities = localActivities.map((activity) => ({ ...activity, selectionToken: createTravelSelectionToken({ kind: 'activity', id: activity.id, name: activity.name, price: activity.price, currency: activity.currency, fetchedAt: activity.fetchedAt, isLive: activity.isLive, destination, tripContext: JSON.stringify([suppliedCoordinates?.latitude, suppliedCoordinates?.longitude, currency]) }) }));
 
   const configured = Boolean(process.env.AMADEUS_API_KEY && process.env.AMADEUS_API_SECRET && !process.env.AMADEUS_API_KEY.startsWith('your_') && !process.env.AMADEUS_API_SECRET.startsWith('your_'));
   const isLive = process.env.AMADEUS_ENV === 'production';
@@ -80,13 +91,13 @@ export async function GET(request: Request) {
 
   let providerPromise: ReturnType<typeof createAmadeusTravelProvider> | undefined;
   const getProvider = () => providerPromise ??= createAmadeusTravelProvider();
-  const flightKey = JSON.stringify({ environment: isLive ? 'production' : 'test', origin: origin.toLowerCase(), destination: destination.toLowerCase(), departureDate, returnDate, adults, currency });
+  const flightKey = JSON.stringify({ environment: isLive ? 'production' : 'test', origin: origin.toLowerCase(), originCoordinates, originCountryCode, destination: destination.toLowerCase(), departureDate, returnDate, adults, currency });
   const activityKey = JSON.stringify({ environment: isLive ? 'production' : 'test', destination: destination.toLowerCase(), latitude: suppliedCoordinates?.latitude.toFixed(4), longitude: suppliedCoordinates?.longitude.toFixed(4) });
   const [flightResult, activityResult] = await Promise.allSettled([
     withProviderCache(flightKey, PROVIDER_CACHE_POLICIES.flights, async () => {
       const provider = await getProvider();
       if (!provider) throw new Error('Amadeus is not configured.');
-      return provider.searchFlights({ origin, destination, departureDate, returnDate: returnDate || undefined, adults, currency }, fetchedAt);
+      return provider.searchFlights({ origin, originCoordinates, originCountryCode, destination, departureDate, returnDate: returnDate || undefined, adults, currency }, fetchedAt);
     }),
     withProviderCache(activityKey, PROVIDER_CACHE_POLICIES.activities, async () => {
       const [provider, location] = await Promise.all([getProvider(), coordinates(destination, suppliedCoordinates)]);
@@ -94,9 +105,9 @@ export async function GET(request: Request) {
       return provider.searchActivities({ destination, ...location }, fetchedAt);
     }),
   ]);
-  const flights = flightResult.status === 'fulfilled' ? flightResult.value.value.map((flight) => ({ ...flight, selectionToken: createTravelSelectionToken({ kind: 'flight', id: flight.id, name: `${flight.airline} ${flight.origin}-${flight.destination}`, price: flight.price, currency: flight.currency, fetchedAt: flight.fetchedAt }) })) : [];
+  const flights = flightResult.status === 'fulfilled' ? flightResult.value.value.map((flight) => ({ ...flight, selectionToken: createTravelSelectionToken({ kind: 'flight', id: flight.id, name: `${flight.airline} ${flight.origin}-${flight.destination}`, price: flight.price, currency: flight.currency, fetchedAt: flight.fetchedAt, isLive: flight.isLive, destination, tripContext: JSON.stringify([origin.trim().toLowerCase(), departureDate, returnDate || undefined, adults, currency]) }) })) : [];
   const externalActivities = activityResult.status === 'fulfilled' ? activityResult.value.value : [];
-  const activities = [...signedLocalActivities, ...externalActivities.map((activity) => ({ ...activity, selectionToken: createTravelSelectionToken({ kind: 'activity', id: activity.id, name: activity.name, price: activity.price, currency: activity.currency, fetchedAt: activity.fetchedAt }) }))];
+  const activities = [...signedLocalActivities, ...externalActivities.map((activity) => ({ ...activity, selectionToken: createTravelSelectionToken({ kind: 'activity', id: activity.id, name: activity.name, price: activity.price, currency: activity.currency, fetchedAt: activity.fetchedAt, isLive: activity.isLive, destination, tripContext: JSON.stringify([suppliedCoordinates?.latitude, suppliedCoordinates?.longitude, currency]) }) }))];
   if (flightResult.status === 'rejected') console.error('[TravelMate] Flight provider failed:', flightResult.reason instanceof Error ? flightResult.reason.message : flightResult.reason);
   if (activityResult.status === 'rejected') console.error('[TravelMate] Activity provider failed:', activityResult.reason instanceof Error ? activityResult.reason.message : activityResult.reason);
   return Response.json({

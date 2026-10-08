@@ -1,4 +1,4 @@
-import "dotenv/config";
+import { loadBackendEnvironment } from '../config/backend-environment.ts';
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../generated/prisma/client.ts";
 
@@ -6,6 +6,7 @@ declare global {
   var travelmatePrisma: PrismaClient | undefined;
 }
 
+export const backendEnvironmentStatus = loadBackendEnvironment();
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required. Use the pooled Neon connection string.");
 

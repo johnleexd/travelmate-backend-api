@@ -1,3 +1,5 @@
+import { notifyAdmins } from './admin-notification-service.ts';
+import { publishReportChange } from './report-events.ts';
 import { prisma } from '../../lib/prisma.ts';
 import { PlatformActionError } from '../../exceptions/index.ts';
 import type { PublicUser } from '../../schemas/domain.ts';
@@ -16,8 +18,10 @@ export async function submitReport(user: PublicUser, body: Record<string, unknow
   const report = await prisma.$transaction(async transaction => {
     const created = await transaction.moderation.create({ data: { ...input, kind: 'report', subjectId: user.id, status: 'pending' } });
     await transaction.auditEvent.create({ data: { actorId: user.id, action: 'submit-report', targetId: created.id } });
+    await notifyAdmins(transaction, 'reports', 'Traveler report submitted', user.name + ' reported: ' + input.title);
     return created;
   });
+  publishReportChange();
   return { ...report, createdAt: report.createdAt.toISOString() };
 }
 
@@ -25,7 +29,7 @@ export async function resolveReport(user: PublicUser, body: Record<string, unkno
   if (user.role !== 'admin') throw new PlatformActionError('Only admins can resolve problem reports.');
   if (typeof body.id !== 'string' || !body.id.trim()) throw new PlatformActionError('A report ID is required.');
   const id = body.id.trim();
-  return prisma.$transaction(async transaction => {
+  const result = await prisma.$transaction(async transaction => {
     const updated = await transaction.moderation.updateMany({ where: { id, kind: 'report', status: 'pending' }, data: { status: 'resolved' } });
     if (updated.count !== 1) throw new PlatformActionError('Open report not found.');
     const report = await transaction.moderation.findUniqueOrThrow({ where: { id } });
@@ -34,4 +38,6 @@ export async function resolveReport(user: PublicUser, body: Record<string, unkno
     await transaction.auditEvent.create({ data: { actorId: user.id, action: 'resolve-report', targetId: id } });
     return { id, status: 'resolved' };
   });
+  publishReportChange();
+  return result;
 }
