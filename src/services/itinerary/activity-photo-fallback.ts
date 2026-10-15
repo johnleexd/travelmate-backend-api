@@ -291,20 +291,25 @@ export async function fillGeneratedTripPhotos(plan: import('../../controllers/it
   // Optional bulk enrichment remains bounded for callers of this helper.
   // Production generation returns catalog photos and enriches missing ones later.
   // A Google key blocked by billing must not disable non-Google enrichment.
-  const deadline = AbortSignal.any([AbortSignal.timeout(budgetMs), ...(signal ? [signal] : [])]);
+  const timeout = new AbortController();
+  // Keep awaited enrichment alive even when a provider has no active I/O handle.
+  const timer = setTimeout(() => timeout.abort(new DOMException('Photo enrichment timed out.', 'TimeoutError')), budgetMs);
+  const deadline = AbortSignal.any([timeout.signal, ...(signal ? [signal] : [])]);
   const days = [...plan.days]; let next = 0;
-  await Promise.all(Array.from({ length: Math.min(2, days.length) }, async () => {
-    while (next < days.length && !deadline.aborted) {
-      const index = next++;
-      let abort: (() => void) | undefined;
-      try {
-        days[index] = await Promise.race([fillMissingDayPhotos(plan.destination, days[index], resolver, deadline, selection), new Promise<DayPlan>(resolve => {
-          abort = () => resolve(plan.days[index]);
-          if (deadline.aborted) abort(); else deadline.addEventListener('abort', abort, { once: true });
-        })]);
-      } catch { /* Keep the complete usable itinerary. */ }
-      finally { if (abort) deadline.removeEventListener('abort', abort); }
-    }
-  }));
+  try {
+    await Promise.all(Array.from({ length: Math.min(2, days.length) }, async () => {
+      while (next < days.length && !deadline.aborted) {
+        const index = next++;
+        let abort: (() => void) | undefined;
+        try {
+          days[index] = await Promise.race([fillMissingDayPhotos(plan.destination, days[index], resolver, deadline, selection), new Promise<DayPlan>(resolve => {
+            abort = () => resolve(plan.days[index]);
+            if (deadline.aborted) abort(); else deadline.addEventListener('abort', abort, { once: true });
+          })]);
+        } catch { /* Keep the complete usable itinerary. */ }
+        finally { if (abort) deadline.removeEventListener('abort', abort); }
+      }
+    }));
+  } finally { clearTimeout(timer); }
   return fillStoredDestinationDayPhotos({ ...plan, days });
 }

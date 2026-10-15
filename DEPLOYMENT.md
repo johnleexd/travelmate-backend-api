@@ -106,13 +106,19 @@ chmod 600 /root/env/travelmate-backend-api/.env
 ```
 
 Fill the runtime file with the required production variables listed above.
-Use `NODE_ENV=production`, `PORT=5000`, `AI_MOCK_FALLBACK=false`, the Neon pooled
+Use `NODE_ENV=production`, `PORT=8000`, `AI_MOCK_FALLBACK=false`, the Neon pooled
 database URL, HTTPS frontend origins, and the real provider credentials.
 The Google redirect URI must point to the frontend's
 `/api/auth/oauth/google/callback` route. Configuration remains on the server;
 the workflow copies only Compose and `scripts/deploy.sh`.
 
-Production Compose binds the API to `127.0.0.1:5000`. Route HTTPS API traffic
+Production Compose defaults to `johnlyy/travelmate:latest` and
+`/root/env/travelmate-backend/.env`; the deployment script overrides these through
+`TRAVELMATE_IMAGE` and `TRAVELMATE_ENV_FILE` to use the verified release digest and
+configured server environment file.
+
+Production Compose binds the API to `127.0.0.1:8002` by default (container port
+8000); set `TRAVELMATE_PORT` to change the host port. Route HTTPS API traffic
 through the server's reverse proxy to that port and set `X-Forwarded-Proto: https`.
 The container's internal health probe supplies that header for its loopback
 request. This checks readiness; it does not verify the public TLS configuration.

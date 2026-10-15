@@ -162,16 +162,26 @@ docker compose logs --follow app
 ```
 
 Compose applies the existing Prisma migrations before starting the compiled API.
-The API is available at `http://localhost:5000`; set `TRAVELMATE_PORT` to another
-host port if a local Node backend already uses 5000. The Next.js frontend can
+The API is available at `http://localhost:8002`; set `TRAVELMATE_PORT` to another
+host port if needed. The Next.js frontend can
 continue running on the host with its `BACKEND_URL` pointing to this port.
-This container uses development settings with production build artifacts;
-source edits require rebuilding the image.
+This container defaults to development settings with production build artifacts;
+set `NODE_ENV=production` to enable production configuration checks. Source edits
+require rebuilding the image.
+
+To build without starting containers, run `docker compose build`. The default
+image tag is `johnlyy/travelmate:local`; set `TRAVELMATE_IMAGE` to use another tag.
+Building creates a local image; publishing it requires a separate push.
 
 The multi-stage Dockerfile uses Node.js 22, runs the API as the `node` user,
 and checks both API and database readiness. Prisma is a production dependency
 so the same image can run the one-shot migration service. Provider secrets are
 supplied at runtime; `.dockerignore` excludes environment files and local dependencies.
+
+The standard `node:22-bookworm` base includes CA certificates and OpenSSL. It is
+larger than the slim variant, but avoids a build-time `apt-get` download from
+Debian mirrors, which can fail on networks that block outbound HTTP (port 80).
+Building still requires access to Docker Hub and the npm registry.
 
 For Docker Hub publishing, SSH deployment, required GitHub secrets, server
 configuration, and rollback, see [DEPLOYMENT.md](DEPLOYMENT.md#docker-hub-and-ssh-deployment).

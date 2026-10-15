@@ -1,8 +1,6 @@
 # syntax=docker/dockerfile:1
-FROM node:22-bookworm-slim AS base
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates openssl \
-    && rm -rf /var/lib/apt/lists/*
+# Includes CA certificates and OpenSSL without a build-time Debian mirror download.
+FROM node:22-bookworm AS base
 WORKDIR /app
 
 FROM base AS builder
