@@ -33,6 +33,44 @@ test("system and API fallback routes remain wired", async () => {
   assert.deepEqual(await missing.json(), { error: "API route not found.", code: "NOT_FOUND", retryable: false });
 });
 
+function mockHealthQuery(t: import('node:test').TestContext, implementation: (...args: never[]) => Promise<unknown>) {
+  const previous = Reflect.get(prisma, '$queryRaw');
+  const query = t.mock.fn(implementation);
+  Reflect.set(prisma, '$queryRaw', query);
+  t.after(() => Reflect.set(prisma, '$queryRaw', previous));
+  return query;
+}
+
+test('readiness verifies the database and cannot be cached', async t => {
+  const query = mockHealthQuery(t, async (sql: TemplateStringsArray) => {
+    assert.equal(sql.join(''), 'SELECT 1');
+    return [{ result: 1 }];
+  });
+  const response = await fetch(`${baseUrl}/health`, { headers: { 'X-Forwarded-Proto': 'https' } });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await response.json(), { status: 'ok', database: 'connected' });
+  assert.equal(query.mock.calls.length, 1);
+});
+
+test('readiness returns 503 without exposing database errors', async t => {
+  mockHealthQuery(t, async () => { throw new Error('Private database connection details'); });
+  t.mock.method(console, 'error', () => {});
+  const response = await fetch(`${baseUrl}/health`);
+  assert.equal(response.status, 503);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await response.json(), { status: 'error', database: 'unavailable' });
+});
+
+test('liveness remains available without accessing a failed database', async t => {
+  const query = mockHealthQuery(t, async () => { throw new Error('Database is down'); });
+  const response = await fetch(`${baseUrl}/health/live`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await response.json(), { status: 'ok' });
+  assert.equal(query.mock.calls.length, 0);
+});
+
 test("every protected feature route resolves to its controller", async () => {
   const routes: Array<[string, RequestInit?]> = [
     ["/api/platform"],

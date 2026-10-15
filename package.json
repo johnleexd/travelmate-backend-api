@@ -9,6 +9,7 @@
     "build": "prisma generate && tsc",
     "postinstall": "prisma generate",
     "start": "node ./dist/server.js",
+    "healthcheck": "node scripts/healthcheck.mjs",
     "test": "node --import ./tests/provider-test-env.mjs --test --experimental-strip-types tests/*.test.ts",
     "test:integration": "node --test --experimental-strip-types tests/integration/*.test.ts",
     "db:generate": "prisma generate",

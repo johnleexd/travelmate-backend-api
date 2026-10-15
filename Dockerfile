@@ -24,7 +24,6 @@ COPY --from=builder --chown=node:node /app/prisma.config.ts ./
 COPY --from=builder --chown=node:node /app/data ./data
 COPY --chown=node:node scripts/healthcheck.mjs ./scripts/healthcheck.mjs
 USER node
-EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
     CMD ["node", "scripts/healthcheck.mjs"]
 CMD ["node", "dist/server.js"]

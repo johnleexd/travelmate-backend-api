@@ -5,6 +5,10 @@ export function apiInformation(_request: Request, response: Response): void {
   response.json({ name: "TravelMate API", status: "ok" });
 }
 
+export function livenessCheck(_request: Request, response: Response): void {
+  response.json({ status: "ok" });
+}
+
 export async function healthCheck(_request: Request, response: Response): Promise<void> {
   try {
     await prisma.$queryRaw`SELECT 1`;
