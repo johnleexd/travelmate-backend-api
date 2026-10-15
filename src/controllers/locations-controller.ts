@@ -1,4 +1,4 @@
-import { searchCatalogueCountries, catalogueCountry } from '../services/destination/global-catalogue.ts';
+import { searchAvailableCountries, availableCountry } from '../services/destination/destination-index.ts';
 import { currentUser } from '../middlewares/auth-middleware.ts';
 import { allowRequest } from '../middlewares/rate-limit-middleware.ts';
 import { reverseGeocodeLocation } from '../services/destination/location-search-service.ts';
@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const query = params.get('q')?.trim() || '';
   const countryCode = params.get('countryCode') || undefined;
-  if (countryCode && (!/^[A-Z]{2}$/.test(countryCode) || !catalogueCountry(countryCode))) return Response.json({ error: 'Choose a verified country.' }, { status: 400 });
+  if (countryCode && (!/^[A-Z]{2}$/.test(countryCode) || !availableCountry(countryCode))) return Response.json({ error: 'Choose a verified country.' }, { status: 400 });
   if ((params.get('kind') !== 'countries' && !countryCode && query.length < 2) || query.length > 100) {
     return Response.json({ error: 'Enter between 2 and 100 characters.' }, { status: 400 });
   }
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
   try {
     const offset = Number(params.get('offset') || 0);
     if (!Number.isSafeInteger(offset) || offset < 0) return Response.json({ error: 'Provide a valid page offset.' }, { status: 400 });
-    return Response.json(params.get('kind') === 'countries' ? searchCatalogueCountries(query, offset) : await searchGlobalLocationsPage(query, offset, fetch, countryCode));
+    return Response.json(params.get('kind') === 'countries' ? searchAvailableCountries(query, offset) : await searchGlobalLocationsPage(query, offset, fetch, countryCode));
   } catch (error) {
     console.error('[TravelMate] /api/locations unexpected error:', error);
     return Response.json({ error: 'Location search is temporarily unavailable.' }, { status: 502 });

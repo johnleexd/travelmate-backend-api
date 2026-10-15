@@ -1,16 +1,16 @@
-import { countryForQuery, countryDestinations, deduplicateDestinations, searchDestinationIndex } from './destination-index.ts';
+import { countryForQuery, countryDestinations, deduplicateDestinations, searchDestinationIndex, availableCountry } from './destination-index.ts';
 import { rankLocationSuggestions, type GeocodingPlace, type LocationCandidate } from './location-search-service.ts';
 import { searchPhilippineCatalogue, philippineAdministrativeRecords, administrativeCandidate } from './philippine-catalogue.ts';
 import { parseDestinationQuery, matchesQualifiers } from './destination-query.ts';
 import { cachedResolvedLocations } from './resolved-location-cache.ts';
 import { createAreaCache } from './area-cache.ts';
-import { searchCatalogue, catalogueLocation, catalogueCountryCode, catalogueCountry } from './global-catalogue.ts';
+import { searchCatalogue, catalogueLocation } from './global-catalogue.ts';
 import { searchDestinationAreas } from './destination-areas.ts';
 
 export interface LocationSearchPage { locations: LocationCandidate[]; total: number; nextOffset: number | null; coverage: string; message: string; countryScope?: LocationCandidate }
 export async function searchGlobalLocationsPage(query: string, offset = 0, fetcher: typeof fetch = fetch, countryCode?: string): Promise<LocationSearchPage> {
-  const code = catalogueCountryCode(query), exactCountry = code ? catalogueCountry(code) : undefined;
-  const country = exactCountry || (countryCode ? catalogueCountry(countryCode) : undefined);
+  const code = countryForQuery(query), exactCountry = code ? availableCountry(code) : undefined;
+  const country = exactCountry || (countryCode ? availableCountry(countryCode) : undefined);
   if (countryCode && !country) throw Error('Choose a verified country before searching within it.');
   if (country) {
     // Exact country names/aliases request its contents, rather than name matches worldwide.

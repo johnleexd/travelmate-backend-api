@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
-import { countries, type TCountryCode } from 'countries-list';
+import { countries, getCountryDataList, type TCountryCode } from 'countries-list';
 import { rankLocationSuggestions, type GeocodingPlace, type LocationSuggestion } from './location-search-service.ts';
-import { catalogueLocation, catalogueCountryCode } from './global-catalogue.ts';
+import { catalogueLocation, catalogueCountryCode, catalogueCountry, globalCatalogueAvailable, searchCatalogueCountries, type CataloguePage } from './global-catalogue.ts';
 
 type Row = [number, string, number, number, string, string, string, string[], number];
 export function normalizeDestination(value: string) {
@@ -13,6 +13,31 @@ export const destinationIndexSource = { fetchedAt: data.fetchedAt, sourceUrl: da
 const records = data.records.map(row => ({ row, names: [...new Set([row[1], ...row[7]].map(normalizeDestination))] }));
 const byCountry = new Map<string, typeof records>();
 for (const record of records) { const list = byCountry.get(record.row[5]) || []; list.push(record); byCountry.set(record.row[5], list); }
+
+// The full SQLite catalogue is an optional deployment asset. The bundled index
+// also contains real country roots, so browsing must not depend on a local cache.
+const countryRoots = records.filter(record => /^PCL/.test(record.row[4]));
+const countryMetadata = new Map(getCountryDataList().map(country => [country.iso2, country]));
+function bundledCountry(record: typeof records[number]): LocationSuggestion {
+  const location = rankLocationSuggestions(place(record.row).name, [place(record.row)], 1)[0];
+  return { ...location, provider: 'geonames', providerId: String(location.id), sourceFeatureCode: record.row[4], scopeType: 'country', canBrowse: true, coordinateSource: `https://www.geonames.org/${location.id}/` };
+}
+export function availableCountry(code: string): LocationSuggestion | undefined {
+  if (globalCatalogueAvailable()) return catalogueCountry(code);
+  const record = countryRoots.find(record => record.row[5] === code);
+  return record ? bundledCountry(record) : undefined;
+}
+export function searchAvailableCountries(query = '', offset = 0): CataloguePage {
+  if (globalCatalogueAvailable()) return searchCatalogueCountries(query, offset);
+  const term = normalizeDestination(query);
+  const matches = countryRoots.filter(record => {
+    const metadata = countryMetadata.get(record.row[5] as TCountryCode);
+    return [record.row[5], metadata?.name, metadata?.native, metadata?.iso3, ...record.names]
+      .some(alias => alias !== undefined && normalizeDestination(alias).includes(term));
+  }).map(bundledCountry).sort((a, b) => a.name.localeCompare(b.name, 'en') || a.countryCode.localeCompare(b.countryCode));
+  return { locations: matches.slice(offset, offset + 20), total: matches.length, nextOffset: offset + 20 < matches.length ? offset + 20 : null,
+    coverage: 'partial-provider', message: 'Browsing countries from the bundled GeoNames snapshot. Place coverage is limited while the full catalogue is unavailable. Search by destination name or use verified geocoding for missing places.' };
+}
 
 export function countryForQuery(query: string): string | undefined {
   const full = catalogueCountryCode(query); if (full) return full;
