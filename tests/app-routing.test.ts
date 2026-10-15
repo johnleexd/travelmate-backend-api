@@ -33,6 +33,53 @@ test("system and API fallback routes remain wired", async () => {
   assert.deepEqual(await missing.json(), { error: "API route not found.", code: "NOT_FOUND", retryable: false });
 });
 
+test("both TravelMate frontend domains receive credentialed CORS and pass trusted-origin writes", async () => {
+  for (const origin of ["https://www.travel-mate.site", "https://travel-mate.site"]) {
+    const preflight = await fetch(`${baseUrl}/api/auth`, {
+      method: "OPTIONS",
+      headers: { Origin: origin, "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type" },
+    });
+    assert.equal(preflight.status, 204);
+    assert.equal(preflight.headers.get("access-control-allow-origin"), origin);
+    assert.equal(preflight.headers.get("access-control-allow-credentials"), "true");
+    assert.match(preflight.headers.get("access-control-allow-methods") || "", /\bPOST\b/);
+    assert.match(preflight.headers.get("access-control-allow-headers") || "", /content-type/i);
+    assert.match(preflight.headers.get("vary") || "", /\bOrigin\b/);
+
+    const read = await fetch(`${baseUrl}/health/live`, { headers: { Origin: origin } });
+    assert.equal(read.status, 200);
+    assert.equal(read.headers.get("access-control-allow-origin"), origin);
+    assert.equal(read.headers.get("access-control-allow-credentials"), "true");
+    await read.json();
+
+    const write = await fetch(`${baseUrl}/api/not-a-route`, {
+      method: "POST",
+      headers: { Origin: origin, "Sec-Fetch-Site": "same-site" },
+    });
+    assert.equal(write.status, 404, "trusted-origin writes should reach the API router");
+    assert.equal(write.headers.get("access-control-allow-origin"), origin);
+    await write.json();
+  }
+});
+
+test("unlisted origins do not receive CORS permission and cannot write", async () => {
+  for (const origin of ["https://attacker.example", "https://travel-mate.site.attacker.example", "https://preview.travel-mate.site", "http://travel-mate.site"]) {
+    const preflight = await fetch(`${baseUrl}/api/auth`, {
+      method: "OPTIONS",
+      headers: { Origin: origin, "Access-Control-Request-Method": "POST" },
+    });
+    assert.equal(preflight.headers.get("access-control-allow-origin"), null);
+    await preflight.text();
+    const write = await fetch(`${baseUrl}/api/not-a-route`, {
+      method: "POST",
+      headers: { Origin: origin, "Sec-Fetch-Site": "same-site" },
+    });
+    assert.equal(write.status, 403);
+    assert.equal(write.headers.get("access-control-allow-origin"), null);
+    await write.json();
+  }
+});
+
 function mockHealthQuery(t: import('node:test').TestContext, implementation: (...args: never[]) => Promise<unknown>) {
   const previous = Reflect.get(prisma, '$queryRaw');
   const query = t.mock.fn(implementation);

@@ -9,8 +9,19 @@ import {
 test("allowed origins support a comma-separated deployment allowlist", () => {
   assert.deepEqual(
     allowedOrigins({ FRONTEND_URL: "https://travelmate.example, https://admin.travelmate.example/" }),
-    ["https://travelmate.example", "https://admin.travelmate.example"],
+    ["https://travelmate.example", "https://admin.travelmate.example", "https://www.travel-mate.site", "https://travel-mate.site"],
   );
+});
+
+test("TravelMate frontend origins remain trusted alongside local or configured origins", () => {
+  const deployedOrigins = ["https://www.travel-mate.site", "https://travel-mate.site"];
+  assert.deepEqual(allowedOrigins({}), ["http://localhost:3000", ...deployedOrigins]);
+  assert.deepEqual(allowedOrigins({ FRONTEND_URL: "https://www.travel-mate.site/, https://travel-mate.site, https://www.travel-mate.site" }), deployedOrigins);
+  for (const origin of deployedOrigins) {
+    for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+      assert.equal(requestOriginAllowed(method, origin, "same-site", allowedOrigins({ FRONTEND_URL: "https://other.example" })), true);
+    }
+  }
 });
 
 test("same-origin write protection accepts trusted and non-browser requests", () => {

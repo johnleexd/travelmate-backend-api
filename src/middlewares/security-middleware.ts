@@ -2,12 +2,17 @@ import type { NextFunction, Request, Response } from "express";
 import { apiErrorPayload } from "../contracts/api-error.ts";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const TRAVELMATE_FRONTEND_ORIGINS = [
+  "https://www.travel-mate.site",
+  "https://travel-mate.site",
+];
 
 export function allowedOrigins(environment: NodeJS.ProcessEnv = process.env): string[] {
-  return (environment.FRONTEND_URL || "http://localhost:3000")
+  const configuredOrigins = (environment.FRONTEND_URL || "http://localhost:3000")
     .split(",")
     .map((origin) => origin.trim().replace(/\/$/, ""))
     .filter(Boolean);
+  return [...new Set([...configuredOrigins, ...TRAVELMATE_FRONTEND_ORIGINS])];
 }
 
 export function requestOriginAllowed(
