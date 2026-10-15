@@ -28,18 +28,45 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v5
         with:
+          context: .
+          target: runner
+          platforms: linux/amd64
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/portfolio-backend-api
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/travelmate:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/travelmate:latest
+
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
 
   deploy:
     needs: [build-and-push]
     runs-on: ubuntu-latest
+    env:
+      TRAVELMATE_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/travelmate@${{ needs.build-and-push.outputs.digest }}
+      TRAVELMATE_DEPLOY_DIR: ${{ vars.DEPLOY_PATH || '/root/travelmate-backend-api' }}
+      TRAVELMATE_ENV_FILE: ${{ vars.SERVER_ENV_FILE || '/root/env/travelmate-backend/.env' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+
+      - name: Check SSH credentials
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_PASSPHRASE: ${{ secrets.SSH_PASSPHRASE }}
+        run: |
+          for secret_name in SSH_HOST SSH_USER SSH_PRIVATE_KEY SSH_PASSPHRASE; do
+            if [ -z "${!secret_name}" ]; then
+              echo "::error::Add the $secret_name repository Actions secret. SSH_PASSPHRASE must unlock the encrypted private key."
+              exit 1
+            fi
+          done
 
       - name: Copy Docker Compose & Script to Server
         uses: appleboy/scp-action@v0.1.7
@@ -47,8 +74,9 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
           source: 'docker/docker-compose.yaml,scripts/deploy.sh'
-          target: '/root'
+          target: ${{ env.TRAVELMATE_DEPLOY_DIR }}
 
       - name: SSH and Deploy
         uses: appleboy/ssh-action@v1.0.3
@@ -56,4 +84,8 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: sh /root/scripts/deploy.sh
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          envs: TRAVELMATE_IMAGE,TRAVELMATE_DEPLOY_DIR,TRAVELMATE_ENV_FILE
+          script: |
+            set -eu
+            sh "$TRAVELMATE_DEPLOY_DIR/scripts/deploy.sh"
