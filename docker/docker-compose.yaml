@@ -1,4 +1,4 @@
-name: travelmate-backend
+name: travelmate-backend-api
 
 x-api: &api
   image: ${TRAVELMATE_IMAGE:-johnlyy/travelmate:latest}
