@@ -1,10 +1,13 @@
-import { createHash } from 'node:crypto';
+import { z } from 'zod';
 import { prisma } from '../../lib/prisma.ts';
 import { Prisma, type VisitedPlace } from '../../generated/prisma/client.ts';
 import { PlatformActionError } from '../../exceptions/index.ts';
 import type { PublicUser } from '../../schemas/domain.ts';
 import type { ItineraryResponse } from '../../controllers/itinerary-controller.ts';
 import { verifyGroundedPlan } from '../itinerary/grounded-plan.ts';
+import { storedPhoto } from '../../lib/stored-trip-media.ts';
+import { buildTripVisitCandidates, candidateAlreadyRecorded, manualPlaceKey, type TripVisitCandidate } from './trip-visit-candidates.ts';
+export { manualPlaceKey } from './trip-visit-candidates.ts';
 
 function fail(message: string): never { throw new PlatformActionError(message); }
 const text = (value: unknown, max: number) => typeof value === 'string' ? value.trim().slice(0, max) : '';
@@ -22,22 +25,75 @@ export function visitDate(value: unknown, timeZone: unknown, now = new Date()): 
   if (date > today!) fail('Only visits that have already happened can be recorded.');
   return parsed;
 }
-export function manualPlaceKey(name: string, destination: string): string {
-  const normalize = (value: string) => value.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
-  return `manual:${createHash('sha256').update(JSON.stringify([normalize(name), normalize(destination)])).digest('hex')}`;
-}
 function serialize(row: VisitedPlace) {
   return { id: row.id, tripId: row.tripId ?? undefined, placeKey: row.placeKey, name: row.name, destination: row.destination,
     visitDate: row.visitDate.toISOString().slice(0, 10), latitude: row.latitude ?? undefined, longitude: row.longitude ?? undefined,
+    place: row.place ?? undefined, ...(storedPhoto(row) || {}),
     createdAt: row.createdAt.toISOString() };
+}
+
+async function visitsLocked<T>(userId: string, work: (tx: Prisma.TransactionClient) => Promise<T>) {
+  return prisma.$transaction(async tx => {
+    // Serialize this user's manual/batch visit saves across all API instances.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`visited:${userId}`})::bigint)`;
+    return work(tx);
+  }, { timeout: 20000 });
+}
+async function tripPlaces(tx: Prisma.TransactionClient, user: PublicUser, tripId: string, lock = false) {
+  if (lock) await tx.$executeRaw`SELECT id FROM trips WHERE id = ${tripId} AND user_id = ${user.id} FOR SHARE`;
+  const trip = await tx.trip.findFirst({ where: { id: tripId, userId: user.id } });
+  if (!trip) fail('Saved trip not found.');
+  const places = buildTripVisitCandidates({ ...trip, latitude: trip.latitude == null ? null : Number(trip.latitude), longitude: trip.longitude == null ? null : Number(trip.longitude) });
+  const visits = await tx.visitedPlace.findMany({ where: { userId: user.id, OR: [{ placeKey: { in: places.map(place => place.key) } }, { tripId }] } });
+  return { trip, places, visits };
+}
+export async function readTripVisitCandidates(user: PublicUser, tripId: string) {
+  traveler(user);
+  return prisma.$transaction(async tx => {
+    const { trip, places, visits } = await tripPlaces(tx, user, tripId);
+    return { tripId: trip.id, destination: trip.destination, places: places.map(place => ({ ...place, alreadyRecorded: candidateAlreadyRecorded(place, tripId, visits, places) })) };
+  });
+}
+const batchSchema = z.object({
+  tripId: z.string().min(1).max(100), visitDate: z.string(), timeZone: z.string().max(100).optional(),
+  places: z.array(z.object({ key: z.string().max(100), fingerprint: z.string().regex(/^[a-f0-9]{64}$/) }).strict()).min(1).max(1550),
+});
+const mediaData = (place: TripVisitCandidate) => ({
+  ...(place.place ? { place: place.place as unknown as Prisma.InputJsonValue } : {}),
+  ...(place.imageUrl ? { imageUrl: place.imageUrl } : {}),
+  ...(place.imageAttribution ? { imageAttribution: place.imageAttribution as unknown as Prisma.InputJsonValue } : {}),
+});
+export async function recordTripVisits(user: PublicUser, body: Record<string, unknown>) {
+  traveler(user);
+  const parsed = batchSchema.safeParse(body);
+  if (!parsed.success) fail('Select saved places and enter the actual visit date.');
+  const input = parsed.data, date = visitDate(input.visitDate, input.timeZone);
+  return visitsLocked(user.id, async tx => {
+    const { trip, places, visits } = await tripPlaces(tx, user, input.tripId, true);
+    if (trip.status === 'archived') fail('Restore this archived trip before recording places.');
+    const selected = [...new Map(input.places.map(place => [place.key, place])).values()].map(selection => {
+      const place = places.find(place => place.key === selection.key && place.fingerprint === selection.fingerprint);
+      if (!place) fail('These saved places changed. Close and reopen the modal before recording visits.');
+      return place;
+    });
+    let recorded = 0, alreadyRecorded = 0;
+    for (const place of selected) {
+      if (candidateAlreadyRecorded(place, trip.id, visits, places)) { alreadyRecorded++; continue; }
+      const row = await tx.visitedPlace.create({ data: { userId: user.id, tripId: trip.id, placeKey: place.key, name: place.name,
+        destination: place.destination, latitude: place.latitude, longitude: place.longitude, visitDate: date, ...mediaData(place) } });
+      visits.push(row); recorded++;
+    }
+    return { recorded, alreadyRecorded };
+  });
 }
 export async function recordVisit(user: PublicUser, body: Record<string, unknown>) {
   traveler(user);
   const date = visitDate(body.visitDate, body.timeZone);
   let name = text(body.name, 160), destination = text(body.destination, 120);
   let tripId: string | undefined, latitude: number | undefined, longitude: number | undefined, placeKey: string;
+  let media: ReturnType<typeof mediaData> = {};
   if (body.tripId !== undefined) {
-    const trip = await prisma.trip.findFirst({ where: { id: text(body.tripId, 100), userId: user.id }, select: { id: true, destination: true, itinerary: true } });
+    const trip = await prisma.trip.findFirst({ where: { id: text(body.tripId, 100), userId: user.id } });
     if (!trip) fail('Saved trip not found.');
     const day = Number(body.dayIndex), index = Number(body.activityIndex);
     if (!Number.isInteger(day) || day < 0 || !Number.isInteger(index) || index < 0) fail('Select a valid place from the saved trip.');
@@ -50,16 +106,26 @@ export async function recordVisit(user: PublicUser, body: Record<string, unknown
       placeKey = `wikidata:${activity.place.placeId}`;
       latitude = activity.place.latitude; longitude = activity.place.longitude;
     } else placeKey = manualPlaceKey(name, destination);
+    const candidate = buildTripVisitCandidates({ ...trip, latitude: trip.latitude == null ? null : Number(trip.latitude), longitude: trip.longitude == null ? null : Number(trip.longitude) }).find(place => place.dayIndex === day && place.activityIndex === index);
+    if (candidate) {
+      media = mediaData(candidate);
+      if (candidate.place || candidate.latitude !== undefined || candidate.destination !== trip.destination) {
+        placeKey = candidate.key; name = candidate.name; destination = candidate.destination;
+        latitude = candidate.latitude; longitude = candidate.longitude;
+      }
+    }
   } else {
     if (name.length < 2 || destination.length < 2) fail('Place name and destination are required.');
     placeKey = manualPlaceKey(name, destination);
   }
   const unique = { userId: user.id, placeKey: placeKey!, visitDate: date };
-  const previous = await prisma.visitedPlace.findUnique({ where: { userId_placeKey_visitDate: unique } });
-  if (previous) return { visit: serialize(previous), alreadyRecorded: true };
   try {
-    const row = await prisma.visitedPlace.create({ data: { ...unique, name, destination, tripId, latitude, longitude } });
-    return { visit: serialize(row), alreadyRecorded: false };
+    return await visitsLocked(user.id, async tx => {
+      const previous = await tx.visitedPlace.findUnique({ where: { userId_placeKey_visitDate: unique } });
+      if (previous) return { visit: serialize(previous), alreadyRecorded: true };
+      const row = await tx.visitedPlace.create({ data: { ...unique, name, destination, tripId, latitude, longitude, ...media } });
+      return { visit: serialize(row), alreadyRecorded: false };
+    });
   } catch (error) {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') throw error;
     const row = await prisma.visitedPlace.findUniqueOrThrow({ where: { userId_placeKey_visitDate: unique } });

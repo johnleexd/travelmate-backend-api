@@ -26,5 +26,9 @@ test('unsupported destinations return explicit manual fallback states', () => {
   assert.equal(context.currency, null);
   assert.deepEqual(context.transportation, []);
   assert.equal(context.transportationSource, 'unavailable');
+  const unsupportedCurrency = resolveDestinationContext('KP', 'Kono-som');
+  assert.equal(unsupportedCurrency.currency,null);
+  assert.match(unsupportedCurrency.currencyMessage,/Local currency KPW is not supported/);
+  assert.match(unsupportedCurrency.currencyMessage,/Choose a supported planning currency/);
 });
 

@@ -3,12 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "engines": { "node": ">=22.13.0" },
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "prisma generate && tsc",
     "postinstall": "prisma generate",
     "start": "node ./dist/server.js",
-    "test": "node --test --experimental-strip-types tests/*.test.ts",
+    "test": "node --import ./tests/provider-test-env.mjs --test --experimental-strip-types tests/*.test.ts",
     "test:integration": "node --test --experimental-strip-types tests/integration/*.test.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
@@ -18,7 +19,9 @@
     "security:disable-demo-logins": "node --experimental-strip-types scripts/disable-demo-logins.ts",
     "email:smoke": "node --experimental-strip-types scripts/send-email-smoke.ts",
     "email:check": "node --experimental-strip-types scripts/send-email-smoke.ts --check",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "locations:build": "node scripts/build-global-location-catalogue.mjs",
+    "locations:verify": "node --experimental-strip-types scripts/verify-worldwide-locations.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",

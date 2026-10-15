@@ -92,8 +92,8 @@ export class RapidHotelProvider {
     if (!response.ok) throw new HotelQuoteError(response.status === 503 ? 'Room quote expired. Refresh accommodations.' : 'Room provider is temporarily unavailable. Retry accommodations.', response.status === 503 ? 'expired' : 'provider-error');
     try { return await response.json(); } catch { throw new HotelQuoteError('Room provider returned an unreadable response. Retry accommodations.'); }
   }
-  async search(input: HotelSearchInput, userId: string): Promise<ProviderAccommodation[]> {
-    occupancySchema.parse(input.occupancy);
+  async search(input: HotelSearchInput, userId: string, options: { suggestionsOnly?: boolean } = {}): Promise<ProviderAccommodation[]> {
+    if (!options.suggestionsOnly) occupancySchema.parse(input.occupancy);
     const regionQuery = new URLSearchParams({ language: 'en-US', area: '3,' + input.latitude + ',' + input.longitude, type: 'city', limit: '3', include: 'property_ids', supply_source: 'expedia', ...(input.countryCode ? { country_code: input.countryCode } : {}) });
     const regions = await this.request('/v3/regions?' + regionQuery);
     const propertyIds = [...new Set(list(regions).flatMap(r => list(r.property_ids)).map(str).filter(id => /^\d+$/.test(id)))].slice(0, 40);
@@ -118,6 +118,7 @@ export class RapidHotelProvider {
     });
     const { localizePropertyNames } = await import('../destination/accommodation-localization.ts');
     properties = (await localizePropertyNames(properties, this.env, this.fetcher)).map(p => ({ ...p, name: p.nameSource === 'unavailable' ? 'Accommodation name unavailable in English' : p.name }));
+    if (options.suggestionsOnly) return properties;
     const query = new URLSearchParams({ checkin: input.checkInDate, checkout: input.checkOutDate, currency: input.currency, country_code: this.env.RAPID_POINT_OF_SALE_COUNTRY || 'PH', language: 'en-US', rate_plan_count: '3', sales_channel: 'website', sales_environment: 'hotel_only', include: 'unavailable_reason' });
     properties.forEach(p => query.append('property_id', p.propertyId));
     input.occupancy.forEach(room => query.append('occupancy', occupancyKey(room)));

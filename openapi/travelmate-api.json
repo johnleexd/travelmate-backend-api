@@ -552,7 +552,8 @@
               }
             }
           }
-        }
+        },
+        "description": " New and regenerated itineraries always use Balanced style and pacing. Legacy travelStyle and pace request fields are ignored; omission is valid. Other preferences and entered prices remain active. Missing prices remain explicitly unpriced."
       }
     },
     "/api/itinerary/images": {
@@ -653,7 +654,45 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "description": "Exact verified country names or aliases browse that country. Other text searches names within the active country, or worldwide."
+          },
+          {
+            "name": "countryCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z]{2}$"
+            },
+            "description": "Verified country code; exact country queries may change this scope."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "countries"
+              ]
+            }
+          }
+        ]
       }
     },
     "/api/destination-context": {
@@ -692,7 +731,7 @@
     },
     "/api/accommodations": {
       "get": {
-        "summary": "Search accommodation offers",
+        "summary": "Search accommodation suggestions or optional provider quotes",
         "responses": {
           "200": {
             "description": "Accommodation results",
@@ -712,7 +751,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "JSON array of exact room adults and childAges (0–17); up to 8 rooms."
+            "description": "Optional legacy room-quote input: exact adults and child ages. Ignored in suggestions mode."
           },
           {
             "name": "guestNationality",
@@ -721,7 +760,53 @@
               "type": "string",
               "pattern": "^[A-Z]{2}$"
             },
-            "description": "Actual guest nationality (ISO country code), required for LiteAPI rates."
+            "description": "Optional legacy room-quote nationality; used for LiteAPI rates only. Ignored in suggestions mode and never required for itinerary planning."
+          },
+          {
+            "name": "locationId",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "locationProvider",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "locationProviderId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "administrativeCode",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "provinceCode",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "suggestions"
+              ]
+            },
+            "description": "Property discovery only; skips room occupancy and guest nationality validation, rate requests, quote tokens and revalidation. The main trip planner uses this mode."
           }
         ]
       }
@@ -909,11 +994,36 @@
           {
             "name": "q",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string",
               "minLength": 2,
               "maxLength": 120
+            }
+          },
+          {
+            "name": "secondary",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Explicit user-triggered verified OpenStreetMap geocoding; never autocomplete."
+          },
+          {
+            "name": "locationId",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "countryCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PH"
+              ]
             }
           }
         ],
@@ -986,8 +1096,17 @@
             "schema": {
               "type": "integer",
               "minimum": 0,
-              "maximum": 1000
+              "maximum": 100000
             }
+          },
+          {
+            "name": "hierarchy",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "Prioritize administrative browsing and include explicitly recorded geographic associations, without changing official parent IDs."
           }
         ],
         "responses": {
@@ -1053,6 +1172,15 @@
               "type": "string",
               "pattern": "^-?\\d+(,-?\\d+){0,5}$"
             }
+          },
+          {
+            "name": "hierarchy",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "Prioritize administrative browsing and include explicitly recorded geographic associations, without changing official parent IDs."
           }
         ],
         "responses": {
@@ -1457,6 +1585,374 @@
           }
         }
       }
+    },
+    "/api/platform/trips/{id}/activities": {
+      "get": {
+        "summary": "Read owned saved activity identities, statuses and revision without writing",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedTripResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid activity, day, schedule or confirmation"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Traveler role and active account required"
+          },
+          "404": {
+            "description": "Owned trip or activity not found"
+          },
+          "409": {
+            "description": "Stale revision, expired preview or historical trip"
+          },
+          "422": {
+            "description": "AI proposal cannot satisfy saved schedule constraints"
+          },
+          "429": {
+            "description": "Rate limit; see Retry-After"
+          },
+          "503": {
+            "description": "Database or configured AI provider unavailable"
+          }
+        }
+      }
+    },
+    "/api/platform/trips/{id}/activities/{activityId}": {
+      "patch": {
+        "summary": "Confirm one activity change with optimistic concurrency and version history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "activityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivityChangeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedTripResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid activity, day, schedule or confirmation"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Traveler role and active account required"
+          },
+          "404": {
+            "description": "Owned trip or activity not found"
+          },
+          "409": {
+            "description": "Stale revision, expired preview or historical trip"
+          },
+          "422": {
+            "description": "AI proposal cannot satisfy saved schedule constraints"
+          },
+          "429": {
+            "description": "Rate limit; see Retry-After"
+          },
+          "503": {
+            "description": "Database or configured AI provider unavailable"
+          }
+        }
+      }
+    },
+    "/api/platform/trips/{id}/replan": {
+      "post": {
+        "summary": "Preview a bounded remaining-day AI proposal; performs no itinerary writes",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DayReplanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DayReplanPreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid activity, day, schedule or confirmation"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Traveler role and active account required"
+          },
+          "404": {
+            "description": "Owned trip or activity not found"
+          },
+          "409": {
+            "description": "Stale revision, expired preview or historical trip"
+          },
+          "422": {
+            "description": "AI proposal cannot satisfy saved schedule constraints"
+          },
+          "429": {
+            "description": "Rate limit; see Retry-After"
+          },
+          "503": {
+            "description": "Database or configured AI provider unavailable"
+          }
+        }
+      }
+    },
+    "/api/platform/trips/{id}/replan/accept": {
+      "post": {
+        "summary": "Explicitly accept a signed preview if its saved revision is still current",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptDayReplanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedTripResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid activity, day, schedule or confirmation"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Traveler role and active account required"
+          },
+          "404": {
+            "description": "Owned trip or activity not found"
+          },
+          "409": {
+            "description": "Stale revision, expired preview or historical trip"
+          },
+          "422": {
+            "description": "AI proposal cannot satisfy saved schedule constraints"
+          },
+          "429": {
+            "description": "Rate limit; see Retry-After"
+          },
+          "503": {
+            "description": "Database or configured AI provider unavailable"
+          }
+        }
+      }
+    },
+    "/api/platform/trips/{id}/photos": {
+      "post": {
+        "summary": "Persist missing activity photos or replace an observed failed stored photo without changing trip details",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "day"
+                ],
+                "properties": {
+                  "day": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 31
+                  },
+                  "failedPhotos": {
+                    "type": "array",
+                    "maxItems": 8,
+                    "description": "Only replace when the index and failed URL still match the owned stored activity.",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "index",
+                        "imageUrl"
+                      ],
+                      "properties": {
+                        "index": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 7
+                        },
+                        "imageUrl": {
+                          "type": "string",
+                          "maxLength": 1000
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The server-owned day with persisted photo metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "day",
+                    "persisted"
+                  ],
+                  "properties": {
+                    "day": {
+                      "$ref": "#/components/schemas/DayPlan"
+                    },
+                    "persisted": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Owned saved trip/day not found"
+          },
+          "429": {
+            "description": "Lookup limit reached"
+          },
+          "502": {
+            "description": "Enrichment unavailable; existing trip is preserved"
+          }
+        }
+      }
+    },
+    "/api/platform/trips/{id}/visit-candidates": {
+      "get": {
+        "summary": "Actual saved itinerary places and existing visit status for one owned trip",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Visits recorded explicitly by the authenticated traveler",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TripVisitCandidatesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1602,7 +2098,8 @@
             "type": "string"
           },
           "region": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 1000
           },
           "country": {
             "type": "string"
@@ -1629,7 +2126,8 @@
             "type": "string",
             "enum": [
               "geonames",
-              "openstreetmap"
+              "openstreetmap",
+              "psgc"
             ]
           },
           "providerId": {
@@ -1657,6 +2155,92 @@
               "west",
               "east"
             ]
+          },
+          "administrativeCode": {
+            "type": "string",
+            "pattern": "^\\d{10}$"
+          },
+          "provinceCode": {
+            "type": "string",
+            "pattern": "^\\d{10}$"
+          },
+          "geographicProvinceCode": {
+            "type": "string",
+            "pattern": "^\\d{10}$"
+          },
+          "administrativeLevel": {
+            "type": "string",
+            "enum": [
+              "Region",
+              "Province",
+              "City",
+              "Municipality",
+              "Barangay"
+            ]
+          },
+          "coordinateSource": {
+            "type": "string",
+            "format": "uri"
+          },
+          "sourceFeatureCode": {
+            "type": "string",
+            "maxLength": 10
+          },
+          "scopeType": {
+            "type": "string",
+            "enum": [
+              "country",
+              "area",
+              "locality",
+              "natural"
+            ]
+          },
+          "parentId": {
+            "type": "integer"
+          },
+          "canBrowse": {
+            "type": "boolean"
+          },
+          "locationPath": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "providerId",
+                "name",
+                "type",
+                "countryCode"
+              ],
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "providerId": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "type": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "countryCode": {
+                  "type": "string",
+                  "pattern": "^[A-Z]{2}$"
+                },
+                "level": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              },
+              "additionalProperties": false
+            }
           }
         }
       },
@@ -1726,6 +2310,9 @@
             ]
           },
           "transportationMessage": {
+            "type": "string"
+          },
+          "currencyMessage": {
             "type": "string"
           }
         }
@@ -1910,8 +2497,39 @@
           "locations": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/LocationSuggestion"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/LocationSuggestion"
+                },
+                {
+                  "$ref": "#/components/schemas/AdministrativeLocationSuggestion"
+                }
+              ]
             }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "coverage": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "countryScope": {
+            "$ref": "#/components/schemas/LocationSuggestion"
           }
         }
       },
@@ -2182,6 +2800,10 @@
             "items": {
               "$ref": "#/components/schemas/CrowdCondition"
             }
+          },
+          "timeZone": {
+            "type": "string",
+            "maxLength": 100
           }
         }
       },
@@ -2239,6 +2861,50 @@
           },
           "sourceUrl": {
             "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "unsplash"
+            ]
+          },
+          "photoId": {
+            "type": "string"
+          },
+          "photographerUrl": {
+            "type": "string"
+          },
+          "photographerUsername": {
+            "type": "string"
+          },
+          "illustrative": {
+            "type": "boolean"
+          },
+          "match": {
+            "type": "string",
+            "enum": [
+              "place",
+              "destination",
+              "activity"
+            ]
+          },
+          "downloadLocation": {
+            "type": "string"
+          },
+          "downloadTracked": {
+            "type": "boolean"
+          },
+          "selectedAt": {
+            "type": "string"
+          },
+          "photoType": {
+            "type": "string",
+            "enum": [
+              "place",
+              "illustrative",
+              "destination",
+              "saved"
+            ]
           }
         }
       },
@@ -2313,6 +2979,92 @@
           "location": {
             "type": "string",
             "maxLength": 200
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planned",
+              "completed",
+              "skipped",
+              "rescheduled"
+            ]
+          },
+          "statusChangedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "managementHistory": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "required": [
+                "action",
+                "status",
+                "at",
+                "fromDate",
+                "fromTime",
+                "toDate",
+                "toTime"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "complete",
+                    "skip",
+                    "plan",
+                    "edit",
+                    "reschedule",
+                    "replan"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "planned",
+                    "completed",
+                    "skipped",
+                    "rescheduled"
+                  ]
+                },
+                "at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "fromDate": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "fromTime": {
+                  "type": "string"
+                },
+                "toDate": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "toTime": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "scheduleLabel": {
+            "type": "string",
+            "enum": [
+              "Suggested"
+            ]
+          },
+          "googlePlaceId": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 255,
+            "pattern": "^[\\w-]{10,255}$",
+            "description": "Persisted matched Google Place ID only. Google photo content is transient."
           }
         }
       },
@@ -2397,6 +3149,57 @@
           },
           "crowdRefreshAfter": {
             "type": "string"
+          },
+          "planningStatus": {
+            "type": "string",
+            "enum": [
+              "suggested",
+              "incomplete",
+              "rest",
+              "travel"
+            ]
+          },
+          "planningReason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "scheduleBlocks": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "startMinutes",
+                "endMinutes",
+                "label"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "meal",
+                    "free-time",
+                    "unscheduled"
+                  ]
+                },
+                "startMinutes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1439
+                },
+                "endMinutes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1440
+                },
+                "label": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              }
+            }
           }
         }
       },
@@ -2870,7 +3673,8 @@
         ],
         "properties": {
           "travelStyle": {
-            "type": "string"
+            "type": "string",
+            "description": "Historical saved metadata is preserved. New and regenerated itineraries use balanced; this is not a selectable input."
           },
           "accommodation": {
             "type": "string"
@@ -2890,7 +3694,15 @@
               "relaxed",
               "balanced",
               "active"
-            ]
+            ],
+            "description": "Historical saved pacing is preserved on read. New and regenerated itineraries use balanced pacing."
+          },
+          "interests": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20
           }
         }
       },
@@ -2910,7 +3722,7 @@
           "destination": {
             "type": "string",
             "minLength": 2,
-            "maxLength": 120
+            "maxLength": 2000
           },
           "budget": {
             "type": "number",
@@ -3159,6 +3971,29 @@
           },
           "selectedAccommodationQuote": {
             "type": "string"
+          },
+          "scheduleConstraints": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Optional destination-local clocks. Arrival reserves 90 minutes; departure reserves 120 minutes. Rest dates intentionally omit sightseeing.",
+            "properties": {
+              "arrivalTime": {
+                "type": "string",
+                "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"
+              },
+              "departureTime": {
+                "type": "string",
+                "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"
+              },
+              "restDates": {
+                "type": "array",
+                "maxItems": 31,
+                "items": {
+                  "type": "string",
+                  "format": "date"
+                }
+              }
+            }
           }
         }
       },
@@ -3186,7 +4021,8 @@
             "enum": [
               "openai",
               "gemini",
-              "mock"
+              "mock",
+              "catalog"
             ]
           },
           "manuallyEdited": {
@@ -4870,6 +5706,36 @@
           },
           "type": {
             "type": "string"
+          },
+          "latitude": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "longitude": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "photos": {
+            "type": "array",
+            "maxItems": 5,
+            "items": {
+              "$ref": "#/components/schemas/PropertyPhoto"
+            }
+          },
+          "rating": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "amenities": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "type": "string",
+              "maxLength": 100
+            }
           }
         }
       },
@@ -4948,8 +5814,8 @@
         "properties": {
           "city": {
             "type": "string",
-            "minLength": 2,
-            "maxLength": 100
+            "minLength": 1,
+            "maxLength": 200
           },
           "country": {
             "type": "string",
@@ -4969,6 +5835,113 @@
             "type": "number",
             "minimum": -180,
             "maximum": 180
+          },
+          "administrativeCode": {
+            "type": "string",
+            "pattern": "^\\d{10}$"
+          },
+          "provinceCode": {
+            "type": "string",
+            "pattern": "^\\d{10}$"
+          },
+          "geographicProvinceCode": {
+            "type": "string",
+            "pattern": "^\\d{10}$"
+          },
+          "administrativeLevel": {
+            "type": "string",
+            "enum": [
+              "Region",
+              "Province",
+              "City",
+              "Municipality",
+              "Barangay"
+            ]
+          },
+          "coordinateSource": {
+            "type": "string",
+            "format": "uri"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "geonames",
+              "openstreetmap",
+              "psgc"
+            ]
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "sourceFeatureCode": {
+            "type": "string",
+            "maxLength": 10
+          },
+          "scopeType": {
+            "type": "string",
+            "enum": [
+              "country",
+              "area",
+              "locality",
+              "natural"
+            ]
+          },
+          "parentId": {
+            "type": "integer"
+          },
+          "canBrowse": {
+            "type": "boolean"
+          },
+          "locationPath": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "providerId",
+                "name",
+                "type",
+                "countryCode"
+              ],
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "providerId": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "type": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "countryCode": {
+                  "type": "string",
+                  "pattern": "^[A-Z]{2}$"
+                },
+                "level": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "placeType": {
+            "type": "string",
+            "maxLength": 100
           }
         },
         "required": [
@@ -5130,6 +6103,30 @@
           "address": {
             "type": "string",
             "maxLength": 1000
+          },
+          "locationScope": {
+            "type": "string",
+            "enum": [
+              "city",
+              "nearby"
+            ]
+          },
+          "selectedCity": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "distanceFromDestinationKm": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 30
+          },
+          "membershipSourceUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "coordinateSourceUrl": {
+            "type": "string",
+            "format": "uri"
           }
         },
         "required": [
@@ -5156,41 +6153,7 @@
             "const": 1
           },
           "destination": {
-            "type": "object",
-            "properties": {
-              "city": {
-                "type": "string",
-                "minLength": 2,
-                "maxLength": 100
-              },
-              "country": {
-                "type": "string",
-                "minLength": 2,
-                "maxLength": 100
-              },
-              "countryCode": {
-                "type": "string",
-                "pattern": "^[A-Z]{2}$"
-              },
-              "latitude": {
-                "type": "number",
-                "minimum": -90,
-                "maximum": 90
-              },
-              "longitude": {
-                "type": "number",
-                "minimum": -180,
-                "maximum": 180
-              }
-            },
-            "required": [
-              "city",
-              "country",
-              "countryCode",
-              "latitude",
-              "longitude"
-            ],
-            "additionalProperties": false
+            "$ref": "#/components/schemas/DestinationAnchor"
           },
           "startingLocation": {
             "type": "string",
@@ -5452,6 +6415,15 @@
               "type": "string",
               "maxLength": 1000
             }
+          },
+          "timeZone": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "unpricedExpenseCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
           }
         },
         "required": [
@@ -5527,7 +6499,8 @@
             "type": "string"
           },
           "region": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 1000
           },
           "country": {
             "type": "string"
@@ -5554,7 +6527,8 @@
             "type": "string",
             "enum": [
               "geonames",
-              "openstreetmap"
+              "openstreetmap",
+              "psgc"
             ]
           },
           "providerId": {
@@ -5583,6 +6557,92 @@
               "east"
             ]
           },
+          "administrativeCode": {
+            "type": "string",
+            "pattern": "^\\d{10}$"
+          },
+          "provinceCode": {
+            "type": "string",
+            "pattern": "^\\d{10}$"
+          },
+          "geographicProvinceCode": {
+            "type": "string",
+            "pattern": "^\\d{10}$"
+          },
+          "administrativeLevel": {
+            "type": "string",
+            "enum": [
+              "Region",
+              "Province",
+              "City",
+              "Municipality",
+              "Barangay"
+            ]
+          },
+          "coordinateSource": {
+            "type": "string",
+            "format": "uri"
+          },
+          "sourceFeatureCode": {
+            "type": "string",
+            "maxLength": 10
+          },
+          "scopeType": {
+            "type": "string",
+            "enum": [
+              "country",
+              "area",
+              "locality",
+              "natural"
+            ]
+          },
+          "parentId": {
+            "type": "integer"
+          },
+          "canBrowse": {
+            "type": "boolean"
+          },
+          "locationPath": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "providerId",
+                "name",
+                "type",
+                "countryCode"
+              ],
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "providerId": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "type": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "countryCode": {
+                  "type": "string",
+                  "pattern": "^[A-Z]{2}$"
+                },
+                "level": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              },
+              "additionalProperties": false
+            }
+          },
           "description": {
             "type": "string"
           },
@@ -5595,7 +6655,16 @@
             "enum": [
               "country-code",
               "administrative-hierarchy",
-              "boundary"
+              "boundary",
+              "official-administrative",
+              "geographic-association"
+            ]
+          },
+          "coordinateStatus": {
+            "type": "string",
+            "enum": [
+              "resolved",
+              "unresolved"
             ]
           }
         },
@@ -5605,8 +6674,6 @@
           "region",
           "country",
           "countryCode",
-          "latitude",
-          "longitude",
           "label",
           "placeType",
           "contextLabel",
@@ -5666,6 +6733,17 @@
               "type": "string",
               "format": "uri"
             }
+          },
+          "coverage": {
+            "type": "string",
+            "enum": [
+              "complete-administrative",
+              "partial-geographic"
+            ]
+          },
+          "catalogueAsOf": {
+            "type": "string",
+            "format": "date"
           }
         },
         "required": [
@@ -6235,6 +7313,15 @@
           "createdAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "place": {
+            "$ref": "#/components/schemas/VisitPlaceReference"
+          },
+          "imageUrl": {
+            "type": "string"
+          },
+          "imageAttribution": {
+            "$ref": "#/components/schemas/ImageAttribution"
           }
         }
       },
@@ -6459,6 +7546,581 @@
           "fetchedAt",
           "provider"
         ]
+      },
+      "ManagedTripResponse": {
+        "type": "object",
+        "required": [
+          "trip",
+          "revision",
+          "canManage"
+        ],
+        "properties": {
+          "trip": {
+            "$ref": "#/components/schemas/SavedTrip"
+          },
+          "revision": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "canManage": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ActivityChangeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "revision",
+          "confirm",
+          "action"
+        ],
+        "properties": {
+          "revision": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "confirm": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "skip",
+              "plan",
+              "edit",
+              "reschedule"
+            ]
+          },
+          "changes": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "dayIndex": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 30
+              },
+              "time": {
+                "type": "string",
+                "maxLength": 30
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 160
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 1000
+              },
+              "location": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "durationMinutes": {
+                "type": "integer",
+                "minimum": 15,
+                "maximum": 720
+              },
+              "estimatedCost": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 10000000
+              }
+            }
+          }
+        }
+      },
+      "DayReplanRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "revision",
+          "dayIndex",
+          "fromTime",
+          "toTime",
+          "mode"
+        ],
+        "properties": {
+          "revision": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "dayIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 30
+          },
+          "fromTime": {
+            "type": "string",
+            "description": "Explicit available start, destination-local HH:MM"
+          },
+          "toTime": {
+            "type": "string",
+            "description": "Explicit available finish, destination-local HH:MM"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "walking",
+              "cycling",
+              "driving"
+            ]
+          }
+        }
+      },
+      "DayReplanPreview": {
+        "type": "object",
+        "required": [
+          "token",
+          "revision",
+          "dayIndex",
+          "expiresAt",
+          "provider",
+          "activities",
+          "warnings",
+          "legs"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Signed owner/trip/revision-bound proposal; expires after 15 minutes"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "dayIndex": {
+            "type": "integer"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "openai",
+              "gemini"
+            ]
+          },
+          "activities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DayActivity"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "legs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "fromId",
+                "toId",
+                "minutes",
+                "source"
+              ],
+              "properties": {
+                "fromId": {
+                  "type": "string"
+                },
+                "toId": {
+                  "type": "string"
+                },
+                "minutes": {
+                  "type": "number"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "osrm",
+                    "estimate"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "AcceptDayReplanRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "token",
+          "confirm",
+          "revision"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "confirm": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "revision": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      },
+      "AdministrativeLocationSuggestion": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "country": {
+            "type": "string"
+          },
+          "countryCode": {
+            "type": "string"
+          },
+          "latitude": {
+            "type": "number"
+          },
+          "longitude": {
+            "type": "number"
+          },
+          "label": {
+            "type": "string"
+          },
+          "placeType": {
+            "type": "string"
+          },
+          "contextLabel": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "geonames",
+              "openstreetmap",
+              "psgc"
+            ]
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "bounds": {
+            "type": "object",
+            "properties": {
+              "south": {
+                "type": "number"
+              },
+              "north": {
+                "type": "number"
+              },
+              "west": {
+                "type": "number"
+              },
+              "east": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "south",
+              "north",
+              "west",
+              "east"
+            ]
+          },
+          "administrativeCode": {
+            "type": "string",
+            "pattern": "^\\d{10}$"
+          },
+          "provinceCode": {
+            "type": "string",
+            "pattern": "^\\d{10}$"
+          },
+          "geographicProvinceCode": {
+            "type": "string",
+            "pattern": "^\\d{10}$"
+          },
+          "administrativeLevel": {
+            "type": "string",
+            "enum": [
+              "Region",
+              "Province",
+              "City",
+              "Municipality",
+              "Barangay"
+            ]
+          },
+          "coordinateSource": {
+            "type": "string",
+            "format": "uri"
+          },
+          "sourceFeatureCode": {
+            "type": "string",
+            "maxLength": 10
+          },
+          "scopeType": {
+            "type": "string",
+            "enum": [
+              "country",
+              "area",
+              "locality",
+              "natural"
+            ]
+          },
+          "parentId": {
+            "type": "integer"
+          },
+          "canBrowse": {
+            "type": "boolean"
+          },
+          "locationPath": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "providerId",
+                "name",
+                "type",
+                "countryCode"
+              ],
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "providerId": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "type": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "countryCode": {
+                  "type": "string",
+                  "pattern": "^[A-Z]{2}$"
+                },
+                "level": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "coordinateStatus": {
+            "type": "string",
+            "enum": [
+              "resolved",
+              "unresolved"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "region",
+          "country",
+          "countryCode",
+          "label",
+          "placeType",
+          "contextLabel"
+        ]
+      },
+      "TripVisitCandidate": {
+        "type": "object",
+        "required": [
+          "key",
+          "fingerprint",
+          "dayIndex",
+          "activityIndex",
+          "name",
+          "destination",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "dayIndex": {
+            "type": "integer"
+          },
+          "activityIndex": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "destination": {
+            "type": "string"
+          },
+          "latitude": {
+            "type": "number"
+          },
+          "longitude": {
+            "type": "number"
+          },
+          "alreadyRecorded": {
+            "type": "boolean"
+          },
+          "place": {
+            "$ref": "#/components/schemas/VisitPlaceReference"
+          },
+          "imageUrl": {
+            "type": "string"
+          },
+          "imageAttribution": {
+            "$ref": "#/components/schemas/ImageAttribution"
+          }
+        }
+      },
+      "TripVisitCandidatesResponse": {
+        "type": "object",
+        "required": [
+          "tripId",
+          "destination",
+          "places"
+        ],
+        "properties": {
+          "tripId": {
+            "type": "string"
+          },
+          "destination": {
+            "type": "string"
+          },
+          "places": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TripVisitCandidate"
+            }
+          }
+        }
+      },
+      "TripVisitsRecordResponse": {
+        "type": "object",
+        "required": [
+          "recorded",
+          "alreadyRecorded"
+        ],
+        "properties": {
+          "recorded": {
+            "type": "integer"
+          },
+          "alreadyRecorded": {
+            "type": "integer"
+          }
+        }
+      },
+      "VisitPlaceReference": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "const": "wikidata"
+          },
+          "placeId": {
+            "type": "string",
+            "pattern": "^Q\\d+$"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "city": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "country": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "countryCode": {
+            "type": "string",
+            "pattern": "^[A-Z]{2}$"
+          },
+          "latitude": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "longitude": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "sourceUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "fetchedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "openingHours": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "address": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "locationScope": {
+            "type": "string",
+            "enum": [
+              "city",
+              "nearby"
+            ]
+          },
+          "selectedCity": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "distanceFromDestinationKm": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 30
+          },
+          "membershipSourceUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "coordinateSourceUrl": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "required": [
+          "provider",
+          "placeId",
+          "name"
+        ],
+        "additionalProperties": false
       }
     },
     "responses": {
@@ -6498,5 +8160,8 @@
     "record": "record-visit: tripId/dayIndex/activityIndex or name/destination, visitDate, timeZone",
     "remove": "remove-visit: id; only the current owner may remove a visit"
   },
-  "x-trip-save-idempotency": "save-trip accepts saveKey (8–100 safe characters); otherwise uses a canonical content hash. Keys are unique per user, tied to payloads, and replay the original saved trip. The duplicate-trip action has been removed."
+  "x-trip-save-idempotency": "save-trip accepts saveKey (8–100 safe characters); otherwise uses a canonical content hash. Keys are unique per user, tied to payloads, and replay the original saved trip. The duplicate-trip action has been removed.",
+  "x-visited-places": {
+    "recordTripPlaces": "record-trip-visits: tripId, places[{key,fingerprint}], actual visitDate and timeZone. Atomic, deduplicated across previous dates; never changes trip status."
+  }
 }

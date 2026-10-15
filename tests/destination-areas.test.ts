@@ -21,7 +21,7 @@ test('countries populate automatically from worldwide geographic records; pages 
   assert.equal(belongsToArea({...indexedCities('JP')[0],longitude:200},scope),false);
   for (const query of ['Japan','France','Philippines','Brazil','South Africa']) {
     const selected = parent(query); const first = await searchDestinationAreas(selected,'',0,async () => { throw Error('Country browsing must not call providers.'); });
-    assert.equal(first.status,'ready'); assert.ok(first.areas.length > 0); assert.ok(first.areas.every(city => city.countryCode === selected.countryCode && city.membership === 'country-code' && city.description.length > 0));
+    assert.equal(first.status,'ready'); assert.ok(first.areas.length > 0); assert.ok(first.areas.every(city => city.countryCode === selected.countryCode && city.membership === (selected.countryCode === 'PH' ? 'official-administrative' : 'country-code') && city.description.length > 0));
     if (first.nextOffset !== null) {
       const more = await searchDestinationAreas(selected,'',first.nextOffset); assert.ok(more.areas.length > 0); assert.ok(more.areas.every(city => !first.areas.some(prior => prior.id === city.id)));
     }
@@ -32,7 +32,7 @@ test('region browsing validates administrative membership across multiple countr
   for (const query of ['Scotland, United Kingdom','Central Visayas, Philippines','Île-de-France, France']) {
     const selected = parent(query); assert.equal(selected.placeType,'Region');
     const result = await searchDestinationAreas(selected); assert.ok(result.areas.length > 0);
-    assert.ok(result.areas.every(city => city.region === selected.region && city.countryCode === selected.countryCode && city.membership === 'administrative-hierarchy'));
+    assert.ok(result.areas.every(city => city.countryCode === selected.countryCode && (selected.countryCode === 'PH' ? city.membership === 'official-administrative' : city.region === selected.region && city.membership === 'administrative-hierarchy')));
   }
 });
 test('islands use polygon membership, not a bounding box; duplicates share one boundary request', async t => {
@@ -53,10 +53,18 @@ test('city search extends beyond the catalogue and rejects wrong countries, outs
   const result = await searchDestinationAreas(island,'New Fixture Town',0,provider);
   assert.equal(result.areas.length,1); assert.equal(result.areas[0].id,999910001); assert.equal(result.areas[0].provider,'geonames');
 });
-test('missing/ambiguous/wrong-country boundaries fail honestly and never fall back to all national cities', async () => {
+test('missing/ambiguous/wrong-country boundaries return honest empty coverage and never all national cities', async () => {
   for (const rows of [[],[{...boundary,address:{country_code:'kr'}}],[boundary,{...boundary,osm_id:123}], [{...boundary,geojson:{type:'Point',coordinates:[138,36]}}]]) {
-    clearDestinationAreaCaches(); await assert.rejects(searchDestinationAreas(island,'',0,async () => Response.json(rows)),/boundary/);
+    clearDestinationAreaCaches(); const result = await searchDestinationAreas(island,'',0,async () => Response.json(rows));
+    assert.equal(result.status,'empty'); assert.deepEqual(result.areas,[]); assert.equal(result.total,0); assert.equal(result.nextOffset,null); assert.match(result.message,/boundary.*cannot be verified/); assert.match(result.message,/Destination field/);
   }
+});
+test('actual boundary provider failures remain retryable errors', async () => {
+  clearDestinationAreaCaches();
+  await assert.rejects(searchDestinationAreas(island,'',0,async () => Response.json({}, {status:503})),/provider unavailable/);
+  clearDestinationAreaCaches();
+  await assert.rejects(searchDestinationAreas(island,'',0,async () => Response.json({unexpected:true})),/invalid data/);
+  clearDestinationAreaCaches();
 });
 test('a region outside the catalogue discovers mapped towns within its verified boundary', async () => {
   clearDestinationAreaCaches();
@@ -67,6 +75,61 @@ test('a region outside the catalogue discovers mapped towns within its verified 
     : Response.json({elements:[{id:9988111,lat:30,lon:130,tags:{place:'town',name:'Mapped Fixture Town'}},{id:9988222,lat:31,lon:131,tags:{place:'town',name:'Outside Town'}}]});
   const result = await searchDestinationAreas(selectedAreaParent(selected.id,'JP'),'',0,provider);
   assert.equal(result.areas.length,1); assert.equal(result.areas[0].name,'Mapped Fixture Town'); assert.equal(result.areas[0].membership,'boundary'); assert.equal(result.areas[0].providerId,'node:9988111');
+});
+
+test('mapped towns recover from a primary timeout using the existing fallback with strict membership checks', async t => {
+  clearDestinationAreaCaches(); t.after(clearDestinationAreaCaches);
+  const previous = process.env.ACCOMMODATION_PLACES_FALLBACK_URL;
+  process.env.ACCOMMODATION_PLACES_FALLBACK_URL = 'https://fallback.example.test/interpreter';
+  t.after(() => { if (previous === undefined) delete process.env.ACCOMMODATION_PLACES_FALLBACK_URL; else process.env.ACCOMMODATION_PLACES_FALLBACK_URL = previous; });
+  const selected = {...island,id:-9988002,name:'Unindexed Region',label:'Unindexed Region, Japan',placeType:'Region',latitude:30,longitude:130,provider:'openstreetmap' as const,providerId:'relation:9988002'};
+  const geometry = {type:'Polygon',coordinates:[[[129.99,29.99],[130.01,29.99],[130.01,30.01],[129.99,30.01],[129.99,29.99]]]};
+  const calls:string[] = [];
+  const provider:typeof fetch = async (input, init) => {
+    const url = String(input); calls.push(url);
+    if (url.includes('nominatim')) return Response.json([{...boundary,name:selected.name,namedetails:{'name:en':selected.name},addresstype:'state',osm_id:9988002,geojson:geometry}]);
+    assert.equal((init?.headers as Record<string,string>)['Content-Type'],'application/x-www-form-urlencoded');
+    const query = (init?.body as URLSearchParams).get('data')!;
+    assert.match(query, /\[timeout:8\]/);
+    assert.match(query, /area\["ISO3166-1"="JP"\]\[admin_level=2\]->\.country;node\(area\.country\)/);
+    assert.match(query, /29.99,129.99,30.01,130.01/);
+    assert.ok(init?.signal);
+    if (!url.includes('fallback.example.test')) return Response.json({}, {status:504});
+    return Response.json({elements:[
+      {id:9988331,lat:30,lon:130,tags:{place:'town',name:'Verified Town'}},
+      {id:9988331,lat:30,lon:130,tags:{place:'town',name:'Verified Town'}},
+      {id:9988332,lat:31,lon:131,tags:{place:'town',name:'Outside Town'}},
+      {id:9988333,lat:30,lon:130,tags:{place:'town',name:'Wrong Country','addr:country':'KR'}},
+      {id:9988334,lat:30,lon:130,tags:{place:'island',name:'Not a town'}},
+    ]});
+  };
+  const result = await searchDestinationAreas(selected,'',0,provider);
+  assert.equal(result.status,'ready'); assert.equal(result.areas.length,1); assert.equal(result.areas[0].name,'Verified Town');
+  assert.equal(result.areas[0].membership,'boundary'); assert.equal(calls.length,3);
+  await searchDestinationAreas(selected,'',0,provider); assert.equal(calls.length,3);
+});
+
+test('failed mapped providers stay an error, while a successful empty response remains honest empty coverage', async t => {
+  clearDestinationAreaCaches(); t.after(clearDestinationAreaCaches);
+  const selected = {...island,id:-9988003,name:'Limited Region',label:'Limited Region, Japan',placeType:'Region',latitude:30,longitude:130,provider:'openstreetmap' as const,providerId:'relation:9988003'};
+  const geometry = {type:'Polygon',coordinates:[[[129.99,29.99],[130.01,29.99],[130.01,30.01],[129.99,30.01],[129.99,29.99]]]};
+  const provider = (result: Response):typeof fetch => async input => String(input).includes('nominatim') ? Response.json([{...boundary,name:selected.name,namedetails:{'name:en':selected.name},addresstype:'state',osm_id:9988003,geojson:geometry}]) : result.clone();
+  await assert.rejects(searchDestinationAreas(selected,'',0,provider(Response.json({}, {status:504}))), /Mapped town suggestions.*Destination field/);
+  clearDestinationAreaCaches();
+  await assert.rejects(searchDestinationAreas(selected,'',0,provider(Response.json({elements:[],remark:'runtime error: query timed out'}))), /could not complete the search/);
+  clearDestinationAreaCaches();
+  let mappedCalls = 0;
+  const limited = provider(Response.json({}, {status:429}));
+  await assert.rejects(searchDestinationAreas(selected,'',0,async (input,init)=>{if (!String(input).includes('nominatim')) mappedCalls++; return limited(input,init);}), /request limit/);
+  assert.equal(mappedCalls,1);
+  clearDestinationAreaCaches();
+  await assert.rejects(searchDestinationAreas(selected,'',0,async (input,init)=>{
+    if (String(input).includes('nominatim')) return provider(Response.json({}))(input,init);
+    throw new DOMException('The operation was aborted due to timeout','TimeoutError');
+  }), /Mapped town suggestions.*Destination field/);
+  clearDestinationAreaCaches();
+  const result = await searchDestinationAreas(selected,'',0,provider(Response.json({elements:[]})));
+  assert.equal(result.status,'empty'); assert.equal(result.total,0); assert.deepEqual(result.areas,[]);
 });
 test('polygon validation handles holes, dateline islands and malformed provider geometry', () => {
   const hole = parsePolygon({type:'Polygon',coordinates:[[[0,0],[10,0],[10,10],[0,10],[0,0]],[[2,2],[4,2],[4,4],[2,4],[2,2]]]})!;
@@ -101,7 +164,12 @@ test('area API validates parent identity, preserves authentication and rate limi
   user = {id:'area-http',role:'traveler',accountStatus:'active',emailVerified:true};
   const response = await GET_AREAS(request()); assert.equal(response.status,200); assert.ok((await response.json()).areas.length > 0);
   assert.equal((await GET_AREAS(request('&offset=-1'))).status,400);
-  assert.throws(()=>selectedAreaParent(selected.id,'JP'),/valid country/);
+  clearDestinationAreaCaches();
+  const unsupportedIsland = parent('Kono-som');
+  t.mock.method(globalThis,'fetch',async () => Response.json([]));
+  const empty = await GET_AREAS(new Request(`http://localhost/api/locations/areas?parentId=${unsupportedIsland.id}&countryCode=${unsupportedIsland.countryCode}`,{headers}));
+  assert.equal(empty.status,200); assert.equal((await empty.json()).status,'empty');
+  assert.throws(()=>selectedAreaParent(selected.id,'JP'),/valid parent area/);
   assert.equal((await GET_AREA_COMPARISON(new Request('http://localhost/api/locations/areas/compare?parentId=1&countryCode=FR&cityIds=not-valid',{headers}))).status,400);
   count = 61; const limited = await GET_AREAS(request()); assert.equal(limited.status,429); assert.equal(limited.headers.get('Retry-After'),'60');
 });

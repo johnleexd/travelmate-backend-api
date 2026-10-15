@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { countries, type TCountryCode } from 'countries-list';
 import { rankLocationSuggestions, type GeocodingPlace, type LocationSuggestion } from './location-search-service.ts';
+import { catalogueLocation, catalogueCountryCode } from './global-catalogue.ts';
 
 type Row = [number, string, number, number, string, string, string, string[], number];
 export function normalizeDestination(value: string) {
@@ -14,6 +15,7 @@ const byCountry = new Map<string, typeof records>();
 for (const record of records) { const list = byCountry.get(record.row[5]) || []; list.push(record); byCountry.set(record.row[5], list); }
 
 export function countryForQuery(query: string): string | undefined {
+  const full = catalogueCountryCode(query); if (full) return full;
   const name = normalizeDestination(query);
   return Object.entries(countries).find(([code, country]) => [code, country.name, country.native].some(value => normalizeDestination(value) === name))?.[0]
     || records.find(record => /^PCL/.test(record.row[4]) && record.names.includes(name))?.row[5];
@@ -22,6 +24,7 @@ function place(row: Row): GeocodingPlace {
   return { id: row[0], name: /^PCL/.test(row[4]) ? countries[row[5] as TCountryCode].name : row[1], latitude: row[2], longitude: row[3], feature_code: row[4], country_code: row[5], country: countries[row[5] as TCountryCode].name, admin1: row[6], population: row[8] };
 }
 export function indexedDestination(id: number, countryCode: string): LocationSuggestion | undefined {
+  const full = catalogueLocation(id, countryCode); if (full) return full;
   const record = (byCountry.get(countryCode) || []).find(record => record.row[0] === id);
   return record ? rankLocationSuggestions(place(record.row).name, [place(record.row)], 1)[0] : undefined;
 }
@@ -30,7 +33,8 @@ export function indexedAdministrativeArea(id: number, countryCode: string): stri
   return row?.[4] === 'ADM1' ? row[6] || row[1] : undefined;
 }
 export function indexedDestinationNames(id: number, countryCode: string): string[] {
-  return (byCountry.get(countryCode) || []).find(record => record.row[0] === id)?.names || [];
+  const names = (byCountry.get(countryCode) || []).find(record => record.row[0] === id)?.names || [];
+  const full = catalogueLocation(id, countryCode); return full ? [...names, normalizeDestination(full.name)] : names;
 }
 export function indexedCities(countryCode: string): Array<LocationSuggestion & { population?: number }> {
   return (byCountry.get(countryCode) || []).filter(record => /^PPL/.test(record.row[4]))

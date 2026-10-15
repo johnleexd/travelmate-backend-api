@@ -7,3 +7,25 @@ node_modules
 
 /src/generated/prisma
 /dist
+
+# Local diagnostics, credentials and database copies.
+*.log
+*.pem
+*.key
+*.p12
+*.pfx
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+credentials*.json
+*service-account*.json
+
+# One-off helpers containing private account/trip identifiers.
+/scripts/diagnose-missing-activities.ts
+/scripts/inspect-affected-source-evidence.ts
+/scripts/repair-affected-trip-photos.ts
+/scripts/serve-affected-trip-verification.ts
+/scripts/serve-visited-page-verification.ts
+/scripts/verify-cheonan-itinerary-navigation.ts
+/scripts/verify-non-google-photo-lifecycle.ts

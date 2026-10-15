@@ -7,7 +7,7 @@ export type NavigationRequest = z.infer<typeof navigationRequestSchema>;
 export type NavigationCoordinate = z.infer<typeof coordinateSchema>;
 export type NavigationDestination = NavigationCoordinate & { id: string; name: string; label: string };
 export type NavigationStep = { instruction: string; distanceMeters: number; durationSeconds: number; location: NavigationCoordinate; maneuver: string; modifier?: string };
-export type NavigationRoute = { mode: NavigationRequest['mode']; origin: NavigationCoordinate; destination: NavigationCoordinate; geometry: NavigationCoordinate[]; steps: NavigationStep[]; distanceMeters: number; durationSeconds: number; originOffsetMeters: number; destinationOffsetMeters: number; fetchedAt: string; provider: 'osrm' };
+export type NavigationRoute = { mode: NavigationRequest['mode']; origin: NavigationCoordinate; destination: NavigationCoordinate; geometry: NavigationCoordinate[]; steps: NavigationStep[]; distanceMeters: number; durationSeconds: number; originOffsetMeters: number; destinationOffsetMeters: number; fetchedAt: string; provider: 'osrm'; legDurationsSeconds?: number[] };
 
 export class NavigationError extends Error {
   status: number;
@@ -33,7 +33,7 @@ const providerRouteSchema = z.object({
   waypoints: z.array(z.object({ distance: nonnegative })).length(2),
   routes: z.array(z.object({ distance: nonnegative, duration: nonnegative,
     geometry: z.object({ type: z.literal('LineString'), coordinates: z.array(providerPoint).min(2).max(60_000) }),
-    legs: z.array(z.object({ steps: z.array(z.object({ name: z.string().max(500), distance: nonnegative, duration: nonnegative,
+    legs: z.array(z.object({ duration: nonnegative.optional(), steps: z.array(z.object({ name: z.string().max(500), distance: nonnegative, duration: nonnegative,
       maneuver: z.object({ type: z.string().max(50), modifier: z.string().max(50).optional(), location: providerPoint, bearing_after: z.number().optional(), exit: z.number().int().positive().optional() }),
     })).min(1).max(1000) })).length(1),
   })).min(1),
@@ -56,24 +56,31 @@ export function maneuverInstruction(type: string, modifier = '', road = '', exit
   return `${turn}${onto}`;
 }
 
-export function parseNavigationRoute(payload: unknown, input: NavigationRequest): NavigationRoute {
-  const parsed = providerRouteSchema.safeParse(payload);
+export function parseNavigationRoute(payload: unknown, input: NavigationRequest, waypointCount = 2): NavigationRoute {
+  const schema = waypointCount === 2 ? providerRouteSchema : providerRouteSchema.extend({
+    waypoints: providerRouteSchema.shape.waypoints.element.array().length(waypointCount),
+    routes: providerRouteSchema.shape.routes.element.extend({ legs: providerRouteSchema.shape.routes.element.shape.legs.element.array().length(waypointCount - 1) }).array().min(1),
+  });
+  const parsed = schema.safeParse(payload);
   if (!parsed.success) throw new NavigationError('The routing service returned an incomplete route. Try again.');
   const route = parsed.data.routes[0];
   return { ...input, provider: 'osrm', fetchedAt: new Date().toISOString(), distanceMeters: route.distance, durationSeconds: route.duration,
-    originOffsetMeters: parsed.data.waypoints[0].distance, destinationOffsetMeters: parsed.data.waypoints[1].distance,
+    originOffsetMeters: parsed.data.waypoints[0].distance, destinationOffsetMeters: parsed.data.waypoints.at(-1)!.distance,
     geometry: route.geometry.coordinates.map(([longitude, latitude]) => ({ latitude, longitude })),
-    steps: route.legs[0].steps.map(step => ({ instruction: maneuverInstruction(step.maneuver.type, step.maneuver.modifier, step.name, step.maneuver.exit, step.maneuver.bearing_after), distanceMeters: step.distance, durationSeconds: step.duration, location: { latitude: step.maneuver.location[1], longitude: step.maneuver.location[0] }, maneuver: step.maneuver.type, modifier: step.maneuver.modifier })),
+    ...(route.legs.every(leg => leg.duration !== undefined) ? { legDurationsSeconds: route.legs.map(leg => leg.duration!) } : {}),
+    steps: route.legs.flatMap(leg => leg.steps).map(step => ({ instruction: maneuverInstruction(step.maneuver.type, step.maneuver.modifier, step.name, step.maneuver.exit, step.maneuver.bearing_after), distanceMeters: step.distance, durationSeconds: step.duration, location: { latitude: step.maneuver.location[1], longitude: step.maneuver.location[0] }, maneuver: step.maneuver.type, modifier: step.maneuver.modifier })),
   };
 }
 
-export async function fetchNavigationRoute(raw: NavigationRequest, options: { fetcher?: typeof fetch; reservePublicRequest?: () => Promise<boolean>; signal?: AbortSignal; baseUrl?: string } = {}): Promise<NavigationRoute> {
+export async function fetchNavigationRoute(raw: NavigationRequest, options: { fetcher?: typeof fetch; reservePublicRequest?: () => Promise<boolean>; signal?: AbortSignal; baseUrl?: string; stops?: NavigationCoordinate[] } = {}): Promise<NavigationRoute> {
   const input = navigationRequestSchema.parse(raw);
   const base = new URL(options.baseUrl || process.env.NAVIGATION_ROUTING_BASE_URL || 'https://routing.openstreetmap.de/');
   if (!['https:', 'http:'].includes(base.protocol) || base.username || base.password || base.search || base.hash) throw new NavigationError('The routing service is not configured correctly.');
   if (base.hostname === 'routing.openstreetmap.de' && (!options.reservePublicRequest || !await options.reservePublicRequest())) throw new NavigationError('Routing is busy. Try again in a moment.', 429);
   const profile = { walking: 'routed-foot', cycling: 'routed-bike', driving: 'routed-car' }[input.mode];
-  const points = `${input.origin.longitude},${input.origin.latitude};${input.destination.longitude},${input.destination.latitude}`;
+  const stops = options.stops ? z.array(coordinateSchema).min(2).max(50).parse(options.stops) : [input.origin, input.destination];
+  if (stops[0].latitude !== input.origin.latitude || stops[0].longitude !== input.origin.longitude || stops.at(-1)!.latitude !== input.destination.latitude || stops.at(-1)!.longitude !== input.destination.longitude) throw new NavigationError('Route stops do not match the selected itinerary.');
+  const points = stops.map(point => `${point.longitude},${point.latitude}`).join(';');
   const url = new URL(`${base.toString().replace(/\/$/, '')}/${profile}/route/v1/driving/${points}`);
   url.search = new URLSearchParams({ steps: 'true', geometries: 'geojson', overview: 'full', alternatives: 'false', generate_hints: 'false' }).toString();
   let response: Response;
@@ -88,5 +95,9 @@ export async function fetchNavigationRoute(raw: NavigationRequest, options: { fe
   try { payload = JSON.parse(text); } catch { throw new NavigationError('The routing service returned an unreadable route. Try again.'); }
   const code = payload && typeof payload === 'object' && 'code' in payload ? payload.code : null;
   if (code === 'NoRoute' || code === 'NoSegment') throw new NavigationError('No road or path route connects these locations for this travel mode. Choose another mode or destination.', 404);
-  return parseNavigationRoute(payload, input);
+  if (options.stops) {
+    const result = payload as { waypoints?: Array<{ distance?: number }> };
+    if (result.waypoints?.some(point => typeof point.distance === 'number' && point.distance > 100)) throw new NavigationError('The route stops too far from a planned place. Choose a closer entrance or another mode.', 404);
+  }
+  return parseNavigationRoute(payload, input, stops.length);
 }

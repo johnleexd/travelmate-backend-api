@@ -38,6 +38,7 @@ import { createHash } from 'node:crypto';
 import { clearOAuthFlowCookie } from '../services/auth/google-oauth-service.ts';
 import { apiErrorPayload } from '../contracts/api-error.ts';
 import { isDatabaseConnectionError } from '../lib/database-retry.ts';
+import { registrationDetails, RegistrationValidationError } from '../schemas/auth/registration-schema.ts';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const accountActions = new Set(['login', 'register', 'verify-email', 'resend-verification', 'forgot-password', 'reset-password', 'logout']);
@@ -122,17 +123,18 @@ export async function POST(request: Request) {
   }
 
   if (action === 'register') {
-    const name = String(body.name || '').trim();
+    let details: ReturnType<typeof registrationDetails>;
+    try { details = registrationDetails(body); }
+    catch (error) { if (error instanceof RegistrationValidationError) return fail(error.message); throw error; }
     const email = String(body.email || '').trim().toLowerCase();
     const rawPassword = String(body.password || '');
     const role: Role = 'traveler';
-    if (name.length < 2) return fail('Full name must contain at least 2 characters.');
     if (!emailPattern.test(email)) return fail('Email address must be valid.');
     if (!isStrongPassword(rawPassword)) return fail(getPasswordValidationError(rawPassword) || STRONG_PASSWORD_REQUIREMENTS);
     if (body.confirmPassword !== undefined && body.confirmPassword !== rawPassword) return fail('Confirm password does not match Password.');
     if (!resolveEmailProvider()) return emailUnavailable(request, action);
     const verificationCode = generateAccountCode();
-    const user = await databaseOperation('register_user', () => registerUser({ name, email, rawPassword, role, verificationCode }))
+    const user = await databaseOperation('register_user', () => registerUser({ ...details, email, rawPassword, role, verificationCode }))
       .catch((error: unknown) => error instanceof EmailExistsError ? null : Promise.reject(error));
     if (!user) return fail('An account with that email already exists.', 409);
     await recordAuthAudit(user.id, 'register').catch(() => undefined);

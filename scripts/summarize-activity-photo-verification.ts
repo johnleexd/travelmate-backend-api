@@ -1,0 +1,36 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+import pg from 'pg';
+import { loadBackendEnvironment } from '../src/config/backend-environment.ts';
+loadBackendEnvironment();
+const directory = '../audit/2026-10-13/activity-photo-workflow';
+const { schema } = JSON.parse(fs.readFileSync(directory + '/ready.json', 'utf8'));
+assert.match(schema, /^travelmate_activity_photo_verify_\d+$/);
+const ui = JSON.parse(fs.readFileSync(directory + '/live-ui-results.json', 'utf8'));
+const dbUrl = new URL(process.env.DATABASE_URL!);
+if (dbUrl.hostname.endsWith('.neon.tech')) dbUrl.hostname = dbUrl.hostname.replace('-pooler.', '.');
+const pool = new pg.Pool({ connectionString: dbUrl.toString(), max: 1, connectionTimeoutMillis: 15000 });
+try {
+  const rows = (await pool.query(`SELECT version,kind,itinerary FROM "${schema}".itinerary_versions WHERE trip_id=$1 ORDER BY version`, [ui.tripId])).rows;
+  const snapshots = rows.map(row => ({ version: row.version, kind: row.kind, plan: row.itinerary.itinerary }));
+  const activities = (snapshot: any) => snapshot.plan.days[0].activities;
+  const find = (snapshot: any, name: string) => activities(snapshot).find((item: any) => item.title === name);
+  const privateName = 'Private appointment (photo-free verification)';
+  const firstPrivate = snapshots.find(snapshot => find(snapshot, privateName));
+  assert.ok(firstPrivate); assert.equal(find(firstPrivate, privateName).imageUrl, undefined);
+  const notes = snapshots.find(snapshot => find(snapshot, 'Louvre Museum')?.description === 'Bring a camera. Notes-only verification.');
+  assert.ok(notes); assert.match(find(notes, 'Louvre Museum').imageUrl, /Louvre_Museum/);
+  const firstArc = snapshots.find(snapshot => find(snapshot, 'Arc de Triomphe'));
+  assert.ok(firstArc); assert.equal(find(firstArc, 'Arc de Triomphe').imageUrl, undefined);
+  const final = snapshots.at(-1)!;
+  const previousArc = snapshots.slice(0, -1).reverse().find(snapshot => find(snapshot, 'Arc de Triomphe')?.imageUrl);
+  assert.ok(previousArc);
+  for (const field of ['imageUrl','imageAttribution']) assert.deepEqual(find(final, 'Arc de Triomphe')[field], find(previousArc, 'Arc de Triomphe')[field]);
+  assert.equal(find(final, 'Arc de Triomphe').time, '04:00 PM');
+  assert.equal(find(final, 'Lunch').imageAttribution.illustrative, true);
+  assert.equal(find(final, 'Lunch').imageAttribution.downloadTracked, true);
+  const summary = { tripId: ui.tripId, schema, source: snapshots[0].plan.source, generatedVisits: activities(snapshots[0]).filter((item: any) => item.place).map((item: any) => item.title), generatedPhotoCount: activities(snapshots[0]).filter((item: any) => item.imageUrl).length, versionCount: snapshots.length, namedPhotoResolved: true, notesRetainedPhoto: true, placeChangeClearedOldPhoto: true, genericIllustrativePhotoTracked: true, savedWithoutPhoto: true, timeRetainedPhotoAndMetadata: true, refreshed: ui.refreshed, loadedImages: ui.imagery.filter((item: any) => item.loaded).length, imageCount: ui.imagery.length, browserErrors: ui.errors };
+  fs.writeFileSync(directory + '/live-version-snapshots.json', JSON.stringify(snapshots, null, 2));
+  fs.writeFileSync(directory + '/final-verification.json', JSON.stringify(summary, null, 2));
+  console.log(JSON.stringify(summary, null, 2));
+} finally { await pool.end(); }

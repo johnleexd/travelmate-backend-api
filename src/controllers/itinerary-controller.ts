@@ -41,12 +41,21 @@ import { withProviderCache } from '../services/cache/provider-cache.ts';
 import { generateGroundedSchedule, dateAt, type GroundedScheduleDay } from '../services/ai/grounded-schedule.ts';
 import { loadGroundedPlaces, validateDestinationAnchor } from '../services/itinerary/grounded-places.ts';
 import { type PlaceEvidence, type PriceEvidence, type PlanGrounding } from '../services/itinerary/grounding-schema.ts';
+import { generationPreferencesSchema, preferenceInstructions, generationDefaults, generationPolicyVersion } from '../services/itinerary/travel-preferences.ts';
 import { buildGroundedPlan, signGroundedPlan, verifyGroundedPlan } from '../services/itinerary/grounded-plan.ts';
 import { parseSavedItinerary } from '../services/itinerary/saved-trip-schema.ts';
+import { generationConstraintsSchema, completeGroundedSchedule, type ScheduleMetadata } from '../services/itinerary/generated-day-scheduler.ts';
+import { retainSelectedActivityPhotos } from '../services/itinerary/saved-activity-photos.ts';
+import { fillDayDisplayPhotos } from '../services/itinerary/activity-display-photos.ts';
+import { reusableWikimediaLicense } from '../lib/wikimedia-photo-license.ts';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface DayActivity {
+  id?: string;
+  status?: 'planned' | 'completed' | 'skipped' | 'rescheduled';
+  statusChangedAt?: string;
+  managementHistory?: { action: 'complete' | 'skip' | 'plan' | 'edit' | 'reschedule' | 'replan'; status: 'planned' | 'completed' | 'skipped' | 'rescheduled'; at: string; fromDate: string; fromTime: string; toDate: string; toTime: string }[];
   durationMinutes?: number;
   travelMinutes?: number;
   location?: string;
@@ -59,9 +68,11 @@ export interface DayActivity {
   icon: string;       // emoji shorthand
   imageUrl?: string;
   imageAttribution?: ImageAttribution;
+  googlePlaceId?: string;
   placeVerification?: 'supporting-source-found' | 'unverified';
   place?: PlaceEvidence;
   priceEvidence?: PriceEvidence;
+  scheduleLabel?: 'Suggested';
 }
 
 export interface ImageAttribution {
@@ -69,9 +80,19 @@ export interface ImageAttribution {
   license: string;
   licenseUrl?: string;
   sourceUrl: string;
+  provider?: 'unsplash';
+  photoType?: 'place' | 'illustrative' | 'destination' | 'saved';
+  photoId?: string;
+  photographerUrl?: string;
+  photographerUsername?: string;
+  illustrative?: boolean;
+  match?: 'place' | 'destination' | 'activity';
+  downloadLocation?: string;
+  downloadTracked?: boolean;
+  selectedAt?: string;
 }
 
-export interface DayPlan {
+export interface DayPlan extends ScheduleMetadata {
   day: number;        // sequential trip day
   date: string;       // ISO date string "YYYY-MM-DD"
   theme: string;      // e.g. "Arrival & City Tour"
@@ -180,14 +201,15 @@ export async function searchCommonsImages(query: string, limit: number, signal?:
       const imageUrl = info?.thumburl || info?.url;
       if (!info || !(imageUrl?.startsWith('https://upload.wikimedia.org/') || imageUrl?.startsWith('https://thumb.wikimedia.org/'))) return [];
       const metadata = info.extmetadata || {};
+      const license = plainText(metadata.LicenseShortName?.value), creator = plainText(metadata.Artist?.value) || plainText(metadata.Credit?.value);
+      const licenseUrl = reusableWikimediaLicense(license, metadata.LicenseUrl?.value);
+      if (!creator || !licenseUrl) return [];
       const descriptiveText = `${page.title || ''} ${plainText(metadata.Credit?.value)}`;
       if (!imageResultMatches(query, descriptiveText)) return [];
       return [{
         imageUrl,
         attribution: {
-          creator: plainText(metadata.Artist?.value) || plainText(metadata.Credit?.value) || 'Wikimedia Commons contributor',
-          license: plainText(metadata.LicenseShortName?.value) || 'See source for license',
-          licenseUrl: metadata.LicenseUrl?.value,
+          creator, license, licenseUrl,
           sourceUrl: `https://commons.wikimedia.org/?curid=${page.pageid}`,
         },
       }];
@@ -387,12 +409,12 @@ export interface ItineraryResponse {
   destination: string;
   totalBudget: number;
   currency: CurrencyCode;
-  source?: 'openai' | 'gemini' | 'mock';
+  source?: 'openai' | 'gemini' | 'mock' | 'catalog';
   partyType?: PartyType;
   travelers?: number;
   grounding?: PlanGrounding;
   groundingProof?: string;
-  preferences?: { travelStyle: string; accommodation: string; transportation: string; activities: string[]; pace?: 'relaxed' | 'balanced' | 'active' };
+  preferences?: { travelStyle: string; accommodation: string; transportation: string; activities: string[]; interests?: string[]; pace?: 'relaxed' | 'balanced' | 'active' };
   accommodation?: AccommodationPlan;
   plannedAccommodation?: PlannedAccommodation;
   selectedTravelCosts?: SelectedTravelCosts;
@@ -504,11 +526,6 @@ function validatedDateRange(startDate: unknown, endDate: unknown): { startDate: 
   return { startDate: start, endDate: end, tripDays };
 }
 
-function preference(value: unknown, fallback: string): string {
-  const text = typeof value === 'string' ? value.trim().slice(0, 80) : '';
-  return text || fallback;
-}
-
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
   if (value && typeof value === 'object') {
@@ -582,7 +599,7 @@ export async function POST(request: Request) {
     }
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== 'object' || Array.isArray(body)) return Response.json({ error: 'Request body must be valid JSON.' }, { status: 400 });
-    const { destination, budget, currency: requestedCurrency = 'PHP', travelers: requestedTravelers = 1, partyType: requestedPartyType, latitude, longitude, startDate: requestedStartDate, endDate: requestedEndDate, interests = [], preferredActivities = [], travelStyle, accommodationPreference, transportationPreference, accommodationListingId, externalAccommodation, plannedAccommodation: requestedPlannedAccommodation, selectedFlight, selectedActivities = [], preTripCosts: requestedPreTripCosts } = body as { destination: string; budget: number; currency?: string; travelers?: number; partyType?: PartyType; latitude?: number; longitude?: number; startDate?: string; endDate?: string; interests?: string[]; preferredActivities?: string[]; travelStyle?: string; accommodationPreference?: string; transportationPreference?: string; accommodationListingId?: string; plannedAccommodation?: unknown; externalAccommodation?: { fetchedAt?: string; total?: number; hotelId?: string; offerId?: string; name?: string; address?: string; nightlyRate?: number; currency?: string; isLive?: boolean; selectionToken?: string }; selectedFlight?: { id?: string; name?: string; price?: number; currency?: string; fetchedAt?: string; selectionToken?: string }; selectedActivities?: Array<{ id?: string; name?: string; price?: number; currency?: string; fetchedAt?: string; selectionToken?: string }>; preTripCosts?: unknown };
+    const { destination, budget, currency: requestedCurrency = 'PHP', travelers: requestedTravelers = 1, partyType: requestedPartyType, latitude, longitude, startDate: requestedStartDate, endDate: requestedEndDate, interests = [], preferredActivities = [], accommodationPreference, transportationPreference, accommodationListingId, externalAccommodation, plannedAccommodation: requestedPlannedAccommodation, selectedFlight, selectedActivities = [], preTripCosts: requestedPreTripCosts } = body as { destination: string; budget: number; currency?: string; travelers?: number; partyType?: PartyType; latitude?: number; longitude?: number; startDate?: string; endDate?: string; interests?: string[]; preferredActivities?: string[]; travelStyle?: string; accommodationPreference?: string; transportationPreference?: string; accommodationListingId?: string; plannedAccommodation?: unknown; externalAccommodation?: { fetchedAt?: string; total?: number; hotelId?: string; offerId?: string; name?: string; address?: string; nightlyRate?: number; currency?: string; isLive?: boolean; selectionToken?: string }; selectedFlight?: { id?: string; name?: string; price?: number; currency?: string; fetchedAt?: string; selectionToken?: string }; selectedActivities?: Array<{ id?: string; name?: string; price?: number; currency?: string; fetchedAt?: string; selectionToken?: string }>; preTripCosts?: unknown };
 
     if (typeof destination !== 'string' || destination.trim().length < 2 || typeof budget !== 'number' || !Number.isFinite(budget) || budget <= 0 || budget > 1_000_000_000) {
       return Response.json(
@@ -591,7 +608,7 @@ export async function POST(request: Request) {
       );
     }
     const normalizedDestination = destination.trim();
-    if (normalizedDestination.length > 120) return Response.json({ error: 'Destination is too long.' }, { status: 400 });
+    if (normalizedDestination.length > 2000) return Response.json({ error: 'Destination is too long.' }, { status: 400 });
     let currency: CurrencyCode;
     try {
       currency = normalizeCurrency(requestedCurrency);
@@ -609,9 +626,12 @@ export async function POST(request: Request) {
       return Response.json({ error: error instanceof Error ? error.message : 'Invalid trip dates.' }, { status: 400 });
     }
     const { startDate, endDate, tripDays } = range;
+    const constraintsResult = generationConstraintsSchema.safeParse(body.scheduleConstraints ?? {});
+    if (!constraintsResult.success || constraintsResult.data.restDates.some(date => date < startDate || date > endDate || !Number.isFinite(Date.parse(`${date}T00:00:00Z`)) || dateAt(date, 0) !== date)) return Response.json({ error: 'Schedule constraints must use valid destination-local clocks and rest dates within the trip.' }, { status: 400 });
+    const scheduleConstraints = constraintsResult.data;
     const startingLocation = typeof body.startingLocation === 'string' ? body.startingLocation.trim() : '';
-    const pace = body.pace ?? 'balanced';
-    if (pace !== 'relaxed' && pace !== 'balanced' && pace !== 'active') return Response.json({ error: 'Travel pace must be relaxed, balanced, or active.' }, { status: 400 });
+    // Legacy style/pace fields are accepted but no longer select generation behavior.
+    const pace = generationDefaults.pace;
     if ((body.startingLocation !== undefined && typeof body.startingLocation !== 'string') || (startingLocation.length > 0 && startingLocation.length < 2) || startingLocation.length > 200) return Response.json({ error: 'Starting location must be between 2 and 200 characters when provided.' }, { status: 400 });
     let anchor;
     try { anchor = await validateDestinationAnchor(normalizedDestination, body.destinationDetails, latitude, longitude); }
@@ -733,19 +753,22 @@ export async function POST(request: Request) {
     const minimumEnteredCosts = accommodationTotal + selectedTravelCosts.total + (accommodation ? 0 : (estimates.nightlyRoomEstimate ?? 0) * Math.max(0, tripDays - 1) * rooms)
       + (estimates.foodDailyPerPerson ?? 0) * travelers * tripDays + (estimates.transportFare ?? 0) * tripDays * (explicitFareBasis === 'shared-fare' ? 1 : travelers) + (estimates.fees ?? 0);
     if (minimumEnteredCosts * (1 + (estimates.contingencyPercent ?? 10) / 100) > budget + 0.001) return Response.json({ error: 'Selected costs and your entered estimates, including contingency, exceed the whole-group budget. Increase the budget, reduce the duration/party, or change the selections and estimates. Missing prices still need confirmation.', retryable: false }, { status: 422 });
-    const safeInterests = Array.isArray(interests) ? interests.map(String).map((item) => item.trim()).filter(Boolean).slice(0, 20) : [];
-    const safeActivities = Array.isArray(preferredActivities) ? preferredActivities.map(String).map((item) => item.trim()).filter(Boolean).slice(0, 20) : [];
-    const preferences = {
-      pace,
-      travelStyle: preference(travelStyle, 'balanced'),
-      accommodation: plannedAccommodation ? `${plannedAccommodation.name}, ${plannedAccommodation.address} (price unconfirmed)`.slice(0,120) : preference(accommodationPreference, accommodation ? 'selected accommodation' : 'no preference'),
-      transportation: preference(transportationPreference, 'practical local transport'),
-      activities: safeActivities,
-    };
+    const preferenceResult = generationPreferencesSchema.safeParse({ pace,
+      travelStyle: generationDefaults.travelStyle,
+      accommodation: typeof accommodationPreference === 'string' ? accommodationPreference.trim().toLowerCase() : accommodationPreference,
+      transportation: transportationPreference, activities: preferredActivities, interests });
+    if (!preferenceResult.success) return Response.json({ error: 'Invalid travel preferences. Choose a supported style/stay preference and valid interests, activities and transportation.', retryable: false }, { status: 400 });
+    const preferences = preferenceResult.data;
+    const safeInterests = preferences.interests;
+    const schedulingOptions = { constraints: scheduleConstraints, interests: safeInterests, preferredActivities: preferences.activities, committedActivityNames: selectedTravelCosts.activities.map(activity => activity.name),
+      travelStyle: preferences.travelStyle, transportation: preferences.transportation, currency,
+      visitBudget: Math.max(0, budget / (1 + (estimates.contingencyPercent ?? 10) / 100) - minimumEnteredCosts),
+      family: partyType === 'family' };
+
 
     let generation;
     try {
-      generation = await beginGeneration(user.id, normalizedDestination, body as Record<string, unknown>, request.headers.get('idempotency-key'));
+      generation = await beginGeneration(user.id, normalizedDestination, { ...body, ...generationDefaults, generationPolicyVersion }, request.headers.get('idempotency-key'));
     } catch (error) {
       if (error instanceof Error && error.message === 'INVALID_IDEMPOTENCY_KEY') return Response.json({ error: 'Idempotency-Key must be 8-100 letters, numbers, dots, colons, underscores, or hyphens.' }, { status: 400 });
       throw error;
@@ -758,36 +781,18 @@ export async function POST(request: Request) {
     const resolvedProviders = resolveAIProviders();
     const resolvedProvider = resolvedProviders[0] || { name: 'openai' as const };
 
-    const catalog = await loadGroundedPlaces(anchor);
-    const buildPlan = (schedule: GroundedScheduleDay[], source: 'openai' | 'gemini' | 'mock') => buildGroundedPlan({
+    const generationSignal = AbortSignal.timeout(540_000);
+    const catalog = await loadGroundedPlaces(anchor, generationSignal);
+    let trustedTimeZone: string | undefined;
+    const buildPlan = (schedule: GroundedScheduleDay[], source: 'openai' | 'gemini' | 'mock' | 'catalog', generationWarning?: string) => buildGroundedPlan({
       destination: normalizedDestination, anchor, startingLocation, startDate, endDate, budget, currency, travelers, partyType, rooms,
-      places: catalog.places, placeDataStatus: catalog.status, schedule, source, transportation: preferences.transportation, pace,
+      places: catalog.places, placeDataStatus: catalog.status, schedule, source, preferences, transportation: preferences.transportation, pace, familyBuffer: partyType === 'family', timeZone: trustedTimeZone,
       accommodation: accommodation ? { ...accommodation, rooms, quotedTotal: accommodationTotal, nights: accommodationNights, total: accommodationTotal } : undefined,
       selectedTravelCosts, ...estimates,
+      generationWarning,
     });
-    // ── Explicit local demo mode only ──────────────────────────────────────
-    if (!resolvedProvider.provider) {
-      if (!mockItinerariesEnabled()) {
-        await failGeneration(generationRecordId, generationAttemptId, 'AI_PROVIDER_UNAVAILABLE');
-        return Response.json({
-          error: 'AI itinerary generation is unavailable because no provider is configured. Your current plan is unchanged.',
-          code: 'AI_PROVIDER_UNAVAILABLE',
-          retryable: true,
-        }, { status: 503 });
-      }
-      console.warn(`[TravelMate] ${resolvedProvider.name} API key not set - explicit development fallback enabled.`);
-      const fallback = buildPlan(Array.from({ length: tripDays }, (_, index) => ({ day: index + 1, date: dateAt(startDate, index), theme: 'Details need confirmation', visits: [] })), 'mock');
-      if (fallback.grounding!.total > budget) {
-        await failGeneration(generationRecordId, generationAttemptId, 'INSUFFICIENT_BUDGET');
-        return Response.json({ error: `Costs and labeled allowances including contingency total ${fallback.grounding!.total} ${currency}, exceeding your ${budget} ${currency} group budget. Increase the budget or change your selections.`, retryable: false }, { status: 422 });
-      }
-      const response = parseSavedItinerary({ ...fallback, preferences, ...(plannedAccommodation ? { plannedAccommodation } : {}) }, { days: tripDays, currency, budget, travelers, partyType, startDate, destination: normalizedDestination }) as unknown as Record<string, unknown>;
-      if (!await completeGeneration(generationRecordId, generationAttemptId, response)) return Response.json({ error: 'Another request is handling this itinerary. Please try again.', code: 'GENERATION_CONFLICT', retryable: true }, { status: 409 });
-      return Response.json(response);
-    }
 
     // Keep provider retries and repairs within the browser request window.
-    const generationSignal = AbortSignal.timeout(540_000);
     const weatherCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude)
       && Number(latitude) >= -90 && Number(latitude) <= 90 && Number(longitude) >= -180 && Number(longitude) <= 180
       ? { latitude: Number(latitude), longitude: Number(longitude) } : undefined;
@@ -801,6 +806,9 @@ export async function POST(request: Request) {
         return resolved;
       });
       const tripWeather = weatherForTripDates(weatherResult.value, startDate, endDate);
+      if (tripWeather.timeZone) {
+        try { trustedTimeZone = new Intl.DateTimeFormat('en', { timeZone: tripWeather.timeZone }).resolvedOptions().timeZone; } catch { /* Do not invent an IANA zone when the provider reference is invalid. */ }
+      }
       trustedWeatherContext = tripWeather.forecast.map((day) => ({ date: day.date, description: day.description, precipitationProbability: day.precipitationProbability, tempMax: day.tempMax }));
       weatherProvenance = weatherResult.freshness.status === 'live' ? 'provider-fetched' : weatherResult.freshness.status === 'fresh-cache' ? 'fresh cached provider' : 'stale cached provider';
     } catch (error) {
@@ -815,16 +823,15 @@ export async function POST(request: Request) {
     });
     const weatherSummary = safeWeather.length ? `Date-matched ${weatherProvenance} forecast: ${safeWeather.join('; ')}. Prefer indoor alternatives during heavy rain and cooler hours during extreme heat.` : '';
     const crowdSummary = `Low-confidence calendar crowd estimates (not live): ${estimateCrowdRange(startDate, endDate, normalizedDestination).map((condition) => `${condition.date} ${condition.crowdLevel}`).join('; ')}.`;
-    const prompt = `${startingLocation ? `Starting location: ${startingLocation}. ` : ''}Dates: ${startDate}–${endDate}. Currency: ${currency}. Total group budget: ${budget}; committed stay/travel: ${accommodationTotal + selectedTravelCosts.total}. ${JSON.stringify(preferences)}. Interests: ${safeInterests.join(', ')}. ${weatherSummary} ${crowdSummary}. Prices are supplied or explicitly unavailable; do not invent them. Confirm opening hours before travel.`;
+    const prompt = `${startingLocation ? `Starting location: ${startingLocation}. ` : ''}Dates: ${startDate}–${endDate}. Currency: ${currency}. Total group budget: ${budget}; committed stay/travel: ${accommodationTotal + selectedTravelCosts.total}. ${JSON.stringify(preferences)}. ${preferenceInstructions(preferences)} Explicit selected hotel: ${plannedAccommodation?.name || accommodation?.name || "none; optional"}; preserve it even if a preference conflicts. Interests: ${safeInterests.join(', ')}. ${weatherSummary} ${crowdSummary}. Prices are supplied or explicitly unavailable; do not invent them. Confirm opening hours before travel.`;
 
     let itinerary: ItineraryResponse | undefined;
-    let generationProvider = resolvedProvider.name;
     let lastGenerationError: unknown;
     for (const candidate of resolvedProviders) {
+      if (!candidate.provider) continue;
       try {
-        const schedule = await generateGroundedSchedule(candidate.provider!, anchor, catalog.places, startDate, tripDays, travelers, prompt, generationSignal, pace);
+        const schedule = await generateGroundedSchedule(candidate.provider!, anchor, catalog.places, startDate, tripDays, travelers, prompt, generationSignal, pace, { ...schedulingOptions, weather: trustedWeatherContext, providerUnavailable: catalog.status === 'unavailable' });
         itinerary = buildPlan(schedule, candidate.name);
-        generationProvider = candidate.name;
         break;
       } catch (error) {
         lastGenerationError = error;
@@ -833,13 +840,8 @@ export async function POST(request: Request) {
       }
     }
     if (!itinerary) {
-      console.error('[TravelMate] All configured AI itinerary providers failed.', lastGenerationError);
-      await failGeneration(generationRecordId, generationAttemptId, 'AI_GENERATION_FAILED');
-      return Response.json({
-        error: 'AI itinerary generation is temporarily unavailable. Your current plan is unchanged; please retry.',
-        code: 'AI_GENERATION_FAILED',
-        retryable: true,
-      }, { status: 502 });
+      console.warn('[TravelMate] AI scheduling unavailable; returning only catalog-backed recommendations.', lastGenerationError instanceof Error ? lastGenerationError.message : 'No usable provider response.');
+      itinerary = buildPlan(completeGroundedSchedule(anchor, catalog.places, [], startDate, tripDays, travelers, pace, { ...schedulingOptions, weather: trustedWeatherContext, providerUnavailable: catalog.status === 'unavailable' }), !resolvedProvider.provider && mockItinerariesEnabled() ? 'mock' : 'catalog', 'AI scheduling was unavailable. Recommendations use only verified destination records, interest matching and estimated local schedules. Missing place coverage remains explicitly incomplete; no attractions or provider prices were invented.');
     }
 
     const completed = { ...itinerary, days: itinerary.days.map(day => {
@@ -850,9 +852,14 @@ export async function POST(request: Request) {
     }) };
     if (Math.round((completed.grounding?.total ?? 0) * 100) > Math.round(budget * 100)) {
       await failGeneration(generationRecordId, generationAttemptId, 'AI_GENERATION_FAILED');
-      return Response.json({ error: `Supported costs and labeled allowances plus ${completed.grounding?.contingencyPercent}% contingency total ${completed.grounding?.total} ${currency}, exceeding the ${budget} ${currency} group budget. Increase the budget or change the trip; prices have not been reduced to force a fit.`, code: 'AI_GENERATION_FAILED', retryable: false }, { status: 422 });
+      return Response.json({ error: `Supported prices and entered estimates plus ${completed.grounding?.contingencyPercent}% contingency total ${completed.grounding?.total} ${currency}, exceeding the ${budget} ${currency} group budget. Increase the budget or change the trip; prices have not been reduced to force a fit.`, code: 'AI_GENERATION_FAILED', retryable: false }, { status: 422 });
     }
-    const response = parseSavedItinerary({ ...completed, preferences, ...(plannedAccommodation ? { plannedAccommodation } : {}) }, { days: tripDays, currency, budget, travelers, partyType, startDate, destination: normalizedDestination }) as unknown as Record<string, unknown>;
+    // Return selected attraction photos with the generated plan, under a separate
+    // bounded deadline. The plan remains usable when photo providers are offline.
+    // Catalog photos are already provider-verified. Save a usable plan immediately;
+    // optional missing-photo enrichment runs in the existing display/saved flow.
+    const withPhotos = retainSelectedActivityPhotos(completed);
+    const response = parseSavedItinerary({ ...withPhotos, groundingProof: signGroundedPlan(withPhotos), preferences, ...(plannedAccommodation ? { plannedAccommodation } : {}) }, { days: tripDays, currency, budget, travelers, partyType, startDate, destination: normalizedDestination }) as unknown as Record<string, unknown>;
     if (!await completeGeneration(generationRecordId, generationAttemptId, response)) return Response.json({ error: 'Another request is handling this itinerary. Please try again.', code: 'GENERATION_CONFLICT', retryable: true }, { status: 409 });
     return Response.json(response);
   } catch (error) {
@@ -888,15 +895,23 @@ export async function POST_IMAGES(request: Request) {
     if (!await allowRequest(`itinerary-images:${user.id}`, 20, 60_000)) {
       return Response.json({ error: 'Photo refresh limit reached. Try again in one minute.' }, { status: 429 });
     }
-    const body = await request.json().catch(() => null) as { destination?: unknown; day?: unknown; itinerary?: ItineraryResponse } | null;
+    const body = await request.json().catch(() => null) as { destination?: unknown; day?: unknown; itinerary?: ItineraryResponse; lookupOnly?: boolean; googleFailedIndices?: number[]; failedPhotos?: import('../services/itinerary/activity-photo-fallback.ts').FailedActivityPhoto[] } | null;
     const destination = typeof body?.destination === 'string' ? body.destination.trim() : '';
-    if (destination.length < 2 || destination.length > 120 || !refreshableDay(body?.day)) {
+    if (destination.length < 2 || destination.length > 2000 || !refreshableDay(body?.day)) {
       return Response.json({ error: 'A valid destination and itinerary day are required.' }, { status: 400 });
+    }
+    const failures = body.failedPhotos || [];
+    if (!Array.isArray(failures) || failures.length > 8 || failures.some(photo => !Number.isInteger(photo?.index) || photo.index < 0 || photo.index > 7 || typeof photo.imageUrl !== 'string' || photo.imageUrl.length > 1000)) return Response.json({ error: 'Invalid failed photo identities.' }, { status: 400 });
+    const googleFailedIndices = body.googleFailedIndices || [];
+    if (!Array.isArray(googleFailedIndices) || googleFailedIndices.length > 8 || googleFailedIndices.some(index => !Number.isInteger(index) || index < 0 || index > 7)) return Response.json({ error: 'Invalid Google photo failures.' }, { status: 400 });
+    // Read-only display enrichment does not authorize or sign itinerary/budget edits.
+    // It works for legacy saved plans and manual drafts without regeneration.
+    if (body.lookupOnly === true) {
+      return Response.json(await fillDayDisplayPhotos(destination, body.day, AbortSignal.timeout(45000), `preview:${user.id}`, failures, undefined, undefined, googleFailedIndices), { headers: { 'Cache-Control': 'private, no-store' } });
     }
     const plan = body?.itinerary;
     if (!plan?.grounding) {
-      const day = { ...body.day, imageUrl: '', imageAttribution: undefined, activities: body.day.activities.map(activity => ({ ...activity, imageUrl: undefined, imageAttribution: undefined })) };
-      return Response.json({ day });
+      return Response.json(await fillDayDisplayPhotos(destination, body.day, AbortSignal.timeout(45000), `preview:${user.id}`, failures, undefined, undefined, googleFailedIndices), { headers: { 'Cache-Control': 'private, no-store' } });
     }
     try {
       parseSavedItinerary(plan, { days: plan.days.length, currency: plan.currency, budget: plan.totalBudget, travelers: plan.travelers!, partyType: plan.partyType!, destination });
@@ -905,15 +920,11 @@ export async function POST_IMAGES(request: Request) {
     const requestedDayNumber = body.day.day;
     const original = plan.days.find(day => day.day === requestedDayNumber);
     if (!original) return Response.json({ error: 'Itinerary day was not found.' }, { status: 400 });
-    const catalog = await loadGroundedPlaces(plan.grounding.destination);
-    const activities = original.activities.map(activity => {
-      const place = catalog.places.find(candidate => candidate.placeId === activity.place?.placeId && candidate.name === activity.place.name && candidate.city === activity.place.city && candidate.countryCode === activity.place.countryCode);
-      return { ...activity, imageUrl: place?.imageUrl, imageAttribution: place?.imageAttribution };
-    });
-    const photo = activities.find(activity => activity.imageUrl);
-    const day = { ...original, imageUrl: photo?.imageUrl ?? '', imageAttribution: photo?.imageAttribution, activities };
+    // Reuse the saved place identity; refreshing images never reruns the catalog
+    // or changes activities. Valid stored images short-circuit all provider work.
+    const { day, googlePhotos } = await fillDayDisplayPhotos(destination, original, AbortSignal.timeout(45000), `preview:${user.id}`, failures, undefined, undefined, googleFailedIndices);
     const updated = { ...plan, days: plan.days.map(entry => entry.day === day.day ? day : entry) };
-    return Response.json({ day, groundingProof: signGroundedPlan(updated) });
+    return Response.json({ day, googlePhotos, groundingProof: signGroundedPlan(updated) }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     if (error instanceof Error && error.message === 'UNAUTHORIZED') {
       return Response.json({ error: 'Unauthorized.' }, { status: 401 });

@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
 import { after, test, type TestContext } from 'node:test';
+import { readFileSync } from 'node:fs';
 import { prisma } from '../src/lib/prisma.ts';
 import type { Trip } from '../src/generated/prisma/client.ts';
 import { parseSavedItinerary } from '../src/services/itinerary/saved-trip-schema.ts';
 import { createVersionSnapshot } from '../src/services/itinerary/version-snapshot.ts';
 import { executePlatformAction } from '../src/services/platform/platform-service.ts';
 import type { PublicUser } from '../src/schemas/domain.ts';
+import type { ItineraryResponse } from '../src/controllers/itinerary-controller.ts';
+import { reusableStoredActivityPhoto } from '../src/services/itinerary/activity-photo-fallback.ts';
+import { signGroundedPlan } from '../src/services/itinerary/grounded-plan.ts';
 
 const user: PublicUser = { id: 'snapshot-owner', role: 'traveler', name: 'Test', email: 'test@example.test', emailVerified: true, profileStatus: 'unverified', accountStatus: 'active', trustScore: 50 };
 const context = { days: 1, currency: 'PHP' as const, budget: 1000, travelers: 1, partyType: 'solo' as const, destination: 'Tokyo', startDate: '2040-01-01' };
@@ -42,6 +46,30 @@ function transaction(t: TestContext, current: Trip, snapshot: unknown, accessibl
   return () => updates;
 }
 after(() => prisma.$disconnect());
+
+test('the reported Tokyo photos retain their URLs and original rights metadata through validation, manual save, API serialization and reopening', async t => {
+  const recorded: ItineraryResponse = JSON.parse(readFileSync(new URL('./fixtures/tokyo-photo-plan.json', import.meta.url), 'utf8'));
+  assert.ok(recorded.days[0].activities.filter(activity => activity.imageUrl).every(reusableStoredActivityPhoto));
+  const photoContext = { ...context, destination: 'Tokyo, Japan', currency: 'JPY' as const, budget: 30000, startDate: recorded.days[0].date };
+  const original = parseSavedItinerary({ ...recorded, groundingProof: signGroundedPlan(recorded) }, photoContext);
+  const photoFields = (itinerary: ItineraryResponse) => itinerary.days[0].activities.filter(activity => activity.imageUrl).map(({ imageUrl, imageAttribution }) => ({ imageUrl, imageAttribution }));
+  const expected = photoFields(recorded);
+  assert.deepEqual(photoFields(original), expected);
+  const current = { ...trip(), destination: photoContext.destination, currency: photoContext.currency, budget: photoContext.budget, startDate: new Date(photoContext.startDate), endDate: new Date(photoContext.startDate), itinerary: JSON.parse(JSON.stringify(original)) } as Trip;
+  transaction(t, current, null);
+  const submitted = structuredClone(original); submitted.days[0].activities[0].time = '09:15';
+  const response = await executePlatformAction(user, 'update-trip-itinerary', { id: current.id, itinerary: submitted });
+  const serialized = JSON.parse(JSON.stringify(response)) as { itinerary: ItineraryResponse; startDate: string };
+  assert.equal(serialized.startDate, photoContext.startDate);
+  assert.equal(serialized.itinerary.days[0].activities[0].time, '09:15');
+  assert.deepEqual(photoFields(serialized.itinerary), expected);
+  assert.deepEqual(photoFields(current.itinerary as unknown as ItineraryResponse), expected);
+  const reopened = parseSavedItinerary(JSON.parse(JSON.stringify(current.itinerary)), photoContext);
+  assert.deepEqual(photoFields(reopened), expected);
+  assert.ok(reopened.days[0].activities.filter(activity => activity.imageUrl).every(reusableStoredActivityPhoto));
+  assert.equal(reopened.days[0].imageUrl, original.days[0].imageUrl);
+  assert.deepEqual(reopened.days[0].imageAttribution, original.days[0].imageAttribution);
+});
 
 test('save validation replaces contradictory summaries and shares with exact item-based totals', () => {
   const result = parseSavedItinerary(plan(), context);

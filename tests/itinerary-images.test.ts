@@ -110,7 +110,7 @@ test('Commons caches successful searches but a failed search can recover immedia
     if (calls === 1) return new Response(null, { status: 503 });
     return Response.json({ query: { pages: { '123': {
       pageid: 123, title: 'File:Tokyo Hachiko Statue.jpg',
-      imageinfo: [{ thumburl: 'https://upload.wikimedia.org/wikipedia/commons/hachiko.jpg', extmetadata: {} }],
+      imageinfo: [{ thumburl: 'https://upload.wikimedia.org/wikipedia/commons/hachiko.jpg', extmetadata: { Artist: { value: 'Fixture author' }, LicenseShortName: { value: 'CC BY 4.0' } } }],
     } } } });
   });
   assert.deepEqual(await searchCommonsImages('Tokyo Hachiko Statue fixture-cache', 5), []);

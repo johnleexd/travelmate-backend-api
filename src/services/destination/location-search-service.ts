@@ -26,10 +26,29 @@ export interface LocationSuggestion {
   label: string;
   placeType: string;
   contextLabel: string;
-  provider?: 'geonames' | 'openstreetmap';
+  provider?: 'geonames' | 'openstreetmap' | 'psgc';
   providerId?: string;
+  administrativeCode?: string;
+  provinceCode?: string;
+  geographicProvinceCode?: string;
+  administrativeLevel?: 'Region' | 'Province' | 'City' | 'Municipality' | 'Barangay';
+  coordinateSource?: string;
+  sourceFeatureCode?: string;
+  scopeType?: 'country' | 'area' | 'locality' | 'natural';
+  parentId?: number;
+  canBrowse?: boolean;
+  locationPath?: Array<{ id: number; providerId: string; name: string; type: string; countryCode: string; level?: number }>;
   bounds?: { south: number; north: number; west: number; east: number };
 }
+
+/** Official catalogue identity can be offered before its point is geocoded. */
+export type AdministrativeLocationSuggestion = Omit<LocationSuggestion, 'latitude' | 'longitude'> & {
+  latitude?: number;
+  longitude?: number;
+  coordinateStatus: 'resolved' | 'unresolved';
+};
+export type LocationCandidate = LocationSuggestion | AdministrativeLocationSuggestion;
+export const hasResolvedCoordinates = (place: LocationCandidate): place is LocationSuggestion => Number.isFinite(place.latitude) && Number.isFinite(place.longitude);
 
 export interface ReverseGeocodingResponse {
   address?: {
@@ -96,7 +115,10 @@ function typeWeight(featureCode: string): number {
   return 0;
 }
 
-function placeType(featureCode: string): string {
+function placeType(featureCode: string, countryCode?: string): string {
+  if (countryCode === 'PH' && featureCode === 'ADM2') return 'Province';
+  if (countryCode === 'PH' && featureCode === 'ADM3') return 'Administrative area';
+  if (countryCode === 'PH' && featureCode === 'ADM4') return 'Barangay';
   if (COUNTRY_FEATURE.test(featureCode)) return 'Country';
   if (featureCode === 'PPLC') return 'Capital city';
   if (/^PPLA/.test(featureCode)) return 'Administrative capital';
@@ -136,26 +158,12 @@ function scorePlace(place: GeocodingPlace, primaryQuery: string, providerIndex: 
   return { place, score, exactName };
 }
 
-function suppressObscureSameNamePlaces(ranked: RankedPlace[]): RankedPlace[] {
-  const exact = ranked.filter((candidate) => candidate.exactName);
-  const largestPopulation = Math.max(0, ...exact.map(({ place }) => place.population || 0));
-  if (largestPopulation < 100_000) return ranked;
-  const minimumUsefulPopulation = Math.max(10_000, largestPopulation * 0.02);
-  const leadingExact = exact[0]?.place;
-  return ranked.filter((candidate) => {
-    const featureCode = candidate.place.feature_code || '';
-    if (!candidate.exactName) return candidate.place.country_code === leadingExact?.country_code && (candidate.place.population || 0) >= minimumUsefulPopulation;
-    if (COUNTRY_FEATURE.test(featureCode) || ADMIN_FEATURE.test(featureCode)) return true;
-    return (candidate.place.population || 0) >= minimumUsefulPopulation;
-  });
-}
-
 function toSuggestion(place: GeocodingPlace): LocationSuggestion {
   const featureCode = place.feature_code || '';
   const country = place.country || place.country_code || '';
-  const region = place.admin1 || '';
+  const region = uniqueParts([place.admin2, place.admin1]).join(', ');
   const label = uniqueParts([place.name, region, country]).join(', ');
-  const type = placeType(featureCode);
+  const type = placeType(featureCode, place.country_code);
   return { id: place.id, name: place.name, region, country, countryCode: place.country_code || '', latitude: place.latitude, longitude: place.longitude, label, placeType: type, contextLabel: `${type} • ${label}`, provider: 'geonames', providerId: String(place.id) };
 }
 
@@ -180,10 +188,10 @@ export function rankLocationSuggestions(query: string, places: GeocodingPlace[],
   if (!primaryQuery) return [];
   const ranked = places.map((place, index) => scorePlace(place, primaryQuery, index)).filter((candidate): candidate is RankedPlace => candidate !== null).sort((left, right) => right.score - left.score);
   const exactCountries = ranked.filter(({ place, exactName }) => exactName && COUNTRY_FEATURE.test(place.feature_code || ''));
-  const relevant = exactCountries.length > 0 ? exactCountries : suppressObscureSameNamePlaces(ranked);
+  const relevant = exactCountries.length > 0 ? exactCountries : ranked;
   const seen = new Set<string>();
   return relevant.filter(({ place }) => {
-    const key = [normalize(place.name), normalize(place.admin1), normalize(place.country), place.feature_code || ''].join('|');
+    const key = [normalize(place.name), normalize(place.admin1), normalize(place.admin2), normalize(place.admin3), normalize(place.admin4), normalize(place.country), place.feature_code || ''].join('|');
     if (seen.has(key)) return false;
     seen.add(key);
     return true;

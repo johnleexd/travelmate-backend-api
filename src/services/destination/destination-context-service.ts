@@ -10,6 +10,7 @@ export interface TransportationOption {
 export interface DestinationContext {
   currency: CurrencyCode | null;
   currencySource: 'country-code' | 'unsupported';
+  currencyMessage: string;
   transportation: TransportationOption[];
   transportationSource: 'curated-country-city-guidance' | 'unavailable';
   transportationMessage: string;
@@ -57,10 +58,12 @@ function transportFor(countryCode: string, city: string): TransportationOption[]
 export function resolveDestinationContext(countryCodeValue: string, city: string): DestinationContext {
   const countryCode = countryCodeValue.trim().toUpperCase();
   const currency = (countries[countryCode as TCountryCode]?.currency.find(value => SUPPORTED_CURRENCIES.includes(value as CurrencyCode)) as CurrencyCode | undefined) || COUNTRY_CURRENCIES[countryCode] || null;
+  const localCurrencies = countries[countryCode as TCountryCode]?.currency ?? [];
   const transportation = transportFor(countryCode, city);
   return {
     currency: currency && SUPPORTED_CURRENCIES.includes(currency) ? currency : null,
     currencySource: currency ? 'country-code' : 'unsupported',
+    currencyMessage: currency ? `${currency} detected for the destination.` : localCurrencies.length ? `Local currency ${localCurrencies.join('/')} is not supported for planning. Choose a supported planning currency.` : 'Local currency could not be identified. Choose a supported planning currency.',
     transportation,
     transportationSource: transportation.length ? 'curated-country-city-guidance' : 'unavailable',
     transportationMessage: transportation.length

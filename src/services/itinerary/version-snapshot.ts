@@ -4,8 +4,8 @@ import { SUPPORTED_CURRENCIES } from '../../schemas/domain.ts';
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const contextSchema = z.object({
-  destination: z.string().trim().min(2).max(120),
-  destinationCity: z.string().max(100).nullable(), destinationRegion: z.string().max(100).nullable(),
+  destination: z.string().trim().min(2).max(2000),
+  destinationCity: z.string().max(200).nullable(), destinationRegion: z.string().max(1000).nullable(),
   destinationCountry: z.string().max(100).nullable(), destinationCountryCode: z.string().regex(/^[A-Z]{2}$/).nullable(),
   latitude: z.number().finite().min(-90).max(90).nullable(), longitude: z.number().finite().min(-180).max(180).nullable(),
   budget: z.number().finite().positive().max(1_000_000_000), currency: z.enum(SUPPORTED_CURRENCIES),

@@ -1,0 +1,13 @@
+import { DatabaseSync } from 'node:sqlite';
+import { fileURLToPath } from 'node:url';
+import { writeFileSync } from 'node:fs';
+import { linkFifthLevel } from './link-global-admin5.mjs';
+const directory = fileURLToPath(new URL('../.cache/global-locations/', import.meta.url));
+const db = new DatabaseSync(directory + '/catalogue.sqlite');
+db.exec('PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF;');
+const fifth = await linkFifthLevel(db, directory);
+const source = JSON.parse(db.prepare('SELECT value FROM metadata WHERE key=?').get('source').value);
+source.fifthLevel = fifth;
+source.notes = ['All available current country, ADM1–ADM5/ADMD, populated-place and settlement-section records. Historical/destroyed feature codes excluded; PPLQ records are explicitly abandoned settlements.', 'Complete imported catalogue, not guaranteed complete or accurate worldwide geography.', 'Parent relationships use exact source administrative codes, including the separate ADM5 supplement. Missing and ambiguous source parent codes are not guessed.'];
+db.prepare('UPDATE metadata SET value=? WHERE key=?').run(JSON.stringify(source), 'source');
+writeFileSync(directory + '/coverage.json', JSON.stringify(source, null, 2)); db.close(); console.log(JSON.stringify(fifth));

@@ -1,0 +1,60 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const directory = '../audit/2026-10-13/activity-photo-workflow';
+const initial = JSON.parse(fs.readFileSync(directory + '/saved-trip.json', 'utf8')).result;
+let trip = initial;
+const results: any[] = [];
+async function request(path: string, body?: unknown) {
+  const response = await fetch('http://localhost:3002' + path, { ...(body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(60000) });
+  const value = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(value)); return value;
+}
+const save = async (plan: any) => { trip = (await request('/api/platform', { action: 'update-trip-itinerary', id: trip.id, itinerary: plan })).result; return trip.itinerary; };
+const photo = (activity: any) => ({ imageUrl: activity.imageUrl, imageAttribution: activity.imageAttribution });
+try {
+  const generated = trip.itinerary;
+  results.push({ action: 'generate-save', source: generated.source, dayCount: generated.days.length, photoCount: generated.days[0].activities.filter((item: any) => item.imageUrl).length });
+  let plan = structuredClone(trip.itinerary);
+  const original = photo(plan.days[0].activities[0]);
+  plan.days[0].activities[0].description += ' Verification: bring a camera.';
+  plan = await save(plan);
+  assert.deepEqual(photo(plan.days[0].activities[0]), original);
+  results.push({ action: 'notes-only', preservedPhoto: true });
+  const custom = { title: 'Louvre Museum', time: 'Flexible', durationMinutes: 60, travelMinutes: 15, location: 'Paris, France', description: 'Named attraction verification.', estimatedCost: 25, category: 'activity', icon: 'map' };
+  plan.days[0].activities.push(custom); plan = await save(plan);
+  assert.equal(plan.days[0].activities.at(-1).title, custom.title);
+  assert.equal(plan.days[0].activities.at(-1).imageUrl, undefined);
+  results.push({ action: 'add-named', savedBeforePhoto: true });
+  const named = await request(`/api/platform/trips/${trip.id}/photos`, { day: 1 });
+  const namedActivity = named.day.activities.find((item: any) => item.title === custom.title);
+  results.push({ action: 'resolve-named', photo: photo(namedActivity), persisted: named.persisted });
+  trip = (await request(`/api/platform/trips/${trip.id}`)).trip;
+  plan = structuredClone(trip.itinerary);
+  plan.days[0].activities.push({ ...custom, title: 'Lunch', location: '', description: 'Generic lunch verification.', category: 'food', estimatedCost: 15 });
+  plan = await save(plan);
+  const generic = await request(`/api/platform/trips/${trip.id}/photos`, { day: 1 });
+  const lunch = generic.day.activities.find((item: any) => item.title === 'Lunch');
+  if (lunch.imageUrl) assert.equal(lunch.imageAttribution.illustrative, true);
+  results.push({ action: 'add-generic', photo: photo(lunch), persisted: generic.persisted });
+  trip = (await request(`/api/platform/trips/${trip.id}`)).trip;
+  plan = structuredClone(trip.itinerary);
+  const attraction = plan.days[0].activities.find((item: any) => item.title === custom.title);
+  const oldPhoto = attraction.imageUrl;
+  attraction.title = 'Arc de Triomphe'; delete attraction.place; delete attraction.imageUrl; delete attraction.imageAttribution; delete attraction.googlePlaceId;
+  plan = await save(plan);
+  assert.notEqual(plan.days[0].activities.find((item: any) => item.title === 'Arc de Triomphe').imageUrl, oldPhoto || 'old-photo');
+  const changed = await request(`/api/platform/trips/${trip.id}/photos`, { day: 1 });
+  results.push({ action: 'change-place', oldPhotoRemoved: true, photo: photo(changed.day.activities.find((item: any) => item.title === 'Arc de Triomphe')) });
+  trip = (await request(`/api/platform/trips/${trip.id}`)).trip;
+  plan = structuredClone(trip.itinerary);
+  plan.days[0].activities.push({ ...custom, title: 'Private appointment (photo-free verification)', location: '', description: 'Save this before any optional image lookup.', estimatedCost: 0 });
+  plan = await save(plan);
+  assert.equal(plan.days[0].activities.at(-1).imageUrl, undefined);
+  results.push({ action: 'save-without-photo', persisted: true });
+  const reopened = (await request(`/api/platform/trips/${trip.id}`)).trip;
+  const refreshed = (await request(`/api/platform/trips/${trip.id}`)).trip;
+  assert.deepEqual(reopened.itinerary.days, trip.itinerary.days); assert.deepEqual(refreshed.itinerary.days, trip.itinerary.days);
+  results.push({ action: 'reopen-refresh', identicalActivitiesAndMetadata: true });
+  fs.writeFileSync(directory + '/live-final-trip.json', JSON.stringify(trip, null, 2));
+} catch (error) { results.push({ error: error instanceof Error ? error.message : String(error) }); process.exitCode = 1; }
+finally { fs.writeFileSync(directory + '/live-results.json', JSON.stringify(results, null, 2)); console.log(JSON.stringify(results.map(({ action, error, ...data }) => ({ action, error, ...('photo' in data ? { photoAvailable: !!data.photo?.imageUrl } : data) })), null, 2)); }

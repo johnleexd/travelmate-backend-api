@@ -1,5 +1,7 @@
 import { publishReportChange } from './report-events.ts';
-import { recordVisit, removeVisit } from './visited-place-service.ts';
+import type { ItineraryResponse } from '../../controllers/itinerary-controller.ts';
+import { retainSelectedActivityPhotos, retainStoredActivityPhotos } from '../itinerary/saved-activity-photos.ts';
+import { recordVisit, recordTripVisits, removeVisit } from './visited-place-service.ts';
 import { saveIdentity } from './save-idempotency.ts';
 import {
   Prisma,
@@ -72,7 +74,8 @@ function stringList(value: unknown, maximum = 20): string[] {
 
 function itineraryInput(value: unknown, days: number, currency: CurrencyCode, budget: number, travelers: number, partyType: PartyType, startDate: Date, destination: string): Prisma.InputJsonValue {
   try {
-    return parseSavedItinerary(value, { days, currency, budget, travelers, partyType, destination, startDate: startDate.toISOString().slice(0, 10) }) as unknown as Prisma.InputJsonValue;
+    const parsed = parseSavedItinerary(value, { days, currency, budget, travelers, partyType, destination, startDate: startDate.toISOString().slice(0, 10) });
+    return retainSelectedActivityPhotos(parsed as ItineraryResponse) as unknown as Prisma.InputJsonValue;
   } catch (error) {
     fail(error instanceof Error ? error.message : "Itinerary is invalid.");
   }
@@ -92,7 +95,7 @@ function groundedDestination(itinerary: Prisma.InputJsonValue, submitted: Return
   const anchor = (itinerary as unknown as import('../../controllers/itinerary-controller.ts').ItineraryResponse).grounding?.destination;
   if (!anchor) return submitted;
   if ('destinationCity' in submitted && (submitted.destinationCity !== anchor.city || submitted.destinationCountryCode !== anchor.countryCode || submitted.latitude !== anchor.latitude || submitted.longitude !== anchor.longitude)) fail('Saved destination details do not match the grounded itinerary.');
-  return { ...submitted, destinationCity: anchor.city, destinationCountry: anchor.country, destinationCountryCode: anchor.countryCode, latitude: anchor.latitude, longitude: anchor.longitude };
+  return { ...submitted, destinationCity: anchor.city, destinationRegion: anchor.region || ('destinationRegion' in submitted ? submitted.destinationRegion : null), destinationCountry: anchor.country, destinationCountryCode: anchor.countryCode, latitude: anchor.latitude, longitude: anchor.longitude };
 }
 
 function tripCurrency(value: unknown): CurrencyCode {
@@ -118,8 +121,8 @@ function destinationContext(value: unknown) {
   if (value === undefined || value === null) return {};
   if (typeof value !== 'object' || Array.isArray(value)) fail('Destination details must be structured data.');
   const details = value as Record<string, unknown>;
-  const city = String(details.city || '').trim().slice(0, 100);
-  const region = String(details.region || '').trim().slice(0, 100);
+  const city = String(details.city || '').trim().slice(0, 200);
+  const region = String(details.region || '').trim().slice(0, 1000);
   const country = String(details.country || '').trim().slice(0, 100);
   const countryCode = String(details.countryCode || '').trim().toUpperCase();
   const latitude = Number(details.latitude);
@@ -159,7 +162,7 @@ function serializeTrip(row: PrismaTrip) {
   };
 }
 
-async function createItineraryVersion(transaction: Transaction, trip: PrismaTrip, kind: "saved" | "regenerated" | "manual_edit" | "restored") {
+export async function createItineraryVersion(transaction: Transaction, trip: PrismaTrip, kind: "saved" | "regenerated" | "manual_edit" | "restored") {
   await transaction.$queryRaw`SELECT "id" FROM "trips" WHERE "id" = ${trip.id} FOR UPDATE`;
   const latest = await transaction.itineraryVersion.aggregate({ where: { tripId: trip.id }, _max: { version: true } });
   return transaction.itineraryVersion.create({
@@ -187,7 +190,7 @@ async function saveTrip(user: PublicUser, action: string, body: Body) {
   };
   const previous = await replay();
   if (previous) return previous;
-  const destination = String(body.destination || "").trim().slice(0, 120);
+  const destination = String(body.destination || "").trim().slice(0, 2000);
   if (destination.length < 2) fail("Destination is required.");
   const budget = positiveMoney(body.budget, "Budget");
   const currency = tripCurrency(body.currency);
@@ -240,7 +243,7 @@ async function saveTrip(user: PublicUser, action: string, body: Body) {
 async function updateTrip(user: PublicUser, action: string, body: Body) {
   requireRole(user, "traveler");
   const tripId = identifier(body.id);
-  const destination = String(body.destination || "").trim().slice(0, 120);
+  const destination = String(body.destination || "").trim().slice(0, 2000);
   if (destination.length < 2) fail("Destination is required.");
   const budget = positiveMoney(body.budget, "Budget");
   const currency = tripCurrency(body.currency);
@@ -258,6 +261,7 @@ async function updateTrip(user: PublicUser, action: string, body: Body) {
   return prisma.$transaction(async (transaction) => {
     const existing = await transaction.trip.findFirst({ where: { id: tripId, userId: user.id, status: "active" } });
     if (!existing) fail("Saved trip not found.");
+    const withPhotos = retainStoredActivityPhotos(itinerary as unknown as ItineraryResponse, existing.itinerary as unknown as ItineraryResponse);
     const trip = await transaction.trip.update({
       where: { id: existing.id },
       data: {
@@ -270,7 +274,7 @@ async function updateTrip(user: PublicUser, action: string, body: Body) {
         travelers,
         partyType,
         interests,
-        itinerary,
+        itinerary: withPhotos as unknown as Prisma.InputJsonValue,
         weather,
       },
     });
@@ -416,6 +420,7 @@ export async function executePlatformAction(user: PublicUser, action: string, bo
   }
   switch (action) {
     case 'record-visit': return recordVisit(user, body);
+    case 'record-trip-visits': return recordTripVisits(user, body);
     case 'remove-visit': return removeVisit(user, body);
     case 'submit-report': return submitReport(user, body);
     case 'resolve-report': return resolveReport(user, body);

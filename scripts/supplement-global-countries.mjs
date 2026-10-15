@@ -1,0 +1,11 @@
+import {DatabaseSync} from 'node:sqlite';
+import {archiveLines} from './geonames-archive.mjs';
+import {fileURLToPath} from 'node:url';
+import {writeFileSync} from 'node:fs';
+const directory=fileURLToPath(new URL('../.cache/global-locations/',import.meta.url)),db=new DatabaseSync(directory+'/catalogue.sqlite');
+const missing=new Map(db.prepare("SELECT c.id,c.code FROM countries c LEFT JOIN places p ON p.id=c.id WHERE p.id IS NULL AND c.code NOT IN ('CS','AN')").all().map(r=>[r.id,r.code]));
+const aliases=JSON.parse(db.prepare('SELECT value FROM metadata WHERE key=?').get('country-aliases').value),source=JSON.parse(db.prepare('SELECT value FROM metadata WHERE key=?').get('source').value);
+const normal=s=>s.normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+db.exec('PRAGMA journal_mode=OFF; BEGIN;');const imported=[];
+for await(const line of archiveLines(fileURLToPath(new URL('../.cache/destination-source/allCountries.zip',import.meta.url)),'allCountries.txt')){const f=line.split('\t'),id=Number(f[0]);if(!missing.has(id))continue; if(f[8]!==missing.get(id)||!Number.isFinite(Number(f[4]))||!Number.isFinite(Number(f[5])))throw Error('Invalid source country identity.');db.prepare('INSERT INTO places VALUES(?,?,?,?,?,?,?,?,?,?,NULL)').run(id,f[1],f[7],f[8],f[10],f[11],f[12],f[13],Number(f[4]),Number(f[5]));const names=[f[1],f[2],...f[3].split(',').filter(Boolean)];db.prepare('INSERT INTO names(rowid,text) VALUES(?,?)').run(id,[...new Set(names.map(normal))].join(' | ')); aliases[f[8]]=[...new Set([...(aliases[f[8]]||[]),...names])]; source.records++;source.countryCounts[f[8]]=(source.countryCounts[f[8]]||0)+1;source.featureCounts[f[7]]=(source.featureCounts[f[7]]||0)+1; imported.push({id,country:f[8],feature:f[7],name:f[1]}); missing.delete(id);if(!missing.size)break;}
+db.prepare('UPDATE metadata SET value=? WHERE key=?').run(JSON.stringify(aliases),'country-aliases');db.prepare('UPDATE metadata SET value=? WHERE key=?').run(JSON.stringify(source),'source');db.exec('COMMIT;');writeFileSync(directory+'/coverage.json',JSON.stringify(source,null,2));db.close();console.log(JSON.stringify({imported,unresolved:[...missing]}));

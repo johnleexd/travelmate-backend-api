@@ -63,7 +63,7 @@ export async function GET(request: Request) {
     && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180
     ? { latitude, longitude }
     : undefined;
-  if (origin.length < 2 || origin.length > 120 || destination.length < 2 || destination.length > 120
+  if (origin.length < 2 || origin.length > 120 || destination.length < 2 || destination.length > 2000
     || !validDate(departureDate) || (returnDate && (!validDate(returnDate) || returnDate < departureDate))
     || !Number.isInteger(adults) || adults < 1 || adults > 9) {
     return Response.json({ error: 'Provide valid origin, destination, dates, and 1-9 travelers.' }, { status: 400 });

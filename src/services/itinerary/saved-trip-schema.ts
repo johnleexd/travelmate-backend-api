@@ -6,7 +6,10 @@ import { plannedAccommodationSchema } from '../destination/planned-accommodation
 import { buildBudgetOptimization } from '../budget/budget-optimization-service.ts';
 import { groundingSchema, priceEvidenceSchema, placeEvidenceSchema } from './grounding-schema.ts';
 import { calculateExpense, refreshGroundedTotals, verifyGroundedPlan } from './grounded-plan.ts';
+import { placeMatchesAnchor } from './grounded-places.ts';
 import type { ItineraryResponse } from '../../controllers/itinerary-controller.ts';
+import { canonicalStoredMedia } from '../../lib/stored-trip-media.ts';
+import { isUnsplashActivityPhoto } from './unsplash-activity-photos.ts';
 
 const isoDate = /^\d{4}-\d{2}-\d{2}$/;
 const isoDateTime = z.string().datetime({ offset: true });
@@ -15,27 +18,43 @@ const money = z.number().finite().min(0).max(1_000_000_000).refine(
   "Use at most two decimal places.",
 );
 const text = (maximum: number) => z.string().trim().max(maximum);
+const savedImageUrl = text(1_000).refine(value => {
+  if (!value) return true;
+  try { const host = new URL(value).hostname; return host !== 'places.googleapis.com' && !/(^|\.)googleusercontent\.com$/.test(host); }
+  catch { return true; } // Existing URL validation/provenance behavior is preserved.
+}, 'Google photo URLs are transient and cannot be saved.');
 
 const attributionSchema = z.object({
   creator: text(200), license: text(100), licenseUrl: z.string().url().max(1_000).optional(), sourceUrl: z.string().url().max(1_000),
+  provider: z.literal('unsplash').optional(), photoId: text(100).regex(/^[\w-]+$/).optional(),
+  photoType: z.enum(['place', 'illustrative', 'destination', 'saved']).optional(),
+  photographerUrl: z.string().url().max(1000).optional(), photographerUsername: text(100).optional(),
+  illustrative: z.boolean().optional(), match: z.enum(['place', 'destination', 'activity']).optional(),
+  downloadLocation: z.string().url().max(1000).optional(), downloadTracked: z.boolean().optional(), selectedAt: isoDateTime.optional(),
 }).strict();
 
 const activitySchema = z.object({
+  id: text(100).min(1).optional(), status: z.enum(['planned', 'completed', 'skipped', 'rescheduled']).optional(), statusChangedAt: isoDateTime.optional(),
+  managementHistory: z.array(z.object({ action: z.enum(['complete', 'skip', 'plan', 'edit', 'reschedule', 'replan']), status: z.enum(['planned', 'completed', 'skipped', 'rescheduled']), at: isoDateTime, fromDate: z.string().regex(isoDate), fromTime: text(30), toDate: z.string().regex(isoDate), toTime: text(30) }).strict()).max(500).optional(),
   time: text(30), title: text(160).min(1), description: text(1_000), estimatedCost: money,
   durationMinutes: z.number().int().min(15).max(720).optional(), travelMinutes: z.number().int().min(0).max(480).optional(), location: text(200).optional(),
   unitCost: money.optional(), category: z.enum(["accommodation", "food", "activity", "transport", "misc"]),
-  icon: text(32), imageUrl: text(1_000).optional(), imageAttribution: attributionSchema.optional(),
+  icon: text(32), imageUrl: savedImageUrl.optional(), imageAttribution: attributionSchema.optional(),
+  googlePlaceId: text(255).regex(/^[\w-]{10,255}$/).optional(),
   placeVerification: z.enum(["supporting-source-found", "unverified"]).optional(),
   place: placeEvidenceSchema.optional(), priceEvidence: priceEvidenceSchema.optional(),
+  scheduleLabel: z.literal('Suggested').optional(),
 }).strict();
 
 const daySchema = z.object({
-  day: z.number().int().min(1).max(31), date: z.string().regex(isoDate), theme: text(120).min(1), imageUrl: text(1_000),
+  day: z.number().int().min(1).max(31), date: z.string().regex(isoDate), theme: text(120).min(1), imageUrl: savedImageUrl,
   imageAttribution: attributionSchema.optional(), travelNote: text(500).optional(), returnToStayAt: text(30).optional(),
   rideFare: money.optional(), totalCost: money, activities: z.array(activitySchema).max(8), weatherAlert: text(500).optional(),
   crowdLevel: z.enum(["low", "moderate", "high"]).optional(), crowdSource: z.literal("estimated").optional(),
   crowdConfidence: z.literal("low").optional(), crowdNote: text(500).optional(), crowdRecommendation: text(500).optional(),
   crowdFetchedAt: isoDateTime.optional(), crowdRefreshAfter: isoDateTime.optional(),
+  planningStatus: z.enum(['suggested', 'incomplete', 'rest', 'travel']).optional(), planningReason: text(500).optional(),
+  scheduleBlocks: z.array(z.object({ kind: z.enum(['meal', 'free-time', 'unscheduled']), startMinutes: z.number().int().min(0).max(1439), endMinutes: z.number().int().min(1).max(1440), label: text(200) }).strict().refine(block => block.endMinutes > block.startMinutes)).max(20).optional(),
 }).strict();
 
 const budgetSummarySchema = z.object({
@@ -88,11 +107,11 @@ const selectedTravelCostsSchema = z.object({
 }).strict();
 
 const itinerarySchema = z.object({
-  destination: text(120).min(2), totalBudget: money.positive(), currency: z.enum(SUPPORTED_CURRENCIES),
-  source: z.enum(["openai", "gemini", "mock"]).optional(), partyType: z.enum(["solo", "couple", "family", "friends"]).optional(),
+  destination: text(2000).min(2), totalBudget: money.positive(), currency: z.enum(SUPPORTED_CURRENCIES),
+  source: z.enum(["openai", "gemini", "mock", "catalog"]).optional(), partyType: z.enum(["solo", "couple", "family", "friends"]).optional(),
   travelers: z.number().int().min(1).max(20).optional(), preferences: z.object({
     pace: z.enum(['relaxed', 'balanced', 'active']).optional(),
-    travelStyle: text(80), accommodation: text(120), transportation: text(120), activities: z.array(text(160)).max(20),
+    travelStyle: text(80), accommodation: text(120), transportation: text(120), activities: z.array(text(160)).max(20), interests: z.array(text(200)).max(20).optional(),
   }).strict().optional(), accommodation: accommodationSchema.optional(), plannedAccommodation: plannedAccommodationSchema.optional(), budgetOptimization: budgetOptimizationSchema.optional(),
   selectedTravelCosts: selectedTravelCostsSchema.optional(), costSharing: costSharingSchema.optional(), manuallyEdited: z.boolean().optional(), days: z.array(daySchema).min(1).max(31),
   budgetSummary: budgetSummarySchema,
@@ -117,6 +136,7 @@ const crowdSchema = z.object({
 }).strict();
 
 const weatherSchema = z.object({
+  timeZone: text(100).optional(),
   source: z.enum(["openweathermap", "open-meteo", "unavailable", "mock"]), city: text(120).min(1), country: text(100),
   temperature: z.number().finite(), feelsLike: z.number().finite(), humidity: z.number().finite().min(0).max(100),
   windSpeed: z.number().finite().min(0), description: text(200), icon: text(20), iconUrl: text(1_000),
@@ -131,7 +151,11 @@ function issueMessage(error: z.ZodError): string {
 }
 
 export function parseSavedItinerary(value: unknown, context: { days: number; currency: CurrencyCode; budget: number; travelers: number; partyType: PartyType; startDate?: string; destination?: string }) {
-  const parsed = itinerarySchema.safeParse(value);
+  const raw = value as Partial<ItineraryResponse> | null;
+  // Signed plans must retain exactly the fields covered by their proof. Older
+  // unsigned photo aliases can be upgraded locally through the ordinary schema.
+  const compatible = raw && !raw.grounding && Array.isArray(raw.days) ? { ...raw, days: raw.days.map(day => ({ ...canonicalStoredMedia(day as unknown as Record<string, unknown>), activities: Array.isArray(day.activities) ? day.activities.map(activity => canonicalStoredMedia(activity as unknown as Record<string, unknown>, true)) : day.activities })) } : value;
+  const parsed = itinerarySchema.safeParse(compatible);
   if (!parsed.success) throw new Error(`Itinerary is invalid (${issueMessage(parsed.error)}).`);
   const itinerary = parsed.data;
   if (itinerary.grounding && !verifyGroundedPlan(value as ItineraryResponse)) throw new Error('Grounded itinerary evidence or prices were changed. Regenerate or save edits through the manual-edit action.');
@@ -162,7 +186,7 @@ export function parseSavedItinerary(value: unknown, context: { days: number; cur
     : itinerary.grounding?.nights ? allocateNightlyCosts(itinerary.grounding.categories.accommodation, itinerary.grounding.nights, context.currency) : [];
   if (stay && Math.abs(stay.total - lodgingByNight.reduce((a,b) => a+b,0)) > 0.011) throw new Error('Accommodation total does not match its quoted cost.');
   itinerary.days.forEach((day, index) => {
-    day.activities = validateActivitySchedule(day.activities);
+    day.activities = validateActivitySchedule(day.activities, itinerary.preferences?.transportation);
     if (day.day !== index + 1) throw new Error(`Itinerary day ${index + 1} is out of sequence.`);
     const expected = new Date(`${context.startDate ?? itinerary.days[0].date}T00:00:00.000Z`);
     if (!Number.isFinite(expected.getTime())) throw new Error('Itinerary start date is invalid.');
@@ -188,8 +212,12 @@ export function parseSavedItinerary(value: unknown, context: { days: number; cur
       const expected = calculateExpense(price.unitAmount, price.quantity, price.participants, price.unit, context.currency);
       if (Math.abs(expected - activity.estimatedCost) > 0.001) throw new Error('Activity total does not match its price basis.');
       const place = activity.place;
-      if (place && (place.city !== grounding.destination.city || place.countryCode !== grounding.destination.countryCode || place.country !== grounding.destination.country)) throw new Error('Attraction location does not match the selected city and country.');
-      if (activity.imageUrl && (!place || !activity.imageAttribution || !/^https:\/\/(upload|thumb)\.wikimedia\.org\//.test(activity.imageUrl))) throw new Error('Attraction photo requires place-linked source attribution.');
+      if (place && !placeMatchesAnchor(place, grounding.destination)) throw new Error('Attraction location does not match the selected city and country or verified nearby boundary.');
+      if (activity.imageUrl) {
+        const commons = Boolean((place || activity.location?.trim() || activity.imageAttribution?.photoType === 'place') && activity.imageAttribution && activity.imageAttribution.provider !== 'unsplash' && /^https:\/\/(upload|thumb)\.wikimedia\.org\//.test(activity.imageUrl));
+        const unsplash = Boolean((place || activity.location?.trim() || activity.imageAttribution?.illustrative) && activity.category !== 'accommodation' && isUnsplashActivityPhoto(activity));
+        if (!commons && !unsplash) throw new Error('Attraction photo requires place-linked source attribution.');
+      }
     }
     const recomputed = refreshGroundedTotals(itinerary as ItineraryResponse).grounding!;
     if (Object.keys(grounding.categories).some(key => Math.abs(grounding.categories[key as keyof typeof grounding.categories] - recomputed.categories[key as keyof typeof grounding.categories]) > 0.001)

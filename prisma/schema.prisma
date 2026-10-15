@@ -423,6 +423,9 @@ model VisitedPlace {
   visitDate   DateTime @map("visit_date") @db.Date
   latitude    Float?
   longitude   Float?
+  place       Json?
+  imageUrl    String?  @map("image_url") @db.VarChar(1000)
+  imageAttribution Json? @map("image_attribution")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   trip        Trip?    @relation(fields: [tripId], references: [id], onDelete: SetNull)

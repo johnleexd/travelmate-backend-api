@@ -80,6 +80,40 @@ test('notification polling reads only authenticated-user notifications', async t
   assert.equal(result.status, 200); assert.deepEqual(await result.json(), { notifications: [] });
 });
 
+function mockSummaryWorkspace(t: TestContext) {
+  mock(t, prisma.user, 'findFirst', async () => ({...user,sessionVersion:0}));
+  for (const model of ['user','listing','moderation','itineraryGeneration','auditEvent','notification'] as const) mock(t,prisma[model],'findMany',async()=>[]);
+  mock(t,prisma.trip,'findMany',async()=>[row]);
+  mock(t,prisma.trip,'count',async()=>1);
+  mock(t,prisma,'$queryRaw',async()=>[]);
+  return {cookie:`travelmate_session=${createSessionToken(user.id,'traveler')}`};
+}
+
+test('dashboard summary recovers from transient workspace and trip-page connection failures without changing trips', async t => {
+  const headers = mockSummaryWorkspace(t);
+  let workspaceAttempts = 0, pageAttempts = 0;
+  mock(t,prisma.listing,'findMany',async()=>{ if (++workspaceAttempts === 1) throw {code:'P1017'}; return []; });
+  mock(t,prisma.trip,'count',async()=>{ if (++pageAttempts === 1) throw {meta:{driverAdapterError:{cause:{kind:'ConnectionClosed'}}}}; return 1; });
+  mock(t,prisma.trip,'update',async()=>{ throw new Error('Dashboard reads must never write trips'); });
+  const response = await fetch(`${base}/api/platform?scope=traveler&summary=true`,{headers});
+  assert.equal(response.status,200); const data = await response.json();
+  assert.equal(data.trips.length,1); assert.equal(data.trips[0].id,row.id); assert.equal(data.tripsPage.total,1);
+  assert.equal(workspaceAttempts,2); assert.equal(pageAttempts,2); assert.equal(response.headers.get('set-cookie'),null);
+});
+
+test('persistent dashboard database loss stays retryable and programming failures are not retried', async t => {
+  const headers = mockSummaryWorkspace(t); t.mock.method(console,'warn',()=>{}); t.mock.method(console,'error',()=>{});
+  let attempts = 0;
+  mock(t,prisma.trip,'count',async()=>{ attempts++; throw {code:'P1017'}; });
+  const unavailable = await fetch(`${base}/api/platform?scope=traveler&summary=true`,{headers});
+  assert.equal(unavailable.status,503); assert.equal((await unavailable.json()).retryable,true);
+  assert.equal(attempts,3); assert.equal(unavailable.headers.get('set-cookie'),null);
+  attempts = 0;
+  mock(t,prisma.trip,'count',async()=>{ attempts++; throw new Error('Unexpected query failure'); });
+  const unexpected = await fetch(`${base}/api/platform?scope=traveler&summary=true`,{headers});
+  assert.equal(unexpected.status,500); assert.equal(attempts,1);
+});
+
 test('trip detail endpoints reject another user’s trip without returning content', async t => {
   mock(t, prisma.user, 'findFirst', async () => ({ ...user, sessionVersion: 0 }));
   mock(t, prisma.trip, 'findFirst', async query => { assert.equal(query.where.userId, user.id); return null; });

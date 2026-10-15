@@ -3,7 +3,24 @@
 This is the TravelMate backend: Express 5 with strict TypeScript, Prisma ORM,
 and Neon PostgreSQL.
 
-GPS uses signed traveler-only `POST /api/navigation/search` and
+Saved-trip visit recording uses the existing `visited_places` database table and
+`POST /api/platform` action infrastructure. `GET /api/platform/trips/:id/visit-candidates`
+reads all named saved itinerary places and existing visit status for the signed-in
+owner. `record-trip-visits` accepts `tripId`, selected `{key,fingerprint}` pairs,
+an actual `visitDate`, and the user's `timeZone`. It rechecks the current itinerary,
+rejects stale selections, and saves the batch atomically under a per-user database
+lock. Duplicate retries (including a different date) do not add those places again.
+The separate manual `record-visit` action retains dated return visits.
+
+Verified Wikidata IDs provide cross-trip identity. Other saved places use coordinates
+and full locations; uncertain names without points or precise locations retain a
+trip/activity identity to avoid combining unrelated namesakes. Historical provider
+references remain stored even when insufficient for verified-ID deduplication.
+Migration `20261015000000_visited_place_media` adds optional place/photo metadata;
+existing visits remain compatible. Neither recording nor deleting visits updates
+trip status, and completion/reopening does not write visited records.
+
+Saved-trip navigation uses signed traveler-only `POST /api/navigation/search` and
 `POST /api/navigation/route`. Explicit place/address searches share the existing
 Nominatim queue; no public-geocoder autocomplete is added. Routes use OSRM/FOSSGIS
 walking, cycling and driving datasets with validated geometry and maneuvers. GPS
@@ -393,7 +410,7 @@ delete accounts, change verification status, or re-register to switch providers.
    SMTP_USER=YOUR_SENDING_ACCOUNT@gmail.com
    SMTP_PASS=YOUR_GOOGLE_APP_PASSWORD
    EMAIL_FROM="TravelMate <YOUR_SENDING_ACCOUNT@gmail.com>"
-   EMAIL_SMOKE_TO=bjake1051@gmail.com
+   EMAIL_SMOKE_TO=recipient@example.com
    ```
 
    `EMAIL_FROM` must match `SMTP_USER`. The recipient may be a different email
@@ -533,6 +550,109 @@ migrations before using this flow.
 Trip completion uses the additive 20261008000000_completed_trips migration (TripStatus.completed and trips.completed_at). The owned traveler actions complete-trip and reopen-trip persist completion or undo it. Lifecycle writes acquire a row lock; repeated completion preserves its timestamp. Archiving keeps completion metadata, and restore-trip returns completed travel to Completed. Updates and version restoration require active status. Summary and detail responses expose optional completedAt.
 
 
+## Missing activity photos (2026-10-11)
+
+Existing catalog/Wikidata P18 photos and other working providers are preserved.
+Missing named-activity photos now use Wikipedia and Commons public Action APIs;
+no new API key is required. The fallback verifies the exact place name and
+coordinates (within 1 km), or city/country evidence when coordinates are absent.
+Verified article redirects and local-language links supply alternate names.
+Conflicting entities/coordinates, generic destination images, flags, logos,
+illustrations and incomplete attribution are rejected. Only supported licensed
+raster photos with the actual creator, Commons source and license link qualify.
+
+`POST /api/itinerary/images` retains its existing authentication/rate limit.
+`lookupOnly: true` provides read-only photo metadata without signing user edits
+or changing budgets. Saved-trip cards retrieve missing photos as they enter
+view. Their owned `/api/platform/trips/:id/photos` endpoint persists photo fields
+with a compare-and-swap check, preserving concurrent edits and updating the proof
+only from server-verified data. Reopening retains the selected image and credit.
+Generation resolves licensed attraction photos before returning the plan, using
+catalog-linked Commons files and the existing Wikipedia/Unsplash resolver under
+separate photo deadlines. Image-provider failures leave the scheduled activities
+and budgets intact. Selected URLs, attribution and photo type are saved together.
+
+Reopening uses stored photos, including historical image-field aliases, without
+re-searching or checking place identity through providers. Enrichment runs only
+for missing images or an observed load failure. `failedPhotos` contains activity
+indices and stored URLs; replacement requires those identities still to match.
+Empty responses never clear an image or activity. Successful replacements update
+only the related photo fields with the existing compare-and-swap protection.
+An available saved cover/day photo is labeled **Destination photo** when no
+activity photo exists. Historical metadata gaps receive a saved-photo label;
+new selections still require approved reusable licenses. No venue names are
+invented for days that originally contain only allowances.
+
+The backend serializes fallback requests across all Wikimedia hosts. Its bounded
+per-process cache keeps successes for 24 hours, verified misses for one hour and
+failures for one minute, coalescing identical in-flight lookups. HTTP 429 imposes
+a shared `Retry-After` cooldown; API `maxlag`/503 failures back off without blocking
+other healthy providers. The frontend also queues and caches read-only lookups.
+Default request spacing is 6100 ms. Set `WIKIMEDIA_USER_AGENT` to a meaningful bot
+identity with a public contact URL/email before configuring a faster permitted
+pace via `WIKIMEDIA_PHOTO_INTERVAL_MS` (minimum 1100 ms). Multiple backend instances
+each have their own queue/cache. See Wikimedia's [API etiquette](https://www.mediawiki.org/wiki/API:Etiquette),
+[current rate limits](https://www.mediawiki.org/wiki/Wikimedia_APIs/Rate_limits),
+and [image metadata API](https://www.mediawiki.org/wiki/API:Imageinfo).
+
+Activity lookups first check the geographically verified Wikidata entity's P18
+file directly in Commons. Otherwise, the entity's available Wikipedia languages
+precede missing English articles, using PageImages (`pilicense=free`,
+`piprop=thumbnail|name`, `pithumbsize=960`). SVG placeholders are skipped.
+ImageInfo supplies the file's actual creator, source and reusable-license evidence;
+ambiguous articles, conflicting coordinates, restricted/unknown licenses, logos
+and unrelated files are rejected. The existing verified Wikidata/Commons recovery
+is retained. Shared entity/article/file responses are cached for one hour in
+addition to the existing subject cache. A bounded Wikipedia lookup leaves time
+for the existing Unsplash fallback, always labeled **Illustrative photo**; complete
+failure displays a placeholder. Saved Trip covers and hotel-provider photos keep
+their separate integrations. Wikipedia needs no API key. Unsplash continues to use
+the existing backend-only `UNSPLASH_ACCESS_KEY`; no new key or migration is required.
+
+### Saved-trip destination covers (2026-10-12)
+
+Saved covers use `/api/destination-context/photo`, independently of activity-image
+enrichment. Working Unsplash pools and previously selected valid covers are kept.
+When no Unsplash photo matches, Wikipedia/Commons now resolve a representative
+destination photograph using the verified city, region, country and coordinates.
+The fallback shares the activity resolver's rate-limited queue, cache, real-creator
+and license checks; activity matching remains within 1 km, while a verified city
+article can use a city-cover point within 15 km. Company articles without matching
+city coordinates, flags/logos/maps and photos of another city are rejected.
+The existing attraction catalog remains the last exact-location provider.
+Unrelated country photos no longer substitute for a missing city cover.
+
+Cover lookups are read-only and never regenerate/update itineraries, hotels or
+budgets. Successful server/browser caches keep their existing lifetimes. Server
+misses now expire after one minute, including previously long-lived empty entries;
+obsolete browser misses retry while valid stored selections survive the addition
+of region matching. Browser timeouts allow 90 seconds for queued fallback work.
+
+### Non-Google activity and day photos (2026-10-12)
+
+`GOOGLE_PLACES_PHOTOS_ENABLED=false` disables all Places photo requests, even
+when the server key and stored Place IDs exist. The default is disabled; enabling
+requires an explicit `true`. Normal OpenStreetMap views require no photo/map
+switch when no Google photos are displayed. See [Google photo configuration](docs/google-places-photos.md).
+
+Missing day covers can reuse licensed, credited photographs already in the same
+itinerary. A photograph of a different activity is explicitly labeled
+**Destination photo**; it never becomes an exact attraction match. Working
+photos, attribution, hotels and non-photo trip data are preserved. Days containing
+only budget allowances still say **No activities scheduled** and can show a
+destination photograph in both overview and day details. Saved photo-only repairs
+use the existing compare-and-swap and grounding protections.
+
+Generation allows 25 seconds for independent photo enrichment. Wikimedia gets
+up to 16 seconds before Unsplash so the default 6100 ms request spacing can
+complete multiple metadata requests. Existing queues, caches, miss cooldowns and
+in-flight coalescing remain in use. Provider failures retain stored destination
+fallbacks rather than clearing images or blocking generation.
+
+Actual Manila/Cheonan record repairs, real generated plans, screenshots, all-day
+save/reopen/refresh results and remaining source gaps are recorded in
+[the verification report](../audit/2026-10-12/non-google-activity-photos/README.md).
+
 ## Planning and visited-place improvements (2026-10-08)
 
 - Paid subscriptions are excluded at the user's request. No paid plans, checkout, billing status, or entitlements are implemented.
@@ -548,3 +668,29 @@ Trip completion uses the additive 20261008000000_completed_trips migration (Trip
 Optional Cloudinary integration would need a cloud name and an approved delivery/upload strategy for licensed assets. Authenticated uploads require an API key and API secret held only on the server. Do not proxy or upload provider hotel media without permission. See [Cloudinary image transformations](https://cloudinary.com/documentation/image_transformations) and [Google Maps URL parameters](https://developers.google.com/maps/documentation/urls/get-started).
 
 Database migration: 20261008120000_visited_places_save_keys (additive; applied to the configured database). Routes: GET /api/platform/visited-places?q=&cursor= and authenticated platform actions record-visit / remove-visit. Record from a saved trip with tripId, dayIndex, activityIndex, activityTitle, optional placeId; or manually with name and destination. Both require visitDate and optional IANA timeZone. Only the current traveler can read/remove records. API contracts are regenerated from OpenAPI.
+
+## Worldwide destination catalogue
+
+Interactive `/api/locations?q=&offset=` searches the imported GeoNames catalogue, including aliases and all available administrative and populated-place records, rather than the legacy capped city index. `/api/locations/areas` browses direct children and searches all available descendants using source administrative codes. Responses expose `total`, `nextOffset`, source identity, coordinates, hierarchy, and a coverage notice. PSGC remains authoritative for the imported Philippine regions, provinces, cities and municipalities. GeoNames supplies available lower Philippine divisions; it is not a complete official barangay dataset. A separate, explicit `/api/locations/resolve?secondary=true&q=` lookup verifies OpenStreetMap results, using stable element IDs. Public Nominatim is never used for autocomplete or systematic enumeration.
+
+Provision the catalogue on every backend host. It is approximately 1 GB and intentionally ignored by Git. Use Node >=22.13 (verified on Node 26.7), retain the full official `https://download.geonames.org/export/dump/allCountries.zip` in `.cache/destination-source/`, then run `npm run locations:build`. The builder downloads country metadata and the separate ADM5 codes from GeoNames, imports without population cutoffs or per-country record limits, and writes `.cache/global-locations/catalogue.sqlite` plus `coverage.json`. Allow at least 2 GB free during rebuilding; stop the backend before replacing an open catalogue on Windows. `GLOBAL_LOCATION_CATALOGUE_PATH` can point to a provisioned read-only file outside this default cache. Restart after provisioning/replacement. Runtime requests do not download the archive. If the catalogue is unavailable, the API clearly labels its limited legacy/Open-Meteo fallback as partial coverage.
+
+Refresh from GeoNames when appropriate and check `coverage.json` for source dates, each country's counts and supplied feature levels. `npm run locations:verify` records public-source searches, parent membership, production generation/accommodation identity validation and JSON/map reopening in `../audit/2026-10-14/worldwide-locations/`. It does not create shared database trips or obtain real hotel quotes. Country and local administrative coverage, intermediate parent codes, populated-place classifications and points vary in quality. Missing types stay unconfirmed; no worldwide completeness guarantee is made. Source data uses GeoNames CC BY 4.0; secondary results retain their OpenStreetMap source URL. Legacy photo resolution and natural-destination examples retain their existing limited index.
+
+## Balanced generation default
+
+`POST /api/itinerary` uses Balanced style and pacing for every new or regenerated
+plan. `travelStyle` and `pace` are optional legacy request fields and do not change
+that default. Saved itinerary schemas continue to accept historical values; opening
+an older plan preserves its activities, costs, photos and metadata. Regenerating it
+produces a new Balanced plan. Generation request identity includes the current
+policy version so an older style-specific cached response cannot be replayed as
+new Balanced output.
+
+Interests, preferred activities, stay preference, transportation, dates, travelers,
+explicit hotel selection and entered expense estimates remain active. Stay choices
+are suggestions only. The budget is a spending ceiling; provider references and
+user-entered estimates retain their amounts, while absent prices stay unavailable
+and are excluded from the known subtotal. Source-backed visits, transport buffers,
+meal breaks and rest time use the existing shared scheduler. No data migration or
+rewrite of existing saved itineraries is required.

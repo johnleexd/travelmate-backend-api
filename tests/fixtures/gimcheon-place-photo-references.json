@@ -1,0 +1,4395 @@
+{
+  "anchor": {
+    "city": "Gimcheon",
+    "country": "South Korea",
+    "countryCode": "KR",
+    "latitude": 36.12176,
+    "longitude": 128.11981
+  },
+  "initial": [
+    {
+      "pageid": 968608,
+      "ns": 0,
+      "title": "Gimcheon",
+      "index": -1,
+      "coordinates": [
+        {
+          "lat": 36.13333333,
+          "lon": 128.1,
+          "primary": "",
+          "globe": "earth"
+        }
+      ],
+      "pageprops": {
+        "wikibase_item": "Q42078"
+      }
+    },
+    {
+      "pageid": 3958891,
+      "ns": 0,
+      "title": "Gimcheon Stadium",
+      "index": 0,
+      "coordinates": [
+        {
+          "lat": 36.13964167,
+          "lon": 128.08650833,
+          "primary": "",
+          "globe": "earth"
+        }
+      ],
+      "pageprops": {
+        "wikibase_item": "Q5562676"
+      }
+    },
+    {
+      "pageid": 23538617,
+      "ns": 0,
+      "title": "Gimcheon (Gumi) station",
+      "index": 1,
+      "coordinates": [
+        {
+          "lat": 36.11305556,
+          "lon": 128.18027778,
+          "primary": "",
+          "globe": "earth"
+        }
+      ],
+      "pageprops": {
+        "wikibase_item": "Q59949"
+      }
+    },
+    {
+      "pageid": 23538780,
+      "ns": 0,
+      "title": "Jikjisa station",
+      "index": 2,
+      "coordinates": [
+        {
+          "lat": 36.125,
+          "lon": 128.03972222,
+          "primary": "",
+          "globe": "earth"
+        }
+      ],
+      "pageprops": {
+        "wikibase_item": "Q341173"
+      }
+    },
+    {
+      "pageid": 23538793,
+      "ns": 0,
+      "title": "Gimcheon station",
+      "index": 3,
+      "coordinates": [
+        {
+          "lat": 36.12333333,
+          "lon": 128.11472222,
+          "primary": "",
+          "globe": "earth"
+        }
+      ],
+      "pageprops": {
+        "wikibase_item": "Q54286"
+      }
+    },
+    {
+      "pageid": 23538810,
+      "ns": 0,
+      "title": "Daesin station",
+      "index": 4,
+      "coordinates": [
+        {
+          "lat": 36.15277778,
+          "lon": 128.19638889,
+          "primary": "",
+          "globe": "earth"
+        }
+      ],
+      "pageprops": {
+        "wikibase_item": "Q341192"
+      }
+    },
+    {
+      "pageid": 32028541,
+      "ns": 0,
+      "title": "Gimcheon University",
+      "index": 5,
+      "coordinates": [
+        {
+          "lat": 36.1399,
+          "lon": 128.0818,
+          "primary": "",
+          "globe": "earth"
+        }
+      ],
+      "pageprops": {
+        "wikibase_item": "Q5562681"
+      }
+    },
+    {
+      "pageid": 32028652,
+      "ns": 0,
+      "title": "Gyeongbuk College of Health",
+      "index": 6,
+      "coordinates": [
+        {
+          "lat": 36.13838,
+          "lon": 128.08436,
+          "primary": "",
+          "globe": "earth"
+        }
+      ],
+      "pageprops": {
+        "wikibase_item": "Q10855907"
+      }
+    }
+  ],
+  "extended": [
+    {
+      "pageid": 4556608,
+      "ns": 0,
+      "title": "Jikjisa",
+      "index": 19,
+      "coordinates": [
+        {
+          "lat": 36.1165,
+          "lon": 128.00433333,
+          "primary": "",
+          "globe": "earth"
+        }
+      ],
+      "pageprops": {
+        "wikibase_item": "Q625286"
+      }
+    },
+    {
+      "pageid": 74643160,
+      "ns": 0,
+      "title": "Park Chung-hee Presidential Museum",
+      "index": 41,
+      "coordinates": [
+        {
+          "lat": 36.09061,
+          "lon": 128.34894,
+          "primary": "",
+          "globe": "earth"
+        }
+      ],
+      "pageprops": {
+        "wikibase_item": "Q121747212"
+      }
+    }
+  ],
+  "local": [
+    {
+      "pageid": 272319,
+      "ns": 0,
+      "title": "직지사",
+      "index": 230,
+      "coordinates": [
+        {
+          "lat": 36.11638889,
+          "lon": 128.00444444,
+          "primary": "",
+          "globe": "earth"
+        }
+      ],
+      "pageprops": {
+        "wikibase_item": "Q625286"
+      }
+    },
+    {
+      "pageid": 1114856,
+      "ns": 0,
+      "title": "김천 직지사 대웅전",
+      "index": 257,
+      "coordinates": [
+        {
+          "lat": 36.11700833,
+          "lon": 128.00377222,
+          "primary": "",
+          "globe": "earth"
+        }
+      ],
+      "pageprops": {
+        "wikibase_item": "Q17314918"
+      }
+    },
+    {
+      "pageid": 1169403,
+      "ns": 0,
+      "title": "김천 김산향교",
+      "index": 180,
+      "coordinates": [
+        {
+          "lat": 36.13944444,
+          "lon": 128.09686111,
+          "primary": "",
+          "globe": "earth"
+        }
+      ],
+      "pageprops": {
+        "wikibase_item": "Q18229777"
+      }
+    },
+    {
+      "pageid": 1237273,
+      "ns": 0,
+      "title": "김천 광덕리 석조보살입상",
+      "index": 291,
+      "coordinates": [
+        {
+          "lat": 36.22555556,
+          "lon": 128.2,
+          "primary": "",
+          "globe": "earth"
+        }
+      ],
+      "pageprops": {
+        "wikibase_item": "Q18998999"
+      }
+    }
+  ],
+  "entities": {
+    "Q42078": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "Gimcheon"
+        }
+      },
+      "aliases": {},
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "city in South Korea"
+        }
+      },
+      "claims": {
+        "P131": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P131",
+              "hash": "4b66ee992473186bd104736daf45cf5e8a2ffbdf",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 41154,
+                  "id": "Q41154"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "q42078$C5CDEB38-2F4D-43F9-8236-BD8528400338",
+            "rank": "normal"
+          }
+        ],
+        "P17": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "ab4105e4f6c3449ba4a6ca949a3aaafaa67f5be8",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 884,
+                  "id": "Q884"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "q42078$3e4bb5b5-4b6e-6d8d-7ec3-645547c1428a",
+            "rank": "normal"
+          }
+        ],
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "64899a77380b7942b42d5a3b51642714589d87b1",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 29045252,
+                  "id": "Q29045252"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q42078$2F87AED5-E134-40EA-B0A5-009AF9E4AE2E",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "1af62c39c83b583e317a43f838058583f06f38aa",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 1549591,
+                  "id": "Q1549591"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q42078$FF46AB6E-741A-410C-8185-44F0DD29193D",
+            "rank": "normal"
+          }
+        ],
+        "P18": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "8d88b38760a677fe9ea2152fcd5dc7c4783fd457",
+              "datavalue": {
+                "value": "Gimcheon City Hall.JPG",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "qualifiers": {
+              "P2096": [
+                {
+                  "snaktype": "value",
+                  "property": "P2096",
+                  "hash": "f0140c228a23376f94a8f395455766295f6353eb",
+                  "datavalue": {
+                    "value": {
+                      "text": "Gimcheon City Hall",
+                      "language": "en"
+                    },
+                    "type": "monolingualtext"
+                  },
+                  "datatype": "monolingualtext"
+                },
+                {
+                  "snaktype": "value",
+                  "property": "P2096",
+                  "hash": "21ce97276d5b851478fddf58940faa8e110c1df4",
+                  "datavalue": {
+                    "value": {
+                      "text": "mairie de Gimcheon",
+                      "language": "fr"
+                    },
+                    "type": "monolingualtext"
+                  },
+                  "datatype": "monolingualtext"
+                }
+              ]
+            },
+            "qualifiers-order": [
+              "P2096"
+            ],
+            "id": "Q42078$D452F241-8102-4F94-A4AB-5ED750D65B00",
+            "rank": "normal",
+            "references": [
+              {
+                "hash": "fa278ebfc458360e5aed63d5058cca83c46134f1",
+                "snaks": {
+                  "P143": [
+                    {
+                      "snaktype": "value",
+                      "property": "P143",
+                      "hash": "e4f6d9441d0600513c4533c672b5ab472dc73694",
+                      "datavalue": {
+                        "value": {
+                          "entity-type": "item",
+                          "numeric-id": 328,
+                          "id": "Q328"
+                        },
+                        "type": "wikibase-entityid"
+                      },
+                      "datatype": "wikibase-item"
+                    }
+                  ]
+                },
+                "snaks-order": [
+                  "P143"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "Q5562676": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "Gimcheon Stadium"
+        }
+      },
+      "aliases": {},
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "sports venue in Gimcheon, South Korea"
+        }
+      },
+      "claims": {
+        "P17": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "ab4105e4f6c3449ba4a6ca949a3aaafaa67f5be8",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 884,
+                  "id": "Q884"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "q5562676$DDCB3376-E826-4829-B5D3-F694EFBF0FE4",
+            "rank": "normal"
+          }
+        ],
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "a2cb9ea692bc81efccddb68809a778e595f32b34",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 483110,
+                  "id": "Q483110"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q5562676$D3298DEB-72AA-4A9B-9EBB-83D7BA70FF44",
+            "rank": "normal"
+          }
+        ],
+        "P131": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P131",
+              "hash": "f14ea2c70fa5e22a4a01c96688d2be104b85bd0a",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 42078,
+                  "id": "Q42078"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q5562676$D70F1F54-0FA1-474E-93CA-E1067071046C",
+            "rank": "normal"
+          }
+        ]
+      }
+    },
+    "Q59949": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "Gimcheon–Gumi Station"
+        }
+      },
+      "aliases": {},
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "train station in South Korea"
+        }
+      },
+      "claims": {
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "12a4103fbfd98ec75d5d9269014f78fb822e8d00",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 55488,
+                  "id": "Q55488"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "q59949$79E2599B-E25B-42E0-9C17-AD4952860ED7",
+            "rank": "normal"
+          }
+        ],
+        "P17": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "ab4105e4f6c3449ba4a6ca949a3aaafaa67f5be8",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 884,
+                  "id": "Q884"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "q59949$9A14BEEA-C103-4E50-8577-AD73AEBE6BE3",
+            "rank": "normal",
+            "references": [
+              {
+                "hash": "d5847b9b6032aa8b13dae3c2dfd9ed5d114d21b3",
+                "snaks": {
+                  "P143": [
+                    {
+                      "snaktype": "value",
+                      "property": "P143",
+                      "hash": "5a343e7e758a4282a01316d3e959b6e653b767fc",
+                      "datavalue": {
+                        "value": {
+                          "entity-type": "item",
+                          "numeric-id": 11920,
+                          "id": "Q11920"
+                        },
+                        "type": "wikibase-entityid"
+                      },
+                      "datatype": "wikibase-item"
+                    }
+                  ]
+                },
+                "snaks-order": [
+                  "P143"
+                ]
+              }
+            ]
+          }
+        ],
+        "P131": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P131",
+              "hash": "f14ea2c70fa5e22a4a01c96688d2be104b85bd0a",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 42078,
+                  "id": "Q42078"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q59949$8D6FBE28-3600-4A47-B50A-4B27A9413E52",
+            "rank": "normal",
+            "references": [
+              {
+                "hash": "d5847b9b6032aa8b13dae3c2dfd9ed5d114d21b3",
+                "snaks": {
+                  "P143": [
+                    {
+                      "snaktype": "value",
+                      "property": "P143",
+                      "hash": "5a343e7e758a4282a01316d3e959b6e653b767fc",
+                      "datavalue": {
+                        "value": {
+                          "entity-type": "item",
+                          "numeric-id": 11920,
+                          "id": "Q11920"
+                        },
+                        "type": "wikibase-entityid"
+                      },
+                      "datatype": "wikibase-item"
+                    }
+                  ]
+                },
+                "snaks-order": [
+                  "P143"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "Q341173": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "Jikjisa Station"
+        }
+      },
+      "aliases": {},
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "train station in South Korea"
+        }
+      },
+      "claims": {
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "12a4103fbfd98ec75d5d9269014f78fb822e8d00",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 55488,
+                  "id": "Q55488"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "q341173$9BED0158-69E4-455E-BA36-4803F42DC61D",
+            "rank": "normal"
+          }
+        ],
+        "P17": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "ab4105e4f6c3449ba4a6ca949a3aaafaa67f5be8",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 884,
+                  "id": "Q884"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "q341173$6F12483C-21D1-448E-A72C-C035C31414C1",
+            "rank": "normal"
+          }
+        ],
+        "P18": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "956aa6e497f2453e2cd91f9e4b080245abaf8506",
+              "datavalue": {
+                "value": "Jikjisa-yok 20070920.jpg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q341173$A5B5F4AA-4160-4B5D-94A0-8AEA08E47448",
+            "rank": "normal",
+            "references": [
+              {
+                "hash": "f3f5f21d65fc2d659f139712bb956051f39e6354",
+                "snaks": {
+                  "P143": [
+                    {
+                      "snaktype": "value",
+                      "property": "P143",
+                      "hash": "c6f1777471211df31724ac60175786f3872c83e9",
+                      "datavalue": {
+                        "value": {
+                          "entity-type": "item",
+                          "numeric-id": 177837,
+                          "id": "Q177837"
+                        },
+                        "type": "wikibase-entityid"
+                      },
+                      "datatype": "wikibase-item"
+                    }
+                  ],
+                  "P4656": [
+                    {
+                      "snaktype": "value",
+                      "property": "P4656",
+                      "hash": "9cd60626b7092dc3a9c5849085b07d60d96e5448",
+                      "datavalue": {
+                        "value": "https://ja.wikipedia.org/w/index.php?title=直指寺駅&oldid=90455634",
+                        "type": "string"
+                      },
+                      "datatype": "url"
+                    }
+                  ]
+                },
+                "snaks-order": [
+                  "P143",
+                  "P4656"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "Q54286": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "Gimcheon Station"
+        }
+      },
+      "aliases": {},
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "train station in South Korea"
+        }
+      },
+      "claims": {
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "12a4103fbfd98ec75d5d9269014f78fb822e8d00",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 55488,
+                  "id": "Q55488"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "q54286$0BD51B7F-2283-4644-B4CB-FC994CC01EE3",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "f91054a5e871c2cb408f68a6d697d81bc0331d27",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 22808404,
+                  "id": "Q22808404"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q54286$B5005215-1343-489E-AE3C-92B0BACD99CE",
+            "rank": "normal"
+          }
+        ],
+        "P17": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "ab4105e4f6c3449ba4a6ca949a3aaafaa67f5be8",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 884,
+                  "id": "Q884"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "q54286$44F46E79-BAE0-4D03-A942-48310DF18CEB",
+            "rank": "normal"
+          }
+        ],
+        "P18": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "f591070cb313bba3825b59778a03b32b7520f334",
+              "datavalue": {
+                "value": "Gimcheon station.JPG",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q54286$A2E3D080-8E72-4BD6-8D4C-FB2D17F7E3D2",
+            "rank": "normal",
+            "references": [
+              {
+                "hash": "fa278ebfc458360e5aed63d5058cca83c46134f1",
+                "snaks": {
+                  "P143": [
+                    {
+                      "snaktype": "value",
+                      "property": "P143",
+                      "hash": "e4f6d9441d0600513c4533c672b5ab472dc73694",
+                      "datavalue": {
+                        "value": {
+                          "entity-type": "item",
+                          "numeric-id": 328,
+                          "id": "Q328"
+                        },
+                        "type": "wikibase-entityid"
+                      },
+                      "datatype": "wikibase-item"
+                    }
+                  ]
+                },
+                "snaks-order": [
+                  "P143"
+                ]
+              }
+            ]
+          }
+        ],
+        "P131": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P131",
+              "hash": "f14ea2c70fa5e22a4a01c96688d2be104b85bd0a",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 42078,
+                  "id": "Q42078"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q54286$04079810-4e92-a717-7e50-11a73d05f5cc",
+            "rank": "normal"
+          }
+        ]
+      }
+    },
+    "Q341192": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "Daesin Station"
+        }
+      },
+      "aliases": {},
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "train station in South Korea"
+        }
+      },
+      "claims": {
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "12a4103fbfd98ec75d5d9269014f78fb822e8d00",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 55488,
+                  "id": "Q55488"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "q341192$A093F9BD-8DE2-4183-B6CF-0529DA7C82DE",
+            "rank": "normal"
+          }
+        ],
+        "P17": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "ab4105e4f6c3449ba4a6ca949a3aaafaa67f5be8",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 884,
+                  "id": "Q884"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "q341192$C37CD72A-99DD-43F8-84DE-0799044D1FF6",
+            "rank": "normal"
+          }
+        ],
+        "P18": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "4f65beaec893ab619f49de0a160c057683becbc4",
+              "datavalue": {
+                "value": "Daesin-yok 20070920.jpg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q341192$A4A284FA-424D-437C-97E1-071A5533C074",
+            "rank": "normal",
+            "references": [
+              {
+                "hash": "a2f1fe4d659be1338ded0d629837c66653bfbb53",
+                "snaks": {
+                  "P143": [
+                    {
+                      "snaktype": "value",
+                      "property": "P143",
+                      "hash": "c6f1777471211df31724ac60175786f3872c83e9",
+                      "datavalue": {
+                        "value": {
+                          "entity-type": "item",
+                          "numeric-id": 177837,
+                          "id": "Q177837"
+                        },
+                        "type": "wikibase-entityid"
+                      },
+                      "datatype": "wikibase-item"
+                    }
+                  ],
+                  "P4656": [
+                    {
+                      "snaktype": "value",
+                      "property": "P4656",
+                      "hash": "4b46edc3516e8317b2e85ae43b4440aec4b16995",
+                      "datavalue": {
+                        "value": "https://ja.wikipedia.org/w/index.php?title=大新駅_(慶尚北道)&oldid=90455638",
+                        "type": "string"
+                      },
+                      "datatype": "url"
+                    }
+                  ]
+                },
+                "snaks-order": [
+                  "P143",
+                  "P4656"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "Q5562681": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "Gimcheon University"
+        }
+      },
+      "aliases": {},
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "university located in Gimcheon, South Korea"
+        }
+      },
+      "claims": {
+        "P17": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "ab4105e4f6c3449ba4a6ca949a3aaafaa67f5be8",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 884,
+                  "id": "Q884"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "q5562681$25DC8EDB-8587-4C26-95D2-44BD2894D476",
+            "rank": "normal"
+          }
+        ],
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "15220bcc8d0dd4cf8cd1a8ed4a98ae2db3578133",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 902104,
+                  "id": "Q902104"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q5562681$1C381AEE-AFD1-4223-A91A-D42DCCE09405",
+            "rank": "normal"
+          }
+        ],
+        "P131": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P131",
+              "hash": "f14ea2c70fa5e22a4a01c96688d2be104b85bd0a",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 42078,
+                  "id": "Q42078"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q5562681$958B6EC3-B895-41B5-8DA4-6D165F33DD8B",
+            "rank": "normal",
+            "references": [
+              {
+                "hash": "2f9b321bb893980a99fa1d5b6a205209dac3b7e3",
+                "snaks": {
+                  "P2427": [
+                    {
+                      "snaktype": "value",
+                      "property": "P2427",
+                      "hash": "94d633decdb0ded59db9060483cf0103a3433804",
+                      "datavalue": {
+                        "value": "grid.448877.0",
+                        "type": "string"
+                      },
+                      "datatype": "external-id"
+                    }
+                  ]
+                },
+                "snaks-order": [
+                  "P2427"
+                ]
+              }
+            ]
+          }
+        ],
+        "P18": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "a5061b41294b3a2ee6fa4017503c8db354219d1e",
+              "datavalue": {
+                "value": "Gimcheon-university-gate.jpg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "qualifiers": {
+              "P2096": [
+                {
+                  "snaktype": "value",
+                  "property": "P2096",
+                  "hash": "e6c4047bc7974d49c4f19a69dcaee3b89469135e",
+                  "datavalue": {
+                    "value": {
+                      "text": "Main Gate of Gimcheon Univ.",
+                      "language": "en"
+                    },
+                    "type": "monolingualtext"
+                  },
+                  "datatype": "monolingualtext"
+                }
+              ]
+            },
+            "qualifiers-order": [
+              "P2096"
+            ],
+            "id": "Q5562681$7c8bccec-46d6-2432-ed80-6d77426bd702",
+            "rank": "normal"
+          }
+        ]
+      }
+    },
+    "Q10855907": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "Kimcheon Science College"
+        }
+      },
+      "aliases": {
+        "en": [
+          {
+            "language": "en",
+            "value": "Gyeongbuk College of Health"
+          }
+        ]
+      },
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "private university in Gimcheon, South Korea"
+        }
+      },
+      "claims": {
+        "P17": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "ab4105e4f6c3449ba4a6ca949a3aaafaa67f5be8",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 884,
+                  "id": "Q884"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "q10855907$0B55F0DE-14F8-4803-9A85-2EDA9F7446E8",
+            "rank": "normal"
+          }
+        ],
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "15220bcc8d0dd4cf8cd1a8ed4a98ae2db3578133",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 902104,
+                  "id": "Q902104"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q10855907$992088e2-4fad-7644-bee8-bf3c8b236380",
+            "rank": "normal"
+          }
+        ]
+      }
+    },
+    "Q41154": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "North Gyeongsang"
+        }
+      },
+      "aliases": {
+        "en": [
+          {
+            "language": "en",
+            "value": "Gyeongsangbuk-do"
+          },
+          {
+            "language": "en",
+            "value": "Gyeongbuk"
+          },
+          {
+            "language": "en",
+            "value": "North Gyeongsang Province"
+          }
+        ]
+      },
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "province of South Korea"
+        }
+      },
+      "claims": {
+        "P131": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P131",
+              "hash": "922dea071b775610bfdb36a26d278ff91960cdfe",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 503585,
+                  "id": "Q503585"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "qualifiers": {
+              "P580": [
+                {
+                  "snaktype": "value",
+                  "property": "P580",
+                  "hash": "309992d415f6858d20e65dc5fe0733628d9dbc20",
+                  "datavalue": {
+                    "value": {
+                      "time": "+1910-08-29T00:00:00Z",
+                      "timezone": 0,
+                      "before": 0,
+                      "after": 0,
+                      "precision": 11,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                    },
+                    "type": "time"
+                  },
+                  "datatype": "time"
+                }
+              ],
+              "P582": [
+                {
+                  "snaktype": "value",
+                  "property": "P582",
+                  "hash": "84e57a560fa4369ab7f99546956954e48215a8c1",
+                  "datavalue": {
+                    "value": {
+                      "time": "+1945-08-15T00:00:00Z",
+                      "timezone": 0,
+                      "before": 0,
+                      "after": 0,
+                      "precision": 11,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                    },
+                    "type": "time"
+                  },
+                  "datatype": "time"
+                }
+              ]
+            },
+            "qualifiers-order": [
+              "P580",
+              "P582"
+            ],
+            "id": "q41154$6996BC93-1E77-4951-A152-D00BABA4A592",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P131",
+              "hash": "3dadadf7d8626985b497e905cf6766dfabb92e77",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 626361,
+                  "id": "Q626361"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "qualifiers": {
+              "P580": [
+                {
+                  "snaktype": "value",
+                  "property": "P580",
+                  "hash": "d5ce204851545e1887a5e922e07eb8815045d284",
+                  "datavalue": {
+                    "value": {
+                      "time": "+1945-08-15T00:00:00Z",
+                      "timezone": 0,
+                      "before": 0,
+                      "after": 0,
+                      "precision": 11,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                    },
+                    "type": "time"
+                  },
+                  "datatype": "time"
+                }
+              ],
+              "P582": [
+                {
+                  "snaktype": "value",
+                  "property": "P582",
+                  "hash": "86b89dd2ff3a5f9f5624139c0aee0555fec7fb96",
+                  "datavalue": {
+                    "value": {
+                      "time": "+1948-08-14T00:00:00Z",
+                      "timezone": 0,
+                      "before": 0,
+                      "after": 0,
+                      "precision": 11,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                    },
+                    "type": "time"
+                  },
+                  "datatype": "time"
+                }
+              ]
+            },
+            "qualifiers-order": [
+              "P580",
+              "P582"
+            ],
+            "id": "Q41154$61e74e88-45f8-0212-4a56-11a89f8afedc",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P131",
+              "hash": "e59d75f199e4fb06f87cdbd3e4f1e073448ac2b7",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 884,
+                  "id": "Q884"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "qualifiers": {
+              "P580": [
+                {
+                  "snaktype": "value",
+                  "property": "P580",
+                  "hash": "52edd8315b94b3bf9b7eca0f7baea8a80645765d",
+                  "datavalue": {
+                    "value": {
+                      "time": "+1948-08-15T00:00:00Z",
+                      "timezone": 0,
+                      "before": 0,
+                      "after": 0,
+                      "precision": 11,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                    },
+                    "type": "time"
+                  },
+                  "datatype": "time"
+                }
+              ]
+            },
+            "qualifiers-order": [
+              "P580"
+            ],
+            "id": "Q41154$85b5bc0b-4a9c-7d29-a93c-b0463ca99f86",
+            "rank": "preferred"
+          }
+        ],
+        "P17": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "ab4105e4f6c3449ba4a6ca949a3aaafaa67f5be8",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 884,
+                  "id": "Q884"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "qualifiers": {
+              "P580": [
+                {
+                  "snaktype": "value",
+                  "property": "P580",
+                  "hash": "52edd8315b94b3bf9b7eca0f7baea8a80645765d",
+                  "datavalue": {
+                    "value": {
+                      "time": "+1948-08-15T00:00:00Z",
+                      "timezone": 0,
+                      "before": 0,
+                      "after": 0,
+                      "precision": 11,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                    },
+                    "type": "time"
+                  },
+                  "datatype": "time"
+                }
+              ]
+            },
+            "qualifiers-order": [
+              "P580"
+            ],
+            "id": "q41154$327D52E6-BF31-4849-B1AA-8A6292FC711E",
+            "rank": "preferred",
+            "references": [
+              {
+                "hash": "2f8ded70ee75d3433abf7fa8d04756b548574927",
+                "snaks": {
+                  "P5573": [
+                    {
+                      "snaktype": "value",
+                      "property": "P5573",
+                      "hash": "7ca02fc8ac8967f13c3799f00689feef700f1e2b",
+                      "datavalue": {
+                        "value": "17352",
+                        "type": "string"
+                      },
+                      "datatype": "external-id"
+                    }
+                  ],
+                  "P248": [
+                    {
+                      "snaktype": "value",
+                      "property": "P248",
+                      "hash": "c619cc6e0e5fe3733a8c4a47939343e5970e0e9d",
+                      "datavalue": {
+                        "value": {
+                          "entity-type": "item",
+                          "numeric-id": 265049,
+                          "id": "Q265049"
+                        },
+                        "type": "wikibase-entityid"
+                      },
+                      "datatype": "wikibase-item"
+                    }
+                  ],
+                  "P813": [
+                    {
+                      "snaktype": "value",
+                      "property": "P813",
+                      "hash": "0c8bd92e73708301fbdef488186bd3197b7c3d1c",
+                      "datavalue": {
+                        "value": {
+                          "time": "+2018-08-06T00:00:00Z",
+                          "timezone": 0,
+                          "before": 0,
+                          "after": 0,
+                          "precision": 11,
+                          "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                        },
+                        "type": "time"
+                      },
+                      "datatype": "time"
+                    }
+                  ]
+                },
+                "snaks-order": [
+                  "P5573",
+                  "P248",
+                  "P813"
+                ]
+              }
+            ]
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "5cca003cb9989d5104d640b8e508f9568e4ae260",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 28179,
+                  "id": "Q28179"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "qualifiers": {
+              "P580": [
+                {
+                  "snaktype": "value",
+                  "property": "P580",
+                  "hash": "e808e45fd86c6704471903360cc4e1f4b0afb6c6",
+                  "datavalue": {
+                    "value": {
+                      "time": "+1896-00-00T00:00:00Z",
+                      "timezone": 0,
+                      "before": 0,
+                      "after": 0,
+                      "precision": 9,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                    },
+                    "type": "time"
+                  },
+                  "datatype": "time"
+                }
+              ],
+              "P582": [
+                {
+                  "snaktype": "value",
+                  "property": "P582",
+                  "hash": "a2c16c3a8ab358ad31803f0ecfed41063adcc3bf",
+                  "datavalue": {
+                    "value": {
+                      "time": "+1897-10-13T00:00:00Z",
+                      "timezone": 0,
+                      "before": 0,
+                      "after": 0,
+                      "precision": 11,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                    },
+                    "type": "time"
+                  },
+                  "datatype": "time"
+                }
+              ]
+            },
+            "qualifiers-order": [
+              "P580",
+              "P582"
+            ],
+            "id": "Q41154$3d9b88dc-4fbc-f100-a864-dd52b70370ad",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "f1fca940f42aa14f08480e3f9d221cf3a6b197a3",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 28233,
+                  "id": "Q28233"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "qualifiers": {
+              "P580": [
+                {
+                  "snaktype": "value",
+                  "property": "P580",
+                  "hash": "89ba70c5311e7d698c979099dc338c8f3a625955",
+                  "datavalue": {
+                    "value": {
+                      "time": "+1897-10-13T00:00:00Z",
+                      "timezone": 0,
+                      "before": 0,
+                      "after": 0,
+                      "precision": 11,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                    },
+                    "type": "time"
+                  },
+                  "datatype": "time"
+                }
+              ],
+              "P582": [
+                {
+                  "snaktype": "value",
+                  "property": "P582",
+                  "hash": "451b00bbcd82b3eff16027acdf2db98b2623bff6",
+                  "datavalue": {
+                    "value": {
+                      "time": "+1910-08-29T00:00:00Z",
+                      "timezone": 0,
+                      "before": 0,
+                      "after": 0,
+                      "precision": 11,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                    },
+                    "type": "time"
+                  },
+                  "datatype": "time"
+                }
+              ]
+            },
+            "qualifiers-order": [
+              "P580",
+              "P582"
+            ],
+            "id": "Q41154$29ec954e-422a-c4c9-1255-56f79f88954a",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "997d810d9c19d22030f26f6c23c29923ba2df934",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 188712,
+                  "id": "Q188712"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "qualifiers": {
+              "P580": [
+                {
+                  "snaktype": "value",
+                  "property": "P580",
+                  "hash": "309992d415f6858d20e65dc5fe0733628d9dbc20",
+                  "datavalue": {
+                    "value": {
+                      "time": "+1910-08-29T00:00:00Z",
+                      "timezone": 0,
+                      "before": 0,
+                      "after": 0,
+                      "precision": 11,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                    },
+                    "type": "time"
+                  },
+                  "datatype": "time"
+                }
+              ],
+              "P582": [
+                {
+                  "snaktype": "value",
+                  "property": "P582",
+                  "hash": "84e57a560fa4369ab7f99546956954e48215a8c1",
+                  "datavalue": {
+                    "value": {
+                      "time": "+1945-08-15T00:00:00Z",
+                      "timezone": 0,
+                      "before": 0,
+                      "after": 0,
+                      "precision": 11,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                    },
+                    "type": "time"
+                  },
+                  "datatype": "time"
+                }
+              ]
+            },
+            "qualifiers-order": [
+              "P580",
+              "P582"
+            ],
+            "id": "Q41154$8e57285a-4bf7-1911-302e-43c971838983",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "bb355b6063d67528279bdd229e6daa431eff03ad",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 484104,
+                  "id": "Q484104"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "qualifiers": {
+              "P580": [
+                {
+                  "snaktype": "value",
+                  "property": "P580",
+                  "hash": "a16ef19f7548a81d7b09510dc1b30f37053a1fcc",
+                  "datavalue": {
+                    "value": {
+                      "time": "+1945-09-08T00:00:00Z",
+                      "timezone": 0,
+                      "before": 0,
+                      "after": 0,
+                      "precision": 11,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                    },
+                    "type": "time"
+                  },
+                  "datatype": "time"
+                }
+              ],
+              "P582": [
+                {
+                  "snaktype": "value",
+                  "property": "P582",
+                  "hash": "52293a8a56a197a1348bef4dc16958a0f5986e59",
+                  "datavalue": {
+                    "value": {
+                      "time": "+1945-09-12T00:00:00Z",
+                      "timezone": 0,
+                      "before": 0,
+                      "after": 0,
+                      "precision": 11,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                    },
+                    "type": "time"
+                  },
+                  "datatype": "time"
+                }
+              ]
+            },
+            "qualifiers-order": [
+              "P580",
+              "P582"
+            ],
+            "id": "Q41154$5353c25f-45c4-fff6-f743-1e109f23c18a",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "e2b0c558c5b33462bd55346534af04954d0aad06",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 484370,
+                  "id": "Q484370"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "qualifiers": {
+              "P580": [
+                {
+                  "snaktype": "value",
+                  "property": "P580",
+                  "hash": "a72342d5371251c2e634b37bf1779236d1fff61c",
+                  "datavalue": {
+                    "value": {
+                      "time": "+1945-09-12T00:00:00Z",
+                      "timezone": 0,
+                      "before": 0,
+                      "after": 0,
+                      "precision": 11,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                    },
+                    "type": "time"
+                  },
+                  "datatype": "time"
+                }
+              ],
+              "P582": [
+                {
+                  "snaktype": "value",
+                  "property": "P582",
+                  "hash": "3a8b78e449d4946b6504794bc36cbfe638ad4be4",
+                  "datavalue": {
+                    "value": {
+                      "time": "+1945-12-12T00:00:00Z",
+                      "timezone": 0,
+                      "before": 0,
+                      "after": 0,
+                      "precision": 11,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                    },
+                    "type": "time"
+                  },
+                  "datatype": "time"
+                }
+              ]
+            },
+            "qualifiers-order": [
+              "P580",
+              "P582"
+            ],
+            "id": "Q41154$c5f8f72c-4845-a1e8-4f95-321ba7dd3e28",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "bb355b6063d67528279bdd229e6daa431eff03ad",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 484104,
+                  "id": "Q484104"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "qualifiers": {
+              "P580": [
+                {
+                  "snaktype": "value",
+                  "property": "P580",
+                  "hash": "98dffe3b01ecccdea442ffa4ab555c21b5ff76e7",
+                  "datavalue": {
+                    "value": {
+                      "time": "+1945-12-12T00:00:00Z",
+                      "timezone": 0,
+                      "before": 0,
+                      "after": 0,
+                      "precision": 11,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                    },
+                    "type": "time"
+                  },
+                  "datatype": "time"
+                }
+              ],
+              "P582": [
+                {
+                  "snaktype": "value",
+                  "property": "P582",
+                  "hash": "fd91bfbaae9be432150c075539772f75ac79cb59",
+                  "datavalue": {
+                    "value": {
+                      "time": "+1948-08-15T00:00:00Z",
+                      "timezone": 0,
+                      "before": 0,
+                      "after": 0,
+                      "precision": 11,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                    },
+                    "type": "time"
+                  },
+                  "datatype": "time"
+                }
+              ]
+            },
+            "qualifiers-order": [
+              "P580",
+              "P582"
+            ],
+            "id": "Q41154$952436b5-406f-5600-dc0e-81faf2c809f7",
+            "rank": "normal"
+          }
+        ],
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "052ea1f89cd7acbcb7eb7f4bd02bad11ad8d50f6",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 4925355,
+                  "id": "Q4925355"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q41154$7D98A044-FDB4-4479-998D-926FDABA8BF2",
+            "rank": "normal"
+          }
+        ],
+        "P18": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "3d4111b39e941b80e74f6b59106b4a6374276f6e",
+              "datavalue": {
+                "value": "Uljin hupo port.jpg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q41154$be9a2f1e-4b5f-6150-6d66-a8e51a4130e4",
+            "rank": "normal"
+          }
+        ]
+      }
+    },
+    "Q884": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "South Korea"
+        }
+      },
+      "aliases": {
+        "en": [
+          {
+            "language": "en",
+            "value": "Republic of Korea"
+          },
+          {
+            "language": "en",
+            "value": "Rep. Korea"
+          },
+          {
+            "language": "en",
+            "value": "S. Korea"
+          },
+          {
+            "language": "en",
+            "value": "Korea Republic"
+          },
+          {
+            "language": "en",
+            "value": "Hanguk"
+          },
+          {
+            "language": "en",
+            "value": "Daehan Minguk"
+          },
+          {
+            "language": "en",
+            "value": "Daehanminguk"
+          },
+          {
+            "language": "en",
+            "value": "Korea (South)"
+          },
+          {
+            "language": "en",
+            "value": "Choson"
+          },
+          {
+            "language": "en",
+            "value": "Silla"
+          }
+        ]
+      },
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "country in East Asia"
+        }
+      },
+      "claims": {
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "c0756f7fedfc54b5b296b7d6dbbcf17a8e134d78",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 3624078,
+                  "id": "Q3624078"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "q884$3C655634-7080-40F5-BF81-60E872BED5E3",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "dd427d7a87e94bc883d3d3e4907ad36c2fd162e3",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 1520223,
+                  "id": "Q1520223"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q884$bca82859-4d16-abcc-9d6e-1b0b95ed95c3",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "b44ad788a05b4c1b2915ce0292541c6bdb27d43a",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 6256,
+                  "id": "Q6256"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "q884$03F37DED-2B61-433C-8FE4-8E775BFA47FA",
+            "rank": "normal",
+            "references": [
+              {
+                "hash": "754613ed9bdfc49c5f3228abf2298765839f10e2",
+                "snaks": {
+                  "P854": [
+                    {
+                      "snaktype": "value",
+                      "property": "P854",
+                      "hash": "a456adab88536048c8790a0afd34ae4febfdbbf9",
+                      "datavalue": {
+                        "value": "https://www.britannica.com/place/South-Korea",
+                        "type": "string"
+                      },
+                      "datatype": "url"
+                    }
+                  ]
+                },
+                "snaks-order": [
+                  "P854"
+                ]
+              }
+            ]
+          }
+        ],
+        "P297": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P297",
+              "hash": "169c4df27853e0938b0d5b0a7c85d49dda837ff9",
+              "datavalue": {
+                "value": "KR",
+                "type": "string"
+              },
+              "datatype": "external-id"
+            },
+            "type": "statement",
+            "id": "q884$598EE372-1117-4CF3-9F37-083E4B8B3ACF",
+            "rank": "normal"
+          }
+        ],
+        "P18": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "c74e0c6c198c37cc475acfb78eb72e9c2cb24cf6",
+              "datavalue": {
+                "value": "Seoul (175734251).jpeg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q884$5ba7f5a8-4f5f-9fa5-7015-b018e6295612",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "cf5a83e872d10c74004f3ea9f6eee82f2e00def3",
+              "datavalue": {
+                "value": "South Korea - Location Map (2013) - KOR - UNOCHA.svg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q884$29a4c828-45dc-f061-a5c1-7d405619d8ad",
+            "rank": "preferred"
+          }
+        ],
+        "P17": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "ab4105e4f6c3449ba4a6ca949a3aaafaa67f5be8",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 884,
+                  "id": "Q884"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q884$acaa8ad8-4f10-850f-d9a6-f28cde409543",
+            "rank": "normal"
+          }
+        ]
+      }
+    },
+    "Q29045252": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "city of South Korea"
+        }
+      },
+      "aliases": {
+        "en": [
+          {
+            "language": "en",
+            "value": "administrative divisional unit of the Republic of Korea"
+          }
+        ]
+      },
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "Administrative city in South Korea, which is located in every province or big city in the Republic of Korea"
+        }
+      },
+      "claims": {
+        "P17": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "ab4105e4f6c3449ba4a6ca949a3aaafaa67f5be8",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 884,
+                  "id": "Q884"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q29045252$25726074-4c7c-b897-94c3-55aa234eef9e",
+            "rank": "normal"
+          }
+        ]
+      }
+    },
+    "Q1549591": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "big city"
+        }
+      },
+      "aliases": {
+        "en": [
+          {
+            "language": "en",
+            "value": "city (100,000+)"
+          }
+        ]
+      },
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "city with a population of between 100,000 and 250,000"
+        }
+      },
+      "claims": {
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "d1523c5db081d7cccd527c5c03fe146b61e504db",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 98966309,
+                  "id": "Q98966309"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q1549591$fcb164e4-4d7f-0617-d7ee-ba0f85a40c41",
+            "rank": "normal",
+            "references": [
+              {
+                "hash": "ff363401d8a8e82dbaf8738151533dbcff2f661d",
+                "snaks": {
+                  "P248": [
+                    {
+                      "snaktype": "value",
+                      "property": "P248",
+                      "hash": "0085ecf64bc8e32467b4104b67a795b2d65bbf59",
+                      "datavalue": {
+                        "value": {
+                          "entity-type": "item",
+                          "numeric-id": 757187,
+                          "id": "Q757187"
+                        },
+                        "type": "wikibase-entityid"
+                      },
+                      "datatype": "wikibase-item"
+                    }
+                  ],
+                  "P393": [
+                    {
+                      "snaktype": "value",
+                      "property": "P393",
+                      "hash": "ecb2c46583c2585d4715105a87a11af2988aa9b9",
+                      "datavalue": {
+                        "value": "3-е изд.",
+                        "type": "string"
+                      },
+                      "datatype": "string"
+                    }
+                  ],
+                  "P577": [
+                    {
+                      "snaktype": "value",
+                      "property": "P577",
+                      "hash": "fa4cf154c7069484b56a813d495f26c64e62087a",
+                      "datavalue": {
+                        "value": {
+                          "time": "+1999-00-00T00:00:00Z",
+                          "timezone": 0,
+                          "before": 0,
+                          "after": 0,
+                          "precision": 9,
+                          "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                        },
+                        "type": "time"
+                      },
+                      "datatype": "time"
+                    }
+                  ],
+                  "P958": [
+                    {
+                      "snaktype": "value",
+                      "property": "P958",
+                      "hash": "692b86c5f5f7d5d246a7c1b2eae0973327ab2113",
+                      "datavalue": {
+                        "value": "Условные обозначения. Населённые пункты",
+                        "type": "string"
+                      },
+                      "datatype": "string"
+                    }
+                  ],
+                  "P407": [
+                    {
+                      "snaktype": "value",
+                      "property": "P407",
+                      "hash": "d291ddb7cd77c94a7bd709a8395934147e0864fc",
+                      "datavalue": {
+                        "value": {
+                          "entity-type": "item",
+                          "numeric-id": 7737,
+                          "id": "Q7737"
+                        },
+                        "type": "wikibase-entityid"
+                      },
+                      "datatype": "wikibase-item"
+                    }
+                  ]
+                },
+                "snaks-order": [
+                  "P248",
+                  "P393",
+                  "P577",
+                  "P958",
+                  "P407"
+                ]
+              }
+            ]
+          }
+        ],
+        "P18": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "52afa01a93b1c05682b19ed08e43e472aa450fc9",
+              "datavalue": {
+                "value": "Pudong Shangai.jpg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q1549591$3ad6e359-4847-fe5e-29a9-f446c1ff3b45",
+            "rank": "normal"
+          }
+        ]
+      }
+    },
+    "Q483110": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "stadium"
+        }
+      },
+      "aliases": {
+        "en": [
+          {
+            "language": "en",
+            "value": "sports stadium"
+          },
+          {
+            "language": "en",
+            "value": "sport stadium"
+          },
+          {
+            "language": "en",
+            "value": "sports arena"
+          },
+          {
+            "language": "en",
+            "value": "stadiums"
+          },
+          {
+            "language": "en",
+            "value": "🏟️"
+          },
+          {
+            "language": "en",
+            "value": "stadium facility"
+          }
+        ]
+      },
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "place or venue for (mostly) outdoor sports, concerts, or other events"
+        }
+      },
+      "claims": {
+        "P18": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "81350b36a138a972e311078b0337d6613a82a27d",
+              "datavalue": {
+                "value": "Arirang Mass Games 12.JPG",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q483110$3D2DC610-BCA1-4B5D-9F56-490B8EB4E585",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "7272b5e3a42c5861b5e3a58e5ae9ff7cb159975f",
+              "datavalue": {
+                "value": "Camp nou before F.C. Barcelona - Real Madrid league match of 2012.JPG",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "qualifiers": {
+              "P2096": [
+                {
+                  "snaktype": "value",
+                  "property": "P2096",
+                  "hash": "94e148aeb0dfc54d72c6cbbcd1d9e90a9d07ac09",
+                  "datavalue": {
+                    "value": {
+                      "text": "Estadi Camp Nou a Barcelona",
+                      "language": "ca"
+                    },
+                    "type": "monolingualtext"
+                  },
+                  "datatype": "monolingualtext"
+                }
+              ]
+            },
+            "qualifiers-order": [
+              "P2096"
+            ],
+            "id": "Q483110$0a4a672c-4de5-2b7a-74bd-eff73615a054",
+            "rank": "preferred"
+          }
+        ],
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "2817ee07f1da328a634052e89ab4042fbdc40e8c",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 134496690,
+                  "id": "Q134496690"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q483110$b58c46a1-4270-d55b-f2ba-5d20414ed8bc",
+            "rank": "normal"
+          }
+        ]
+      }
+    },
+    "Q55488": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "railway station"
+        }
+      },
+      "aliases": {
+        "en": [
+          {
+            "language": "en",
+            "value": "railroad station"
+          },
+          {
+            "language": "en",
+            "value": "rail stop"
+          },
+          {
+            "language": "en",
+            "value": "rail station"
+          },
+          {
+            "language": "en",
+            "value": "train station"
+          },
+          {
+            "language": "en",
+            "value": "railway stop"
+          },
+          {
+            "language": "en",
+            "value": "train stop"
+          },
+          {
+            "language": "en",
+            "value": "railroad stop"
+          }
+        ]
+      },
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "railway facility where trains regularly stop to load or unload passengers and/or freight"
+        }
+      },
+      "claims": {
+        "P18": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "8174b13734b60de6601a288862e80ea52fd70b79",
+              "datavalue": {
+                "value": "Paris Nord Platform.jpg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q55488$b4d82cb8-4a94-1c78-5731-25fd2103f97c",
+            "rank": "normal"
+          }
+        ],
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "e2b88cb84dc82001d404e161bf0bf9c99ef6b53b",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 11668217,
+                  "id": "Q11668217"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q55488$e95ae45a-4fdb-7749-aaee-7ff41edfeb6c",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "e4995aa999dc831ce32dd06deb5ccb73431f6b09",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 17197366,
+                  "id": "Q17197366"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q55488$21b16038-4474-0a3d-68a4-fe19370b4132",
+            "rank": "normal"
+          }
+        ]
+      }
+    },
+    "Q22808404": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "station located on surface"
+        }
+      },
+      "aliases": {
+        "en": [
+          {
+            "language": "en",
+            "value": "at-grade station"
+          }
+        ]
+      },
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "type of station"
+        }
+      },
+      "claims": {
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "e2b88cb84dc82001d404e161bf0bf9c99ef6b53b",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 11668217,
+                  "id": "Q11668217"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q22808404$c1b27415-4b22-2e53-d49b-0617c2e0deaa",
+            "rank": "normal"
+          }
+        ]
+      }
+    },
+    "Q902104": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "private university"
+        }
+      },
+      "aliases": {},
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "higher education institution not operated by a government"
+        }
+      },
+      "claims": {
+        "P18": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "46cec785d642520e6bf26e856433508a337c5a98",
+              "datavalue": {
+                "value": "Parco dell'università di addis abeba, 08.jpg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q902104$03356d95-4815-0240-addf-1c2171252a6c",
+            "rank": "normal"
+          }
+        ],
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "f40f57f47f6258272d16b3531b95138f3f558de8",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 130388971,
+                  "id": "Q130388971"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q902104$069e27b7-4e50-c66b-e906-aa27e01271e0",
+            "rank": "normal"
+          }
+        ]
+      }
+    },
+    "Q625286": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "Jikjisa"
+        }
+      },
+      "aliases": {},
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "Buddhist temple"
+        }
+      },
+      "claims": {
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "e1cd866dab0389c0e685a7d8d05435a9818d2bdf",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 1566035,
+                  "id": "Q1566035"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q625286$7B10AC2C-B1A3-4E0F-BE66-15F1AE38FFAF",
+            "rank": "normal"
+          }
+        ],
+        "P17": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "ab4105e4f6c3449ba4a6ca949a3aaafaa67f5be8",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 884,
+                  "id": "Q884"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q625286$066666FB-1408-41B1-B6EC-7D1A17BC9C78",
+            "rank": "normal"
+          }
+        ],
+        "P18": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "0799e772be7881fd8de36799d39e77fd8c8843f4",
+              "datavalue": {
+                "value": "Jikjitempleentrance.jpg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q625286$56EA8C16-DD9D-44DD-B1EA-FC12AF3E1768",
+            "rank": "normal",
+            "references": [
+              {
+                "hash": "fa278ebfc458360e5aed63d5058cca83c46134f1",
+                "snaks": {
+                  "P143": [
+                    {
+                      "snaktype": "value",
+                      "property": "P143",
+                      "hash": "e4f6d9441d0600513c4533c672b5ab472dc73694",
+                      "datavalue": {
+                        "value": {
+                          "entity-type": "item",
+                          "numeric-id": 328,
+                          "id": "Q328"
+                        },
+                        "type": "wikibase-entityid"
+                      },
+                      "datatype": "wikibase-item"
+                    }
+                  ]
+                },
+                "snaks-order": [
+                  "P143"
+                ]
+              }
+            ]
+          }
+        ],
+        "P131": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P131",
+              "hash": "4b66ee992473186bd104736daf45cf5e8a2ffbdf",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 41154,
+                  "id": "Q41154"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q625286$442f7a27-4915-6eff-a4a2-18da413b5cf5",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P131",
+              "hash": "f14ea2c70fa5e22a4a01c96688d2be104b85bd0a",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 42078,
+                  "id": "Q42078"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q625286$06e534f8-45f9-252a-dc09-b182935afe26",
+            "rank": "normal"
+          }
+        ]
+      }
+    },
+    "Q121747212": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "Park Chung-hee Presidential Museum"
+        }
+      },
+      "aliases": {},
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "history museum in Gumi, South Korea"
+        }
+      },
+      "claims": {
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "4cb858cccdb4e3c1fbe0aac4e40c2715bed4b17c",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 33506,
+                  "id": "Q33506"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q121747212$a201c68f-59cc-43c2-a9a0-fa57fcd0ed85",
+            "rank": "normal"
+          }
+        ]
+      }
+    },
+    "Q18998999": {
+      "labels": {},
+      "aliases": {},
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "Korean cultural heritage item"
+        }
+      },
+      "claims": {
+        "P17": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "ab4105e4f6c3449ba4a6ca949a3aaafaa67f5be8",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 884,
+                  "id": "Q884"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q18998999$27781BEC-FF22-4DE3-B27F-73B5FAF47ADF",
+            "rank": "normal"
+          }
+        ],
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "be83fa6f124e2faf6addff29f809994dcad205c0",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 210272,
+                  "id": "Q210272"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q18998999$513B6AF8-3386-4895-BA50-1996E243AD8D",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "ce0adb15287d38df0a8628971bca76b96681166f",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 1000809,
+                  "id": "Q1000809"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q18998999$73eb982a-4931-af2a-069b-3145764d8804",
+            "rank": "normal"
+          }
+        ],
+        "P131": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P131",
+              "hash": "4b66ee992473186bd104736daf45cf5e8a2ffbdf",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 41154,
+                  "id": "Q41154"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q18998999$d2a8a054-4f14-bb5c-ee3a-9fc4a74fb417",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P131",
+              "hash": "f14ea2c70fa5e22a4a01c96688d2be104b85bd0a",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 42078,
+                  "id": "Q42078"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q18998999$8bcd3c8f-46bc-011d-8ce7-6ecedec9e827",
+            "rank": "normal"
+          }
+        ]
+      }
+    },
+    "Q17314918": {
+      "labels": {},
+      "aliases": {},
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "Korean cultural heritage item"
+        }
+      },
+      "claims": {
+        "P17": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "ab4105e4f6c3449ba4a6ca949a3aaafaa67f5be8",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 884,
+                  "id": "Q884"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q17314918$AD48F03E-D8CB-4ECD-8CE4-26B4B433BD53",
+            "rank": "normal"
+          }
+        ],
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "be83fa6f124e2faf6addff29f809994dcad205c0",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 210272,
+                  "id": "Q210272"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q17314918$3B3C3FA6-B334-46AD-A3B9-B7563CC8F423",
+            "rank": "normal"
+          }
+        ],
+        "P18": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "c6ce25a19196c24b050f9e9baa53745a1ca3c866",
+              "datavalue": {
+                "value": "직지사 대웅전.jpg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q17314918$13D68C29-939C-4B2B-8742-64FB7999FB10",
+            "rank": "normal",
+            "references": [
+              {
+                "hash": "0888d481c1e6c86ef7d9275a12a1a80edeb29661",
+                "snaks": {
+                  "P143": [
+                    {
+                      "snaktype": "value",
+                      "property": "P143",
+                      "hash": "56f99b6701feb379816767ae88bb77e0e74981b3",
+                      "datavalue": {
+                        "value": {
+                          "entity-type": "item",
+                          "numeric-id": 17985,
+                          "id": "Q17985"
+                        },
+                        "type": "wikibase-entityid"
+                      },
+                      "datatype": "wikibase-item"
+                    }
+                  ],
+                  "P4656": [
+                    {
+                      "snaktype": "value",
+                      "property": "P4656",
+                      "hash": "6e7b10d964fbc8f730d91dcab92b36dec0d89e3f",
+                      "datavalue": {
+                        "value": "https://ko.wikipedia.org/w/index.php?title=김천_직지사_대웅전&oldid=34363559",
+                        "type": "string"
+                      },
+                      "datatype": "url"
+                    }
+                  ]
+                },
+                "snaks-order": [
+                  "P143",
+                  "P4656"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "Q18229777": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "Gimcheon Gimsan Hyanggyo"
+        }
+      },
+      "aliases": {
+        "en": [
+          {
+            "language": "en",
+            "value": "Gimsan Hyanggyo"
+          }
+        ]
+      },
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "Korean cultural heritage item, Confucian school"
+        }
+      },
+      "claims": {
+        "P17": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "ab4105e4f6c3449ba4a6ca949a3aaafaa67f5be8",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 884,
+                  "id": "Q884"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q18229777$6A82CFE0-BB0E-46F2-B538-1E1187B5B133",
+            "rank": "normal"
+          }
+        ],
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "be83fa6f124e2faf6addff29f809994dcad205c0",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 210272,
+                  "id": "Q210272"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q18229777$FB4D5D56-1130-48DD-BE45-2A5A139A634A",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "0a383d6ae4170ed8663b080f8494558ed436a658",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 5952771,
+                  "id": "Q5952771"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q18229777$716688DE-48ED-4603-9604-48B5AE02C068",
+            "rank": "normal"
+          }
+        ]
+      }
+    },
+    "Q1566035": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "Korean Buddhist temple"
+        }
+      },
+      "aliases": {},
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "temples in Korean Buddhism"
+        }
+      },
+      "claims": {
+        "P17": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "ab4105e4f6c3449ba4a6ca949a3aaafaa67f5be8",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 884,
+                  "id": "Q884"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q1566035$1ff82221-41e6-3d0f-542a-9af05c67bf3a",
+            "rank": "normal"
+          }
+        ],
+        "P18": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "6e98e1db0e4004375961de76907515b7be639ce6",
+              "datavalue": {
+                "value": "Korea-Songgwangsa-01.jpg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q1566035$20b38f9e-41dc-d057-c374-8d5a06184a23",
+            "rank": "normal"
+          }
+        ]
+      }
+    },
+    "Q33506": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "museum"
+        }
+      },
+      "aliases": {
+        "en": [
+          {
+            "language": "en",
+            "value": "museum-style institution"
+          },
+          {
+            "language": "en",
+            "value": "museal institution"
+          }
+        ]
+      },
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "institution that holds artifacts and other objects of scientific, artistic, cultural, historical, or other importance"
+        }
+      },
+      "claims": {
+        "P18": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "09c8fc1c8e96c72b2bca6f585fb2c84d1fbfbc12",
+              "datavalue": {
+                "value": "GD-EG-Caire-Musée007.JPG",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q33506$A16FDCA6-E09D-4850-ABAB-81FC238A2FCC",
+            "rank": "preferred",
+            "references": [
+              {
+                "hash": "3d70a392b7fce6d8e1116a3aaf832117124094a2",
+                "snaks": {
+                  "P4656": [
+                    {
+                      "snaktype": "value",
+                      "property": "P4656",
+                      "hash": "1deb8ebf44efac724763ea675f5596b869d84ae9",
+                      "datavalue": {
+                        "value": "https://commons.wikimedia.org/wiki/File:GD-EG-Caire-Mus%C3%A9e007.JPG",
+                        "type": "string"
+                      },
+                      "datatype": "url"
+                    }
+                  ]
+                },
+                "snaks-order": [
+                  "P4656"
+                ]
+              }
+            ]
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "f0fc52a8dac2d08ac7c640f7087a4a5518a08e93",
+              "datavalue": {
+                "value": "2025 Muzeum Różańskie w Różance (3).jpg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q33506$d5ebb622-49a4-49cc-3d03-5d949c15c415",
+            "rank": "normal"
+          }
+        ],
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "c7dbcaffa69fb2214e9e1f6298a41f89af3a59cf",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 117023459,
+                  "id": "Q117023459"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q33506$c347b7ec-4421-446d-ba6b-bf66eea291fa",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "a17df3bd6a75ef03852a2a8b5339a2aebf189faf",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 122754124,
+                  "id": "Q122754124"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "qualifiers": {
+              "P1012": [
+                {
+                  "snaktype": "value",
+                  "property": "P1012",
+                  "hash": "53f4106ff1a9f4736f77dfa0e219ba6ae165b175",
+                  "datavalue": {
+                    "value": {
+                      "entity-type": "item",
+                      "numeric-id": 178706,
+                      "id": "Q178706"
+                    },
+                    "type": "wikibase-entityid"
+                  },
+                  "datatype": "wikibase-item"
+                },
+                {
+                  "snaktype": "value",
+                  "property": "P1012",
+                  "hash": "0ef13b2ec81c642b3572a010171dbe7a0b6843e0",
+                  "datavalue": {
+                    "value": {
+                      "entity-type": "item",
+                      "numeric-id": 13226383,
+                      "id": "Q13226383"
+                    },
+                    "type": "wikibase-entityid"
+                  },
+                  "datatype": "wikibase-item"
+                },
+                {
+                  "snaktype": "value",
+                  "property": "P1012",
+                  "hash": "1c08bbab48423d92c36f28de376c61769130dd66",
+                  "datavalue": {
+                    "value": {
+                      "entity-type": "item",
+                      "numeric-id": 24699794,
+                      "id": "Q24699794"
+                    },
+                    "type": "wikibase-entityid"
+                  },
+                  "datatype": "wikibase-item"
+                }
+              ]
+            },
+            "qualifiers-order": [
+              "P1012"
+            ],
+            "id": "Q33506$1faf7488-477a-98f9-50be-63e011f01a32",
+            "rank": "normal"
+          }
+        ]
+      }
+    },
+    "Q210272": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "cultural heritage"
+        }
+      },
+      "aliases": {
+        "en": [
+          {
+            "language": "en",
+            "value": "cultural goods"
+          },
+          {
+            "language": "en",
+            "value": "culture legacy"
+          },
+          {
+            "language": "en",
+            "value": "cultural legacy"
+          },
+          {
+            "language": "en",
+            "value": "world heritage"
+          },
+          {
+            "language": "en",
+            "value": "cultural assets"
+          },
+          {
+            "language": "en",
+            "value": "social heritage"
+          }
+        ]
+      },
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "physical artifact or intangible attribute of a society inherited from past generations"
+        }
+      },
+      "claims": {
+        "P18": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "bb59c4e2d949d0fc8a20f70e7b44b838f40fee06",
+              "datavalue": {
+                "value": "Peru Machu Picchu Sunrise.jpg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "q210272$6B627584-DC95-430E-BC13-FCBC427BB0C6",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "9e4232a377cc6fbc217a1a15c021c7696e97ac27",
+              "datavalue": {
+                "value": "First Bank of US.jpg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "q210272$C15778B2-11C2-453F-827B-6A3291671371",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "e611e8c39957b2561733e601adb56653cb224263",
+              "datavalue": {
+                "value": "Plaque Carthage Unesco.JPG",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "q210272$662F1119-FDEA-4427-BB72-BE28588DA502",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "75862823c93faf869db1d269fbecb08bfdf2dcad",
+              "datavalue": {
+                "value": "Urk - Costumes-1.jpg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "q210272$7B18F37A-0ECE-4463-B615-ACBB60F0CDC0",
+            "rank": "normal"
+          }
+        ]
+      }
+    },
+    "Q5952771": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "hyanggyo"
+        }
+      },
+      "aliases": {
+        "en": [
+          {
+            "language": "en",
+            "value": "Local school of East Asia"
+          },
+          {
+            "language": "en",
+            "value": "hanggyo"
+          }
+        ]
+      },
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "government-run Confucian schools in Korea during the Goryeo and Joseon dynasties"
+        }
+      },
+      "claims": {
+        "P17": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "5cca003cb9989d5104d640b8e508f9568e4ae260",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 28179,
+                  "id": "Q28179"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q5952771$9d49fa51-4973-5088-ae6b-b270ebbc38d4",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "65b99bd6f6c5fc73d97749a0192568e193809679",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 28208,
+                  "id": "Q28208"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q5952771$9e331b77-4678-03e7-d0b9-bc26f934fbd0",
+            "rank": "normal"
+          }
+        ],
+        "P18": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "1de8dbe9618b41afdcf614333a82f2064913bc19",
+              "datavalue": {
+                "value": "Korea-Gyeongju Hyanggyo-02.jpg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q5952771$5cccad9a-47fa-8b8f-4228-e946f3179eaa",
+            "rank": "normal"
+          }
+        ]
+      }
+    },
+    "Q1000809": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "Buddharupa"
+        }
+      },
+      "aliases": {
+        "en": [
+          {
+            "language": "en",
+            "value": "Buddharūpa"
+          },
+          {
+            "language": "en",
+            "value": "Buddha"
+          }
+        ]
+      },
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "statues of beings who have obtained Buddhahood"
+        }
+      },
+      "claims": {
+        "P18": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "7fb4cf442964ad8fc5c8086ca05032a6864e9613",
+              "datavalue": {
+                "value": "Ananda-Bagan-Myanmar-30-gje.jpg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q1000809$DC638FA4-12EA-4C00-A293-9E7D3B7EFCA1",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "b58f549b5859f9b97ef1d019e0d4bf9634a4a2a7",
+              "datavalue": {
+                "value": "Brahma and Indra.jpg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q1000809$ADB3A49A-C7B9-495D-B5D1-D2D03DB5F6B1",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "28c816e92f49aa25fc8eda69feb5c69502d68c9d",
+              "datavalue": {
+                "value": "Buddha-naga-guimet.jpg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q1000809$6DF886BC-A207-47F7-A67E-B52F4B24934D",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "1bac5d7b9721f1de43bd12d7ee11c952065c4332",
+              "datavalue": {
+                "value": "Buddha in piedi shakyamuni, gandhara, slate, fine II sec.JPG",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q1000809$9A80D93E-DEB4-4B4C-8243-EF495B7ADDEB",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "c7196c7a0d68d2f847809df923db1e68eee7ed9a",
+              "datavalue": {
+                "value": "Golden Buddha statue at Wat Traimit.jpg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q1000809$CD4D4496-3E90-45D9-9068-61719DA56EA7",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "876b8bcaac4ebd559904929fedb2ef30744fff17",
+              "datavalue": {
+                "value": "Kamakura-buddha-7.jpg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q1000809$7EA941A3-EA80-4A6E-A7C1-E79853652298",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "6e5378e519d5b33906ce84a25c716aeec0341f32",
+              "datavalue": {
+                "value": "พระอจนะ.JPG",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q1000809$4D6207E2-412E-4C4A-8941-3A46A8FEB33B",
+            "rank": "normal"
+          }
+        ]
+      }
+    },
+    "Q28179": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "Joseon"
+        }
+      },
+      "aliases": {
+        "en": [
+          {
+            "language": "en",
+            "value": "Choson"
+          },
+          {
+            "language": "en",
+            "value": "Chosun"
+          },
+          {
+            "language": "en",
+            "value": "Yi Joseon"
+          },
+          {
+            "language": "en",
+            "value": "Lee Joseon"
+          },
+          {
+            "language": "en",
+            "value": "Joseonguk"
+          },
+          {
+            "language": "en",
+            "value": "Joseon dynasty"
+          },
+          {
+            "language": "en",
+            "value": "Choson dynasty"
+          },
+          {
+            "language": "en",
+            "value": "Yi dynasty"
+          },
+          {
+            "language": "en",
+            "value": "Korea"
+          },
+          {
+            "language": "en",
+            "value": "Corea"
+          },
+          {
+            "language": "en",
+            "value": "Coree"
+          },
+          {
+            "language": "en",
+            "value": "Joseon Korea"
+          },
+          {
+            "language": "en",
+            "value": "Choson Korea"
+          },
+          {
+            "language": "en",
+            "value": "Chosun Korea"
+          },
+          {
+            "language": "en",
+            "value": "Joseon Corea"
+          },
+          {
+            "language": "en",
+            "value": "Choson Corea"
+          },
+          {
+            "language": "en",
+            "value": "Chosun Corea"
+          },
+          {
+            "language": "en",
+            "value": "Kingdom of Korea"
+          },
+          {
+            "language": "en",
+            "value": "Kingdom of Corea"
+          }
+        ]
+      },
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "Korean dynasty / kingdom (1392–1897)"
+        }
+      },
+      "claims": {
+        "P576": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P576",
+              "hash": "f0e4ce16ac7f02b93cd7114bd99617211ac97218",
+              "datavalue": {
+                "value": {
+                  "time": "+1897-10-12T00:00:00Z",
+                  "timezone": 0,
+                  "before": 0,
+                  "after": 0,
+                  "precision": 11,
+                  "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                },
+                "type": "time"
+              },
+              "datatype": "time"
+            },
+            "type": "statement",
+            "qualifiers": {
+              "P1534": [
+                {
+                  "snaktype": "value",
+                  "property": "P1534",
+                  "hash": "a342b9ef9968c226bb9de78ac5ee7e57c4450849",
+                  "datavalue": {
+                    "value": {
+                      "entity-type": "item",
+                      "numeric-id": 5371662,
+                      "id": "Q5371662"
+                    },
+                    "type": "wikibase-entityid"
+                  },
+                  "datatype": "wikibase-item"
+                }
+              ]
+            },
+            "qualifiers-order": [
+              "P1534"
+            ],
+            "id": "Q28179$AED19721-95DC-4F45-99CB-343D9D540D23",
+            "rank": "normal",
+            "references": [
+              {
+                "hash": "fa278ebfc458360e5aed63d5058cca83c46134f1",
+                "snaks": {
+                  "P143": [
+                    {
+                      "snaktype": "value",
+                      "property": "P143",
+                      "hash": "e4f6d9441d0600513c4533c672b5ab472dc73694",
+                      "datavalue": {
+                        "value": {
+                          "entity-type": "item",
+                          "numeric-id": 328,
+                          "id": "Q328"
+                        },
+                        "type": "wikibase-entityid"
+                      },
+                      "datatype": "wikibase-item"
+                    }
+                  ]
+                },
+                "snaks-order": [
+                  "P143"
+                ]
+              }
+            ]
+          }
+        ],
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "8ef72935bbd0850be07948cbc1801c5af7c1e7a7",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 3024240,
+                  "id": "Q3024240"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "qualifiers": {
+              "P580": [
+                {
+                  "snaktype": "value",
+                  "property": "P580",
+                  "hash": "866916fc30cc18e606fe2f4eab0f2dcd6eee7e6e",
+                  "datavalue": {
+                    "value": {
+                      "time": "+1897-00-00T00:00:00Z",
+                      "timezone": 0,
+                      "before": 0,
+                      "after": 0,
+                      "precision": 9,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                    },
+                    "type": "time"
+                  },
+                  "datatype": "time"
+                }
+              ]
+            },
+            "qualifiers-order": [
+              "P580"
+            ],
+            "id": "Q28179$39818A16-90CC-4495-860D-FA0ADF9E90DE",
+            "rank": "preferred"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "835949c65c74f310e08f60bcb16a885634566df4",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 417175,
+                  "id": "Q417175"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q28179$719dcb5a-46c1-aedf-ded1-5696169c178b",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "c0756f7fedfc54b5b296b7d6dbbcf17a8e134d78",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 3624078,
+                  "id": "Q3624078"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "qualifiers": {
+              "P580": [
+                {
+                  "snaktype": "value",
+                  "property": "P580",
+                  "hash": "913e111fda8ee54401e75537e1e45c1465b35cfc",
+                  "datavalue": {
+                    "value": {
+                      "time": "+1392-00-00T00:00:00Z",
+                      "timezone": 0,
+                      "before": 0,
+                      "after": 0,
+                      "precision": 9,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985786"
+                    },
+                    "type": "time"
+                  },
+                  "datatype": "time"
+                }
+              ],
+              "P582": [
+                {
+                  "snaktype": "value",
+                  "property": "P582",
+                  "hash": "0fda3f6c67a2ba3c763967010de2fe271c1946df",
+                  "datavalue": {
+                    "value": {
+                      "time": "+1897-00-00T00:00:00Z",
+                      "timezone": 0,
+                      "before": 0,
+                      "after": 0,
+                      "precision": 9,
+                      "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+                    },
+                    "type": "time"
+                  },
+                  "datatype": "time"
+                }
+              ]
+            },
+            "qualifiers-order": [
+              "P580",
+              "P582"
+            ],
+            "id": "Q28179$621768bd-495d-957c-7ac5-f7420c155da7",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "3b0e66e51434fd20725e53cb9b63d5fe3fa9e97a",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 1309121,
+                  "id": "Q1309121"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q28179$7802a080-45d2-ea35-00eb-fe1dd97e3798",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "e438b0957be454eddb27411af01c8b8998e93a16",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 164950,
+                  "id": "Q164950"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q28179$4cbd543d-4d3b-ac9f-fb5c-73fa632f6ca1",
+            "rank": "normal"
+          }
+        ],
+        "P17": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "5cca003cb9989d5104d640b8e508f9568e4ae260",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 28179,
+                  "id": "Q28179"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q28179$ea6958c2-4a5c-27e7-fcfa-588fc14ecbd7",
+            "rank": "normal"
+          }
+        ],
+        "P18": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "fac501be9b4737eda20bd78bb0019f67d2200773",
+              "datavalue": {
+                "value": "1894JoseonSeoul.jpg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q28179$3d8bc3d5-4009-bc1e-d1d5-fa8e7b49674e",
+            "rank": "normal"
+          }
+        ]
+      }
+    },
+    "Q28208": {
+      "labels": {
+        "en": {
+          "language": "en",
+          "value": "Goryeo"
+        }
+      },
+      "aliases": {
+        "en": [
+          {
+            "language": "en",
+            "value": "Koryŏ"
+          },
+          {
+            "language": "en",
+            "value": "Goryeoguk"
+          }
+        ]
+      },
+      "descriptions": {
+        "en": {
+          "language": "en",
+          "value": "ancient kingdom in the Korean peninsula (918–1392)"
+        }
+      },
+      "claims": {
+        "P576": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P576",
+              "hash": "2841fe8f910098e1ad67ae866cb0d291615ad4cb",
+              "datavalue": {
+                "value": {
+                  "time": "+1392-08-05T00:00:00Z",
+                  "timezone": 0,
+                  "before": 0,
+                  "after": 0,
+                  "precision": 11,
+                  "calendarmodel": "http://www.wikidata.org/entity/Q1985786"
+                },
+                "type": "time"
+              },
+              "datatype": "time"
+            },
+            "type": "statement",
+            "qualifiers": {
+              "P1366": [
+                {
+                  "snaktype": "value",
+                  "property": "P1366",
+                  "hash": "80c2ad4566b43389f33354564f6dbd22b29faf05",
+                  "datavalue": {
+                    "value": {
+                      "entity-type": "item",
+                      "numeric-id": 28179,
+                      "id": "Q28179"
+                    },
+                    "type": "wikibase-entityid"
+                  },
+                  "datatype": "wikibase-item"
+                }
+              ]
+            },
+            "qualifiers-order": [
+              "P1366"
+            ],
+            "id": "Q28208$F099767D-C4BD-4E7C-A73A-707235E57D5C",
+            "rank": "normal",
+            "references": [
+              {
+                "hash": "08be9f116c5c541d7fa461ad59ad559a42ffd6ed",
+                "snaks": {
+                  "P143": [
+                    {
+                      "snaktype": "value",
+                      "property": "P143",
+                      "hash": "56f99b6701feb379816767ae88bb77e0e74981b3",
+                      "datavalue": {
+                        "value": {
+                          "entity-type": "item",
+                          "numeric-id": 17985,
+                          "id": "Q17985"
+                        },
+                        "type": "wikibase-entityid"
+                      },
+                      "datatype": "wikibase-item"
+                    }
+                  ]
+                },
+                "snaks-order": [
+                  "P143"
+                ]
+              }
+            ]
+          }
+        ],
+        "P31": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "8ef72935bbd0850be07948cbc1801c5af7c1e7a7",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 3024240,
+                  "id": "Q3024240"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q28208$8F3DD87E-A667-427F-8BD2-11187824D423",
+            "rank": "normal"
+          },
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P31",
+              "hash": "e438b0957be454eddb27411af01c8b8998e93a16",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 164950,
+                  "id": "Q164950"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q28208$07d426ed-4303-7eba-a6b6-0a4b3366d48e",
+            "rank": "normal"
+          }
+        ],
+        "P17": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P17",
+              "hash": "65b99bd6f6c5fc73d97749a0192568e193809679",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 28208,
+                  "id": "Q28208"
+                },
+                "type": "wikibase-entityid"
+              },
+              "datatype": "wikibase-item"
+            },
+            "type": "statement",
+            "id": "Q28208$C708E004-2D81-422A-A1CE-F72CF8639A2A",
+            "rank": "normal",
+            "references": [
+              {
+                "hash": "43a0088c51fd85e5a85d1b46412c3a635e6d4edc",
+                "snaks": {
+                  "P143": [
+                    {
+                      "snaktype": "value",
+                      "property": "P143",
+                      "hash": "d8fbf8671e3c630db61bfac691068cfb6857f243",
+                      "datavalue": {
+                        "value": {
+                          "entity-type": "item",
+                          "numeric-id": 837615,
+                          "id": "Q837615"
+                        },
+                        "type": "wikibase-entityid"
+                      },
+                      "datatype": "wikibase-item"
+                    }
+                  ]
+                },
+                "snaks-order": [
+                  "P143"
+                ]
+              }
+            ]
+          }
+        ],
+        "P18": [
+          {
+            "mainsnak": {
+              "snaktype": "value",
+              "property": "P18",
+              "hash": "2603105c07ce72d7c1e9739874023ef4a2715de7",
+              "datavalue": {
+                "value": "Goryeonobles.jpg",
+                "type": "string"
+              },
+              "datatype": "commonsMedia"
+            },
+            "type": "statement",
+            "id": "Q28208$84e7aa17-4a11-ac15-e480-589dfec6bcd8",
+            "rank": "normal"
+          }
+        ]
+      }
+    }
+  },
+  "photos": {
+    "batchcomplete": "",
+    "query": {
+      "pages": {
+        "4882959": {
+          "pageid": 4882959,
+          "ns": 6,
+          "title": "File:Jikjitempleentrance.jpg",
+          "imagerepository": "local",
+          "imageinfo": [
+            {
+              "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c7/Jikjitempleentrance.jpg/1280px-Jikjitempleentrance.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "thumbwidth": 1200,
+              "thumbheight": 900,
+              "responsiveUrls": {
+                "2": "https://upload.wikimedia.org/wikipedia/commons/c/c7/Jikjitempleentrance.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled"
+              },
+              "thumbattribs": {
+                "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c7/Jikjitempleentrance.jpg/1280px-Jikjitempleentrance.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+                "decoding": "async",
+                "loading": "lazy",
+                "width": 1200,
+                "height": 900,
+                "srcset": "https://upload.wikimedia.org/wikipedia/commons/c/c7/Jikjitempleentrance.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled 2x"
+              },
+              "url": "https://upload.wikimedia.org/wikipedia/commons/c/c7/Jikjitempleentrance.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+              "descriptionurl": "https://commons.wikimedia.org/wiki/File:Jikjitempleentrance.jpg",
+              "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=4882959",
+              "extmetadata": {
+                "DateTime": {
+                  "value": "2008-09-29 04:01:36",
+                  "source": "mediawiki-metadata",
+                  "hidden": ""
+                },
+                "ObjectName": {
+                  "value": "Jikjitempleentrance",
+                  "source": "mediawiki-metadata"
+                },
+                "CommonsMetadataExtension": {
+                  "value": 1.2,
+                  "source": "extension",
+                  "hidden": ""
+                },
+                "Categories": {
+                  "value": "5th-century establishments|GFDL|Taken with Kodak EasyShare Z740|410s|License migration redundant|Jikjisa|Self-published work",
+                  "source": "commons-categories",
+                  "hidden": ""
+                },
+                "Assessments": {
+                  "value": "",
+                  "source": "commons-categories",
+                  "hidden": ""
+                },
+                "ImageDescription": {
+                  "value": "Picture of the entrance to Jikji Temple in South Korea",
+                  "source": "commons-desc-page"
+                },
+                "DateTimeOriginal": {
+                  "value": "2009-09-28",
+                  "source": "commons-desc-page"
+                },
+                "Credit": {
+                  "value": "<span class=\"int-own-work\" lang=\"en\">Own work</span>",
+                  "source": "commons-desc-page"
+                },
+                "Artist": {
+                  "value": "<a href=\"//commons.wikimedia.org/wiki/User:Crossmr\" class=\"mw-redirect\" title=\"User:Crossmr\">Crossmr</a>",
+                  "source": "commons-desc-page"
+                },
+                "LicenseShortName": {
+                  "value": "CC BY-SA 3.0",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "UsageTerms": {
+                  "value": "Creative Commons Attribution-Share Alike 3.0",
+                  "source": "commons-desc-page"
+                },
+                "AttributionRequired": {
+                  "value": "true",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "LicenseUrl": {
+                  "value": "https://creativecommons.org/licenses/by-sa/3.0",
+                  "source": "commons-desc-page"
+                },
+                "Copyrighted": {
+                  "value": "True",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "Restrictions": {
+                  "value": "",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "License": {
+                  "value": "cc-by-sa-3.0",
+                  "source": "commons-templates",
+                  "hidden": ""
+                }
+              },
+              "mime": "image/jpeg"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "capturedAt": "2026-10-11"
+}

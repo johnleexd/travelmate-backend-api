@@ -62,9 +62,13 @@ test('shared fares are counted once; per-person fares use participating traveler
 
 test('budgets too small retain supported prices and report a shortfall instead of changing prices to fit', () => {
   const result = plan();
-  const next = refreshGroundedTotals({ ...result, totalBudget: 1 });
+  result.days[0].activities[0].estimatedCost = 20;
+  result.days[0].activities[0].unitCost = 10;
+  result.days[0].activities[0].priceEvidence = { ...result.days[0].activities[0].priceEvidence!, status: 'estimate', source: 'user-entered', unitAmount: 10 };
+  const priced = refreshGroundedTotals(result);
+  const next = refreshGroundedTotals({ ...priced, totalBudget: 1 });
   assert.equal(next.grounding?.budgetStatus, 'exceeds-budget');
-  assert.equal(next.grounding?.total, result.grounding?.total);
+  assert.equal(next.grounding?.total, priced.grounding?.total);
   assert.equal(next.days[0].activities[0].unitCost, result.days[0].activities[0].unitCost);
 });
 
@@ -116,6 +120,32 @@ test('destination identity rejects missing inputs, mismatched coordinates and a 
   await assert.rejects(validateDestinationAnchor('Paris', { ...anchor, countryCode: 'JP' }, anchor.latitude, anchor.longitude), /could not be validated/);
 });
 
+test('present-day membership ignores historical countries and administrative parents without weakening current country checks', () => {
+  const claim = (id: string, extra = {}) => ({ mainsnak: { datavalue: { value: { id } } }, ...extra });
+  const date = (time: string) => [{ datavalue: { value: { time } } }];
+  const entities: any = {
+    Q200: { claims: { P131: [claim('Q1')], P17: [claim('Q2')] } },
+    Q1: { labels: { en: { value: 'Paris' } }, claims: {
+      P131: [claim('Q3', { qualifiers: { P582: date('+1814-00-00T00:00:00Z') } }), claim('Q2', { rank: 'preferred' })],
+      P17: [claim('Q3', { qualifiers: { P582: date('+1814-05-00T00:00:00Z') } }), claim('Q2', { rank: 'preferred' })],
+    } },
+    Q2: { claims: { P297: [{ mainsnak: { datavalue: { value: 'FR' } } }] } },
+    Q3: { claims: { P17: [claim('Q4')] } },
+    Q4: { claims: { P297: [{ mainsnak: { datavalue: { value: 'DE' } } }] } },
+  };
+  assert.equal(entityBelongsToDestination('Q200', entities, anchors[1]), true);
+  // Ended relationships are ignored even when the provider never marks a current claim preferred.
+  entities.Q1.claims.P131[1].rank = 'normal'; entities.Q1.claims.P17[1].rank = 'normal';
+  assert.equal(entityBelongsToDestination('Q200', entities, anchors[1]), true);
+  entities.Q200.claims.P17.push(claim('Q4'));
+  assert.equal(entityBelongsToDestination('Q200', entities, anchors[1]), false);
+  entities.Q200.claims.P17[1].qualifiers = { P580: date('+2999-01-01T00:00:00Z') };
+  assert.equal(entityBelongsToDestination('Q200', entities, anchors[1]), true);
+  // A historical city relationship cannot supply the required current city identity.
+  entities.Q200.claims.P131[0].qualifiers = { P582: date('+2000-01-01T00:00:00Z') };
+  assert.equal(entityBelongsToDestination('Q200', entities, anchors[1]), false);
+});
+
 test('AI cannot invent an attraction, repeat a place, supply prices, or omit geographic transfer time', async () => {
   const places = [place(anchors[1], 0), { ...place(anchors[1], 1), latitude: anchors[1].latitude + 0.04 }];
   const fixture = { days: [{ day: 1, date: start, theme: 'Catalog route', visits: [{ placeId: 'Q200', startMinutes: 600, durationMinutes: 60, participants: 2 }] }] };
@@ -147,7 +177,7 @@ test('public photo lookup uses the exact Wikidata image file and attribution, no
   assert.equal(exactFileRequested, true); assert.equal(places.length, 1);
   assert.equal(places[0].placeId, 'Q200'); assert.match(places[0].imageUrl!, /exact-museum/);
   assert.equal(places[0].imageAttribution?.creator, 'Test photographer');
-  assert.equal(places[0].openingHours, 'Not available; confirm with the venue');
+  assert.equal(places[0].openingHours, 'Opening hours need confirmation');
   const unavailablePhoto = await retrieveGroundedPlaces(anchors[1], async (input, init) => new URL(String(input)).hostname === 'commons.wikimedia.org' ? Response.json({}, { status: 503 }) : fetcher(input, init));
   assert.equal(unavailablePhoto.length, 1); assert.equal(unavailablePhoto[0].imageUrl, undefined);
 });
@@ -221,4 +251,14 @@ test('travel pace limits catalog visits and reaches the provider prompt with bud
   const contexts: string[] = [];
   await generateGroundedSchedule({ generate: async request => { contexts.push(request.userPrompt); return JSON.stringify({ days: [{ day: 1, date: start, theme: 'Slow exploration', visits: [] }] }); } } as import('../src/services/ai/provider.ts').AIItineraryProvider, anchor, places, start, 1, 1, 'Starting location: Toronto, Canada. Budget: EUR 1000. Interests: art.', undefined, 'relaxed');
   assert.match(contexts[0], /at most 2 visits daily at relaxed pace/); assert.match(contexts[0], /PLUS 30 minutes/); assert.match(contexts[0], /Toronto, Canada/); assert.match(contexts[0], /EUR 1000/); assert.match(contexts[0], /art/);
+});
+
+test('partial weekday references remain eligible on unreferenced days with an explicit confirmation notice', () => {
+  const weekday = new Date(`${start}T00:00:00Z`).getUTCDay();
+  const attraction = { ...place(anchors[1]), openingHours: 'Other weekday: 10:00–17:00 (provider reference)', openingWindows: [{ weekdays: [(weekday + 1) % 7], startMinutes: 600, endMinutes: 1020 }] };
+  const raw = JSON.stringify({ days: [{ day: 1, date: start, theme: 'Visit', visits: [{ placeId: attraction.placeId, startMinutes: 540, durationMinutes: 90, participants: 1 }] }] });
+  const schedule = validateGroundedSchedule(raw, [attraction], start, 1, 1);
+  const result = buildGroundedPlan({ destination: 'Paris, France', anchor: anchors[1], startingLocation: '', startDate: start, endDate: start, budget: 1000, currency: 'EUR', travelers: 1, partyType: 'solo', rooms: 1, places: [attraction], placeDataStatus: 'live', source: 'openai', transportation: 'Walking', schedule });
+  assert.equal(result.days[0].activities[0].place!.openingHours, attraction.openingHours);
+  assert.ok(result.days[0].activities[0].description.startsWith('Opening hours need confirmation.'));
 });

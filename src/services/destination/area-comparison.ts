@@ -1,6 +1,6 @@
 import { createAreaCache } from './area-cache.ts';
 import { validatedAreaCities } from './destination-areas.ts';
-import type { LocationSuggestion } from './location-search-service.ts';
+import type { LocationSuggestion, LocationCandidate } from './location-search-service.ts';
 
 export interface AreaInterestProfile {
   cityId: number;
@@ -24,8 +24,8 @@ function distance(latitude: number, longitude: number, city: LocationSuggestion)
   return 6371 * 2 * Math.asin(Math.sqrt(Math.sin((latitude - city.latitude) * rad / 2) ** 2 + Math.cos(latitude * rad) * Math.cos(city.latitude * rad) * Math.sin((longitude - city.longitude) * rad / 2) ** 2));
 }
 
-export async function compareDestinationAreas(parent: LocationSuggestion, ids: number[], fetcher: typeof fetch = fetch): Promise<AreaComparisonResponse> {
-  const cities = await validatedAreaCities(parent, ids, fetcher);
+export async function compareDestinationAreas(parent: LocationCandidate, ids: number[], fetcher: typeof fetch = fetch, hierarchy = false): Promise<AreaComparisonResponse> {
+  const cities = await validatedAreaCities(parent, ids, fetcher, hierarchy);
   if (!ids.length || ids.length > 6 || cities.length !== ids.length) throw new Error('Choose up to six verified cities within the selected area.');
   const key = `${parent.countryCode}:${parent.providerId || parent.id}:${[...ids].sort((a,b) => a-b).join(',')}`;
   return cache.get(key, async () => {

@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import test, { after } from 'node:test';
+import { prisma } from '../src/lib/prisma.ts';
+import { createSessionToken } from '../src/middlewares/auth-middleware.ts';
+import { POST_IMAGES } from '../src/controllers/itinerary-controller.ts';
+after(() => prisma.$disconnect());
+test('authenticated read-only photo enrichment works for legacy saved drafts without signing or changing budgets; refresh preserves existing photos on outage', async t => {
+  const key = process.env.UNSPLASH_ACCESS_KEY;
+  process.env.UNSPLASH_ACCESS_KEY = '';
+  t.after(() => { if (key === undefined) delete process.env.UNSPLASH_ACCESS_KEY; else process.env.UNSPLASH_ACCESS_KEY = key; });
+  const replace = (object: object, key: string, value: unknown) => { const old = Reflect.get(object, key); Reflect.set(object, key, value); t.after(() => Reflect.set(object, key, old)); };
+  replace(prisma.user, 'findFirst', async () => ({ id: 'photo-http', name: 'Test', email: 'test@example.test', role: 'traveler', accountStatus: 'active', emailVerified: true, profileStatus: 'unverified', trustScore: 50 }));
+  replace(prisma, '$queryRaw', async () => [{ count: 1 }]); t.mock.method(Math, 'random', () => 0.5);
+  let fail = false; const calls: string[] = [];
+  t.mock.method(globalThis, 'fetch', async input => {
+    const url = new URL(String(input)); calls.push(url.hostname);
+    if (fail) return new Response('', { status: 503 });
+    if (url.hostname === 'en.wikipedia.org') return Response.json({ query: { pages: { 1: { pageid: 1, title: 'HTTP recorded venue', pageimage: 'HTTP recorded venue.jpg', coordinates: [{ lat: 36, lon: 128 }], pageprops: { wikibase_item: 'Q56789' } } } } });
+    if (url.hostname === 'www.wikidata.org') return Response.json({ entities: {} });
+    return Response.json({ query: { pages: { 2: { pageid: 2, title: 'File:HTTP recorded venue.jpg', imageinfo: [{ mime: 'image/jpeg', url: 'https://upload.wikimedia.org/wikipedia/commons/a/ab/HTTP_recorded_venue.jpg', extmetadata: { Artist: { value: 'Actual author' }, LicenseShortName: { value: 'CC BY 4.0' }, ImageDescription: { value: 'HTTP recorded venue' } } }] } } } });
+  });
+  const day = { day: 1, date: '2040-01-01', theme: 'Recorded HTTP itinerary', imageUrl: '', totalCost: 543, activities: [{ title: 'HTTP recorded venue', time: '11:00', category: 'activity', estimatedCost: 123, description: 'Original description', icon: 'map', place: { name: 'HTTP recorded venue', city: 'Recorded City', country: 'South Korea', countryCode: 'KR', latitude: 36, longitude: 128 } }] };
+  const body = { destination: 'Recorded City, South Korea', day, lookupOnly: true };
+  const request = (value: object, auth = true) => new Request('http://localhost/api/itinerary/images', { method: 'POST', headers: { 'content-type': 'application/json', ...(auth ? { cookie: `travelmate_session=${createSessionToken('photo-http', 'traveler')}` } : {}) }, body: JSON.stringify(value) });
+  assert.equal((await POST_IMAGES(request(body, false))).status, 401);
+  assert.equal((await POST_IMAGES(request({ ...body, destination: '' }))).status, 400);
+  const response = await POST_IMAGES(request(body)); assert.equal(response.status, 200);
+  const result = await response.json(); assert.equal(result.groundingProof, undefined); assert.equal(result.day.totalCost, day.totalCost); assert.equal(result.day.activities[0].estimatedCost, day.activities[0].estimatedCost);
+  assert.equal(result.day.activities[0].imageAttribution.creator, 'Actual author'); assert.ok(result.day.activities[0].imageUrl);
+  assert.deepEqual(calls, ['en.wikipedia.org', 'commons.wikimedia.org']);
+  fail = true;
+  const existing = { ...day, imageUrl: 'https://existing-provider.test/day.jpg', activities: [{ ...day.activities[0], imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/a/ab/Existing_saved.jpg', imageAttribution: { creator: 'Existing author', license: 'CC BY 4.0', licenseUrl: 'https://creativecommons.org/licenses/by/4.0/', sourceUrl: 'https://commons.wikimedia.org/?curid=3' } }] };
+  const refresh = await POST_IMAGES(request({ destination: body.destination, day: existing })); assert.equal(refresh.status, 200);
+  assert.deepEqual((await refresh.json()).day, existing); assert.equal(calls.length, 2);
+});

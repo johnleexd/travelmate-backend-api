@@ -15,6 +15,7 @@ export interface WeatherData {
   source: WeatherSource;
   city: string;
   country: string;
+  timeZone?: string;
   temperature: number;
   feelsLike: number;
   humidity: number;

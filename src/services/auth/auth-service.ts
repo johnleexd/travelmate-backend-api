@@ -59,6 +59,7 @@ export async function authenticateUser(email: string, rawPassword: string): Prom
 
 export async function registerUser(input: {
   name: string;
+  phone?: string;
   email: string;
   rawPassword: string;
   role: Role;
@@ -70,6 +71,7 @@ export async function registerUser(input: {
       const created = await transaction.user.create({
         data: {
           name: input.name,
+          phone: input.phone,
           email: input.email,
           role: 'traveler',
           emailVerified: false,

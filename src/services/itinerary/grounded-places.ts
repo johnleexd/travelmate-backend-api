@@ -1,8 +1,18 @@
 import { withProviderCache } from '../cache/provider-cache.ts';
+import { reusableWikimediaLicense } from '../../lib/wikimedia-photo-license.ts';
+import { nonPhotographicPlaceImage } from '../../lib/place-photo-content.ts';
 import type { DestinationAnchor, PlaceEvidence } from './grounding-schema.ts';
 import { destinationAnchorSchema, GroundingInputError } from './grounding-schema.ts';
 import { searchGlobalLocations } from '../destination/global-location-search.ts';
+import { catalogueLocation, validateCatalogueSelection, catalogueAliasMatches } from '../destination/global-catalogue.ts';
+import { needsAccommodationArea } from '../destination/location-resolution.ts';
+import { hasResolvedCoordinates } from '../destination/location-search-service.ts';
+import { administrativeRecord, administrativeLabelMatches, validateAdministrativeSelection } from '../destination/philippine-catalogue.ts';
 import { resolveDestination } from '../destination/location-resolution.ts';
+import { countries, type TCountryCode } from 'countries-list';
+import { MAX_PLACE_DISTANCE_KM, MIN_LOCAL_PLACE_COVERAGE } from './place-search-policy.ts';
+import { SUPPORTED_CURRENCIES, hasValidCurrencyPrecision, type CurrencyCode } from '../../schemas/domain.ts';
+import { loadPlaceBoundary, containsPlace, corroboratePlaceCoordinate, type PlaceBoundary } from './place-boundaries.ts';
 
 type Claim = { rank?: string; mainsnak?: { datavalue?: { value?: any } }; qualifiers?: Record<string, Array<{ datavalue?: { value?: any } }>> };
 type Entity = { labels?: Record<string, { value: string }>; aliases?: Record<string, Array<{ value: string }>>; descriptions?: Record<string, { value: string }>; claims?: Record<string, Claim[]> };
@@ -11,11 +21,64 @@ export interface GroundedPlace extends PlaceEvidence {
   imageUrl?: string;
   imageAttribution?: { creator: string; license: string; licenseUrl?: string; sourceUrl: string };
   openingWindows?: Array<{ weekdays: number[]; startMinutes: number; endMinutes: number }>;
+  admission?: { amount:number; currency:CurrencyCode; sourceUrl:string; fetchedAt:string };
 }
 const normalized = (value: string) => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const values = (entity: Entity | undefined, property: string): any[] => (entity?.claims?.[property] ?? []).filter(claim => claim.rank !== 'deprecated').flatMap(claim => claim.mainsnak?.datavalue ? [claim.mainsnak.datavalue.value] : []);
 const ids = (entity: Entity | undefined, property: string): string[] => values(entity, property).flatMap(value => /^Q\d+$/.test(value?.id) ? [value.id] : []);
+/** Present-day membership excludes ended/future relationships, then follows Wikidata's preferred rank. */
+function currentRelationshipIds(entity: Entity | undefined, property: 'P131' | 'P17', today = new Date().toISOString().slice(0, 10)): string[] {
+  const bound = (value: any, end: boolean) => {
+    const match = typeof value?.time === 'string' && value.time.match(/^\+(\d{4})-(\d{2})-(\d{2})T/);
+    if (!match) return undefined;
+    const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
+    // Imprecise dates describe a whole year/month, not an invented exact day.
+    const m = month || (end ? 12 : 1);
+    const d = day || (end ? new Date(Date.UTC(year, m, 0)).getUTCDate() : 1);
+    return `${match[1]}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  };
+  const active = (entity?.claims?.[property] ?? []).filter(claim => {
+    if (claim.rank === 'deprecated') return false;
+    const starts = (claim.qualifiers?.P580 ?? []).map(snak => bound(snak.datavalue?.value, false));
+    const ends = (claim.qualifiers?.P582 ?? []).map(snak => bound(snak.datavalue?.value, true));
+    return !starts.some(start => start && start > today) && !ends.some(end => end && end < today);
+  });
+  const selected = active.some(claim => claim.rank === 'preferred') ? active.filter(claim => claim.rank === 'preferred') : active;
+  return selected.flatMap(claim => {
+    const id = claim.mainsnak?.datavalue?.value?.id;
+    return /^Q\d+$/.test(id) ? [id] : [];
+  });
+}
 const strip = (value: string = '') => value.replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').trim();
+
+// A location coordinate does not make a company, website or whole city a venue.
+const physicalAttraction = /\b(?:museum|garden|park|temple|church|mosque|cathedral|basilica|castle|fortress|palace|tower|bridge|monument|beach|market|square|library|gallery|theatre|theater|aquarium|zoo|abbey|monastery|pagoda|hyanggyo|seowon|statue|Buddharupa)(?:s)?\b|\b(?:historic(?:al)? (?:site|building|landmark|ruin|district)|archaeological site|tourist attraction|remarkable tree)\b/i;
+const nonVenueType = /\b(?:company|corporation|enterprise|software|application|website|online marketplace|e-commerce|painting|portrait|manuscript|book|document|print|bell|reliquary|collection|woodblock)\b|^(?:capital|city|town|village|municipality|country|province|prefecture|state|region|district|metropolis|megacity|metropolitan area|administrative division|human settlement|populated place)(?:$| of\b| in\b)/i;
+export function physicalAttractionDescription(description: string, types: string[]) {
+  // Preserve the existing portable-object exclusion even when its label mentions a museum.
+  if (types.some(type => /\b(?:painting|portrait|manuscript|book|document|print|bell|reliquary|collection|woodblock)\b/i.test(type))) return '';
+  const physicalType = types.find(type => !nonVenueType.test(type) && physicalAttraction.test(type));
+  if (types.some(type => nonVenueType.test(type)) && !physicalType) return '';
+  return physicalAttraction.test(description) ? description : physicalType ?? '';
+}
+
+/** Ambiguous ticket classes, unknown currencies and missing fees stay unpriced. */
+export function admissionReference(entity:Entity, entities:Record<string,Entity>, placeId:string, fetchedAt:string):GroundedPlace['admission'] {
+  const today=fetchedAt.slice(0,10), active=(entity?.claims?.P2555 || []).filter(claim=>{
+    if(claim.rank==='deprecated' || Object.keys(claim.qualifiers || {}).some(key=>!['P580','P582','P585'].includes(key)))return false;
+    const bound=(property:string)=>claim.qualifiers?.[property]?.[0]?.datavalue?.value?.time?.slice(1,11);
+    const since=bound('P580'),until=bound('P582'),asOf=bound('P585');
+    return (!since || since<=today) && (!until || until>=today) && (!asOf || asOf<=today);
+  });
+  const selected=active.some(claim=>claim.rank==='preferred')?active.filter(claim=>claim.rank==='preferred'):active;
+  const fees=selected.flatMap(claim=>{
+    const value=claim.mainsnak?.datavalue?.value,amount=Number(value?.amount),id=typeof value?.unit==='string'?value.unit.match(/\/Q\d+$/)?.[0].slice(1):undefined;
+    const codes=id?values(entities[id],'P498'):[];
+    const currency=codes.length===1 && SUPPORTED_CURRENCIES.includes(codes[0])?codes[0] as CurrencyCode:undefined;
+    return currency && Number.isFinite(amount) && amount>=0 && amount<=1_000_000_000 && hasValidCurrencyPrecision(amount,currency)?[{amount,currency,sourceUrl:`https://www.wikidata.org/wiki/${placeId}#P2555`,fetchedAt}]:[];
+  });
+  const unique=new Map(fees.map(fee=>[`${fee.currency}:${fee.amount}`,fee]));return unique.size===1?[...unique.values()][0]:undefined;
+}
 
 export function openingDetails(entity: Entity, entities: Record<string, Entity>) {
   const windows: NonNullable<GroundedPlace['openingWindows']> = [];
@@ -41,7 +104,7 @@ export function openingDetails(entity: Entity, entities: Record<string, Entity>)
       && Object.keys(claim.qualifiers ?? {}).every(key => ['P8626','P8627'].includes(key))) windows.push({ weekdays, startMinutes, endMinutes });
   }
   const address = values(entity, 'P6375').find(value => value?.language === 'en')?.text ?? values(entity, 'P6375').find(value => typeof value?.text === 'string')?.text;
-  return { openingHours: descriptions.length ? `${descriptions.join('; ')} (Wikidata reference; seasonal/holiday exceptions and current hours need confirmation)`.slice(0, 1000) : 'Not available; confirm with the venue', address: typeof address === 'string' ? address.slice(0, 1000) : 'Not available', openingWindows: windows.length ? windows : undefined };
+  return { openingHours: descriptions.length ? `${windows.length ? '' : 'Opening hours need confirmation. '}${descriptions.join('; ')} (Wikidata reference; seasonal/holiday exceptions and current hours need confirmation)`.slice(0, 1000) : 'Opening hours need confirmation', address: typeof address === 'string' ? address.slice(0, 1000) : 'Not available', openingWindows: windows.length ? windows : undefined };
 }
 
 export async function validateDestinationAnchor(destination: string, value: unknown, latitude: unknown, longitude: unknown, fetcher: typeof fetch = fetch) {
@@ -50,10 +113,24 @@ export async function validateDestinationAnchor(destination: string, value: unkn
   const anchor = parsed.data;
   if (latitude !== anchor.latitude || longitude !== anchor.longitude) throw new GroundingInputError('Destination coordinates do not match the selected place.');
   if (!normalized(destination).startsWith(normalized(anchor.city))) throw new GroundingInputError('Destination text does not match the selected city.');
-  let matches = await searchGlobalLocations(`${anchor.city}, ${anchor.country}`, fetcher);
+  if (anchor.provider === 'psgc' || anchor.administrativeCode || anchor.id && administrativeRecord(anchor.id)) {
+    if (!anchor.id || anchor.countryCode !== 'PH') throw new GroundingInputError('Select the official Philippine location again.');
+    let selected;
+    try { selected = await validateAdministrativeSelection({ ...anchor, id: anchor.id }, fetcher); }
+    catch (error) { throw new GroundingInputError(error instanceof Error ? error.message : 'Choose the intended official location again.'); }
+    if (!administrativeLabelMatches(anchor.id, `${anchor.city}, Philippines`) || !administrativeLabelMatches(anchor.id, destination)) throw new GroundingInputError('The selected place name or province does not match its official ID.');
+    return { ...anchor, city: selected.name, country: selected.country };
+  }
+  if (anchor.id && catalogueLocation(anchor.id, anchor.countryCode)) {
+    let selected;
+    try { selected = validateCatalogueSelection({ ...anchor, id: anchor.id }, destination); } catch (error) { throw new GroundingInputError((error as Error).message); }
+    if (needsAccommodationArea(selected) || !catalogueAliasMatches(selected.id, anchor.city)) throw new GroundingInputError('Choose a specific city, municipality, town or village within this administrative area.');
+    return { ...anchor, city: selected.name, region: selected.region, country: selected.country, id: selected.id, provider: selected.provider, providerId: selected.providerId, placeType: selected.placeType, sourceFeatureCode: selected.sourceFeatureCode, scopeType: selected.scopeType, locationPath: selected.locationPath, parentId: selected.parentId, canBrowse: selected.canBrowse, coordinateSource: selected.coordinateSource };
+  }
+  let matches = (await searchGlobalLocations(`${anchor.city}, ${anchor.country}`, fetcher, { includeLegacyDuplicates: true })).filter(hasResolvedCoordinates);
   let match = matches.find(place => normalized(place.name) === normalized(anchor.city) && place.countryCode === anchor.countryCode && distanceKm(place, anchor) < 0.5);
   if (!match) {
-    matches = (await resolveDestination(destination, fetcher)).candidates;
+    matches = (await resolveDestination(destination, fetcher)).candidates.flatMap(place => hasResolvedCoordinates(place) ? [place] : []);
     match = matches.find(place => normalized(place.name) === normalized(anchor.city) && place.countryCode === anchor.countryCode && distanceKm(place, anchor) < 0.5);
   }
   if (!match || match.placeType === 'Country') throw new GroundingInputError('Choose a specific city/locality from destination search; its country and coordinates could not be validated.');
@@ -64,6 +141,15 @@ export function distanceKm(a: { latitude: number; longitude: number }, b: { lati
   const radians = (value: number) => value * Math.PI / 180;
   const h = Math.sin(radians(b.latitude - a.latitude) / 2) ** 2 + Math.cos(radians(a.latitude)) * Math.cos(radians(b.latitude)) * Math.sin(radians(b.longitude - a.longitude) / 2) ** 2;
   return 6371 * 2 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+/** Nearby places retain their real locality, plus signed selected-city/boundary evidence. */
+export function placeMatchesAnchor(place: PlaceEvidence, anchor: DestinationAnchor): boolean {
+  if (place.countryCode !== anchor.countryCode || normalized(place.country) !== normalized(anchor.country) || distanceKm(place, anchor) > MAX_PLACE_DISTANCE_KM) return false;
+  if (place.locationScope === 'nearby') return normalized(place.selectedCity ?? '') === normalized(anchor.city)
+    && normalized(place.city) !== normalized(anchor.city) && /^https:\/\/www\.openstreetmap\.org\/(relation|way)\/\d+$/.test(place.membershipSourceUrl ?? '')
+    && place.distanceFromDestinationKm !== undefined && Math.abs(place.distanceFromDestinationKm - distanceKm(place, anchor)) < 0.02;
+  return normalized(place.city) === normalized(anchor.city);
 }
 
 /** Geographic proximity alone never proves city/country identity. */
@@ -79,97 +165,216 @@ export function entityBelongsToDestination(id: string, entities: Record<string, 
       const entity = entities[current];
       const names = [entity?.labels?.en?.value ?? '', ...(entity?.aliases?.en ?? []).map(alias => alias.value)];
       if (depth > 0 && names.some(name => normalized(name) === normalized(anchor.city))) cityMatch = true;
-      for (const country of ids(entity, 'P17')) {
+      for (const country of currentRelationshipIds(entity, 'P17')) {
         const codes = values(entities[country], 'P297');
         if (codes.includes(anchor.countryCode)) countryMatch = true;
         else if (codes.length) conflictingCountry = true;
       }
-      next.push(...ids(entity, 'P131'));
+      next.push(...currentRelationshipIds(entity, 'P131'));
     }
     frontier = next;
   }
   return cityMatch && countryMatch && !conflictingCountry;
 }
 
-export async function retrieveGroundedPlaces(anchor: DestinationAnchor, fetcher: typeof fetch = fetch, signal?: AbortSignal): Promise<GroundedPlace[]> {
-  const requestSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000);
-  const json = async (host: string, parameters: Record<string, string>) => {
+function conflictingCountry(id: string, entities: Record<string, Entity>, countryCode: string): boolean {
+  let frontier = [id]; const seen = new Set<string>();
+  for (let depth = 0; depth <= 4; depth++) {
+    const next: string[] = [];
+    for (const current of frontier) {
+      if (seen.has(current)) continue;
+      seen.add(current);
+      if (currentRelationshipIds(entities[current], 'P17').some(country => values(entities[country], 'P297').some(code => code !== countryCode))) return true;
+      next.push(...currentRelationshipIds(entities[current], 'P131'));
+    }
+    frontier = next;
+  }
+  return false;
+}
+
+export async function retrieveGroundedPlaces(anchor: DestinationAnchor, fetcher: typeof fetch = fetch, signal?: AbortSignal, includePhotos = true): Promise<GroundedPlace[]> {
+  const requestSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(90000)]) : AbortSignal.timeout(90000);
+  const json = async (host: string, parameters: Record<string, string>, photoSignal?: AbortSignal) => {
+    const started = Date.now();
     const response = await fetcher(`${host}/w/api.php?${new URLSearchParams({ format: 'json', ...parameters })}`, {
-      headers: { 'User-Agent': 'TravelMate/1.0 (destination reference lookup)', 'Api-User-Agent': 'TravelMate/1.0' }, signal: requestSignal,
+      headers: { 'User-Agent': 'TravelMate/1.0 (destination reference lookup)', 'Api-User-Agent': 'TravelMate/1.0' }, signal: photoSignal || requestSignal,
     });
-    if (!response.ok) throw new Error('Destination reference provider unavailable.');
+    console.info(JSON.stringify({ event: 'place_reference_request', provider: host, action: parameters.action, generator: parameters.generator, status: response.status, durationMs: Date.now() - started }));
+    if (!response.ok) throw new Error(`Destination reference provider unavailable (HTTP ${response.status}).`);
     const result = await response.json() as any;
     if (result.error) throw new Error('Destination reference provider rejected the lookup.');
     return result;
   };
-  const nearby = await json('https://en.wikipedia.org', {
-    action: 'query', generator: 'geosearch', ggscoord: `${anchor.latitude}|${anchor.longitude}`, ggsradius: '5000', ggslimit: '50', ggsnamespace: '0',
-    prop: 'coordinates|pageprops', coprimary: 'primary', ppprop: 'wikibase_item',
-  });
-  const pages = Object.values(nearby.query?.pages ?? {}) as Array<{ title: string; pageid: number; coordinates?: Array<{ lat: number; lon: number }>; pageprops?: { wikibase_item?: string } }>;
   const entities: Record<string, Entity> = {};
-  let frontier = pages.flatMap(page => /^Q\d+$/.test(page.pageprops?.wikibase_item ?? '') ? [page.pageprops!.wikibase_item!] : []);
-  for (let depth = 0; depth <= 5 && frontier.length; depth++) {
-    const missing = [...new Set(frontier)].filter(id => !entities[id]).slice(0, 150);
-    for (let offset = 0; offset < missing.length; offset += 50) {
-      const data = await json('https://www.wikidata.org', { action: 'wbgetentities', ids: missing.slice(offset, offset + 50).join('|'), props: 'labels|aliases|descriptions|claims', languages: 'en' });
-      Object.assign(entities, data.entities ?? {});
+  const pages: Array<{ title: string; pageid: number; coordinates?: Array<{ lat: number; lon: number }>; pageprops?: { wikibase_item?: string } }> = [];
+  let discoveryFailed = false;
+  const addPages = (data: any) => pages.push(...Object.values(data.query?.pages ?? {}) as typeof pages);
+  try { addPages(await json('https://en.wikipedia.org', {
+    action: 'query', generator: 'geosearch', ggscoord: `${anchor.latitude}|${anchor.longitude}`, ggsradius: '10000', ggslimit: '500', ggsnamespace: '0',
+    // Coordinates otherwise defaults to ten results, even when the generator returns many more pages.
+    prop: 'coordinates|pageprops', coprimary: 'primary', colimit: 'max', ppprop: 'wikibase_item',
+  })); } catch (error) { discoveryFailed = true; console.warn('[TravelMate places] Initial discovery failed:', error instanceof Error ? error.message : 'Request failed'); }
+  const hydrate = async () => {
+    let frontier = pages.flatMap(page => /^Q\d+$/.test(page.pageprops?.wikibase_item ?? '') ? [page.pageprops!.wikibase_item!] : []);
+    for (let depth = 0; depth <= 5 && frontier.length; depth++) {
+      const missing = [...new Set(frontier)].filter(id => !entities[id]);
+      for (let offset = 0; offset < missing.length; offset += 150) {
+        const batches = [0, 50, 100].map(chunk => missing.slice(offset + chunk, Math.min(offset + chunk + 50, offset + 150))).filter(batch => batch.length);
+        const results = await Promise.all(batches.map(batch => json('https://www.wikidata.org', { action: 'wbgetentities', ids: batch.join('|'), props: 'labels|aliases|descriptions|claims', languages: 'en' })));
+        for (const data of results) Object.assign(entities, data.entities ?? {});
+      }
+      frontier = missing.flatMap(id => [...(entities[id]?.claims?.P2555 ?? []).flatMap(claim=>{const unit=claim.mainsnak?.datavalue?.value?.unit;const match=typeof unit==='string'?unit.match(/Q\d+$/):undefined;return match?[match[0]]:[];}), ...currentRelationshipIds(entities[id], 'P131'), ...currentRelationshipIds(entities[id], 'P17'), ...(depth === 0 ? ids(entities[id], 'P31') : []), ...ids(entities[id], 'P3025'), ...(entities[id]?.claims?.P3025 ?? []).flatMap(claim => Object.values(claim.qualifiers ?? {}).flatMap(snaks => snaks.flatMap(snak => /^Q\d+$/.test(snak.datavalue?.value?.id) ? [snak.datavalue!.value.id] : [])))]);
     }
-    frontier = missing.flatMap(id => [...ids(entities[id], 'P131'), ...ids(entities[id], 'P17'), ...ids(entities[id], 'P3025'), ...(entities[id]?.claims?.P3025 ?? []).flatMap(claim => Object.values(claim.qualifiers ?? {}).flatMap(snaks => snaks.flatMap(snak => /^Q\d+$/.test(snak.datavalue?.value?.id) ? [snak.datavalue!.value.id] : [])))]);
-  }
+  };
+  await hydrate();
   const fetchedAt = new Date().toISOString();
-  const places = pages.flatMap(page => {
+  const rejected = new Map<string, string>();
+  const boundaries: PlaceBoundary[] = [];
+  const coordinateEvidence = new Map<string, { sourceUrl: string; city?: string }>();
+  const siteDescription = (entity: Entity | undefined) => {
+    const description = entity?.descriptions?.en?.value ?? '';
+    const types = ids(entity, 'P31').map(type => entities[type]?.labels?.en?.value ?? '').filter(Boolean);
+    return physicalAttractionDescription(description, types);
+  };
+  const collect = () => pages.flatMap(page => {
     const id = page.pageprops?.wikibase_item;
     const point = page.coordinates?.[0];
-    if (!id || !point || !Number.isFinite(point.lat) || !Number.isFinite(point.lon)) return [];
+    const reject = (reason: string) => { rejected.set(id ?? page.title, reason); return []; };
+    if (!id || !point || !Number.isFinite(point.lat) || !Number.isFinite(point.lon) || Math.abs(point.lat) > 90 || Math.abs(point.lon) > 180) return reject('missing-id-or-invalid-coordinates');
     const coordinate = { latitude: point.lat, longitude: point.lon };
     const entity = entities[id];
-    const description = entity?.descriptions?.en?.value ?? '';
-    if (!entityBelongsToDestination(id, entities, anchor) || distanceKm(anchor, coordinate) > 5
-      || !/museum|garden|park|temple|church|mosque|cathedral|castle|palace|tower|bridge|monument|beach|market|historic|heritage|tourist|square|library|gallery|theatre|theater|aquarium|zoo/i.test(description)
-      || /former|demolished|destroyed|proposed/i.test(description)) return [];
+    const description = siteDescription(entity);
+    if (distanceKm(anchor, coordinate) > MAX_PLACE_DISTANCE_KM) return reject('outside-supported-radius');
+    if (!description) return reject('not-a-supported-attraction');
+    if (/former|demolished|destroyed|proposed|defunct|no longer exists/i.test(entity?.descriptions?.en?.value ?? description) || values(entity, 'P576').length) return reject('no-longer-existing-or-proposed');
+    if (conflictingCountry(id, entities, anchor.countryCode)) return reject('conflicting-country-evidence');
+    const referencePoints = values(entity, 'P625').filter(value => Number.isFinite(value?.latitude) && Number.isFinite(value?.longitude) && value?.globe?.endsWith('/Q2'));
+    const corroboration = coordinateEvidence.get(id);
+    if (referencePoints.length && !referencePoints.some(point => distanceKm(coordinate, point) < 1) && !corroboration) return reject('conflicting-coordinate-evidence');
+    const boundary = boundaries.find(candidate => containsPlace(candidate, coordinate));
+    const local = entityBelongsToDestination(id, entities, anchor);
+    const selectedBoundary = boundaries.find(candidate => candidate.city === anchor.city);
+    // A named municipality is optional for a nearby site, but country and precise
+    // coordinates must agree across sources and the city polygon must exclude it.
+    const countryVerified = currentRelationshipIds(entity, 'P17').some(country => values(entities[country], 'P297').includes(anchor.countryCode));
+    const corroboratedNearby = !boundary && selectedBoundary && !containsPlace(selectedBoundary, coordinate) && (countryVerified || corroboration)
+      && (corroboration || referencePoints.some(point => Number.isFinite(point.precision) && point.precision <= 0.001 && distanceKm(coordinate, point) < 0.25));
+    if (!local && !boundary && !corroboratedNearby) return reject('city-or-country-membership-unverified');
+    if (local && boundaries[0]?.city === anchor.city && !containsPlace(boundaries[0], coordinate)) return reject('conflicting-city-boundary-evidence');
+    const city = boundary?.city ?? (corroboratedNearby ? corroboration?.city ?? 'Locality unconfirmed' : anchor.city);
+    const locationScope = city === anchor.city ? 'city' as const : 'nearby' as const;
+    rejected.delete(id);
     const name = entity.labels?.en?.value || page.title;
     return [{ provider: 'wikidata' as const, placeId: id, name, description: description.slice(0, 600), ...coordinate,
-      city: anchor.city, country: anchor.country, countryCode: anchor.countryCode,
-      sourceUrl: `https://www.wikidata.org/wiki/${id}`, fetchedAt, ...openingDetails(entity, entities),
+      city, country: anchor.country, countryCode: anchor.countryCode,
+      ...(boundary || corroboratedNearby ? { locationScope, selectedCity: anchor.city, distanceFromDestinationKm: Math.round(distanceKm(anchor, coordinate) * 100) / 100, membershipSourceUrl: (boundary ?? selectedBoundary)!.sourceUrl } : {}),
+      ...(corroboration ? { coordinateSourceUrl: corroboration.sourceUrl } : {}),
+      ...(admissionReference(entity,entities,id,fetchedAt) ? { admission: admissionReference(entity,entities,id,fetchedAt) } : {}), sourceUrl: `https://www.wikidata.org/wiki/${id}`, fetchedAt, ...openingDetails(entity, entities),
       file: values(entity, 'P18').find(value => typeof value === 'string') as string | undefined }];
   });
-  const files = [...new Set(places.flatMap(place => place.file ? [`File:${place.file}`] : []))].slice(0, 50);
+  let places = collect();
+  if (places.length < MIN_LOCAL_PLACE_COVERAGE) {
+    // GeoSearch's 10 km maximum and English-only coverage can omit local attractions.
+    // CirrusSearch is bounded to 30 km; every result still passes the same membership checks.
+    const languages = ['en', ...(countries[anchor.countryCode as TCountryCode]?.languages ?? []).filter(language => /^[a-z]{2,3}$/.test(language) && language !== 'en').slice(0, 2)];
+    for (const language of languages) {
+      try { addPages(await json(`https://${language}.wikipedia.org`, { action: 'query', generator: 'search', gsrsearch: `nearcoord:${MAX_PLACE_DISTANCE_KM}km,${anchor.latitude},${anchor.longitude}`, gsrlimit: '500', gsrnamespace: '0', prop: 'coordinates|pageprops', coprimary: 'primary', colimit: 'max', ppprop: 'wikibase_item' })); }
+      catch (error) { discoveryFailed = true; console.warn('[TravelMate places] Expanded discovery failed:', error instanceof Error ? error.message : 'Request failed'); }
+    }
+    await hydrate();
+    places = collect();
+  }
+  // Resolve missing administrative chains using one selected-city polygon, not radius alone.
+  if (pages.some(page => siteDescription(entities[page.pageprops?.wikibase_item ?? '']) && !entityBelongsToDestination(page.pageprops?.wikibase_item ?? '', entities, anchor))) {
+    const selected = await loadPlaceBoundary(anchor, fetcher);
+    if (selected) boundaries.push(selected);
+    // Bound the extra requests to six evidenced neighboring municipalities, never provinces.
+    const candidates = new Map<string, number>();
+    for (const page of pages) {
+      const entity = entities[page.pageprops?.wikibase_item ?? ''];
+      const point = page.coordinates?.[0];
+      if (!siteDescription(entity) || !point || distanceKm(anchor, { latitude: point.lat, longitude: point.lon }) > MAX_PLACE_DISTANCE_KM) continue;
+      for (const id of currentRelationshipIds(entity, 'P131')) {
+        const admin = entities[id], name = admin?.labels?.en?.value;
+        if (name && normalized(name) !== normalized(anchor.city) && /city|county|town|municipality|district|administrative division/i.test(`${name} ${admin?.descriptions?.en?.value ?? ''}`)
+          && !/^(?:province|state|region)\b/i.test(admin?.descriptions?.en?.value ?? '') && !/\b(?:province|state|region)\b/i.test(name) && values(admin, 'P625').length) candidates.set(id, (candidates.get(id) ?? 0) + 1);
+      }
+    }
+    for (const [id] of [...candidates].sort((a, b) => b[1] - a[1]).slice(0, 6)) {
+      const admin = entities[id], point = values(admin, 'P625')[0];
+      const boundary = await loadPlaceBoundary({ ...anchor, city: admin.labels!.en!.value, latitude: point.latitude, longitude: point.longitude }, fetcher, id);
+      if (boundary) boundaries.push(boundary);
+    }
+    places = collect();
+  }
+  // A bounded exact-venue lookup can resolve missing/conflicting metadata. It
+  // never accepts a geocoder's unrelated result or changes the source coordinate.
+  const checked = new Set<string>();
+  for (const page of pages) {
+    const id = page.pageprops?.wikibase_item, point = page.coordinates?.[0];
+    if (!id || !point || checked.has(id) || checked.size >= 8 || !['conflicting-coordinate-evidence', 'city-or-country-membership-unverified'].includes(rejected.get(id) ?? '')) continue;
+    checked.add(id);
+    const result = await corroboratePlaceCoordinate(entities[id]?.labels?.en?.value || page.title, id, { latitude: point.lat, longitude: point.lon }, anchor, fetcher);
+    if (result) coordinateEvidence.set(id, result);
+  }
+  if (coordinateEvidence.size) places = collect();
+  // Merge a component only when the source explicitly links it to a catalog site.
+  // Proximity alone must not discard an independently referenced attraction.
+  const complexes = places.filter(place => /temple|castle|palace|museum|park|garden/i.test(place.description));
+  places = places.filter(place => {
+    const parents = [...ids(entities[place.placeId], 'P361'), ...ids(entities[place.placeId], 'P276')];
+    const parent = complexes.find(candidate => candidate.placeId !== place.placeId && parents.includes(candidate.placeId));
+    if (!parent) return true;
+    rejected.set(place.placeId, `part-of-visit:${parent.placeId}`); return false;
+  });
+  console.info(JSON.stringify({ event: 'place_catalog_validation', city: anchor.city, countryCode: anchor.countryCode, returnedArticles: pages.length, acceptedPlaces: new Set(places.map(place => place.placeId)).size, rejected: [...rejected].map(([placeId, reason]) => ({ placeId, reason })), discoveryFailed }));
+  if (!places.length && discoveryFailed) throw new Error('Place discovery was incomplete because a provider request failed.');
+  if (!includePhotos) {
+    const seen = new Set<string>();
+    return places.filter(place => !seen.has(place.placeId) && !!seen.add(place.placeId)).map(({ file: _file, ...place }) => place);
+  }
+  const files = [...new Set(places.flatMap(place => place.file ? [`File:${place.file}`] : []))];
   const images = new Map<string, { imageUrl: string; imageAttribution: GroundedPlace['imageAttribution'] }>();
+  const photoRejected: Array<{ file: string; reason: string }> = [];
   if (files.length) {
     try {
-      const data = await json('https://commons.wikimedia.org', { action: 'query', titles: files.join('|'), prop: 'imageinfo', iiprop: 'url|extmetadata|mime', iiurlwidth: '1200' });
-      for (const page of Object.values(data.query?.pages ?? {}) as any[]) {
-        const info = page.imageinfo?.[0];
-        const metadata = info?.extmetadata ?? {};
-        const license = strip(metadata.LicenseShortName?.value);
-        const creator = strip(metadata.Artist?.value);
-        const imageUrl = info?.thumburl || info?.url;
-        // No unattributed images, local artwork, maps, or AI illustrations.
-        if (!creator || !/CC BY|CC0|public domain/i.test(license) || !/^image\/(jpeg|png|webp|avif)$/.test(info?.mime ?? '')
-          || !/^https:\/\/(upload|thumb)\.wikimedia\.org\//.test(imageUrl ?? '')
-          || /\b(map|logo|drawing|illustration|AI-generated|AI generated)\b/i.test(`${page.title} ${strip(metadata.ImageDescription?.value)}`)) continue;
-        const ccLicense = license.match(/^CC (BY(?:-SA)?)(?: )([\d.]+)$/i);
-        const licenseUrl = /^https:\/\//.test(metadata.LicenseUrl?.value ?? '') ? metadata.LicenseUrl.value
-          : ccLicense ? `https://creativecommons.org/licenses/${ccLicense[1].toLowerCase()}/${ccLicense[2]}/` : /^CC0$/i.test(license) ? 'https://creativecommons.org/publicdomain/zero/1.0/' : undefined;
-        images.set(page.title, { imageUrl, imageAttribution: { creator: creator.slice(0, 200), license, licenseUrl,
-          sourceUrl: `https://commons.wikimedia.org/?curid=${page.pageid}` } });
+      const photoSignal = AbortSignal.any([requestSignal, AbortSignal.timeout(7000)]);
+      for (let offset = 0; offset < files.length; offset += 50) {
+        const data = await json('https://commons.wikimedia.org', { action: 'query', titles: files.slice(offset, offset + 50).join('|'), prop: 'imageinfo', iiprop: 'url|extmetadata|mime', iiurlwidth: '1200' }, photoSignal);
+        for (const page of Object.values(data.query?.pages ?? {}) as any[]) {
+          const info = page.imageinfo?.[0];
+          const metadata = info?.extmetadata ?? {};
+          const license = strip(metadata.LicenseShortName?.value);
+          const licenseUrl = reusableWikimediaLicense(license, metadata.LicenseUrl?.value);
+          const creator = strip(metadata.Artist?.value);
+          const imageUrl = info?.thumburl || info?.url;
+          // No unattributed images, local artwork, maps, or AI illustrations.
+          const reason = !info ? 'missing-imageinfo' : !creator || creator.length > 200 ? 'missing-or-oversized-creator' : !licenseUrl || metadata.Restrictions?.value?.trim() || /^(true|1)$/i.test(metadata.NonFree?.value || '') ? 'unsupported-license'
+            : !/^image\/(jpeg|png|webp|avif)$/.test(info?.mime ?? '') ? 'unsupported-image-format'
+            : !/^https:\/\/(upload|thumb)\.wikimedia\.org\//.test(imageUrl ?? '') ? 'invalid-image-host'
+            : nonPhotographicPlaceImage(`${page.title} ${strip(metadata.ImageDescription?.value)} ${strip(metadata.ObjectName?.value)} ${strip(metadata.Categories?.value)} ${strip(metadata.Medium?.value)}`, creator) ? 'non-photographic-content' : undefined;
+          if (reason) { photoRejected.push({ file: page.title, reason }); continue; }
+          images.set(page.title.replaceAll('_', ' ').normalize('NFC'), { imageUrl, imageAttribution: { creator, license, licenseUrl: licenseUrl!,
+            sourceUrl: `https://commons.wikimedia.org/?curid=${page.pageid}` } });
+        }
       }
-    } catch { /* Missing photos must not prevent a reference-backed plan. */ }
+    } catch (error) { console.warn('[TravelMate places] Exact-place photo metadata failed:', error instanceof Error ? error.message : 'Request failed'); }
   }
-  const used = new Set<string>();
-  return places.map(({ file, ...place }) => {
-    const image = file ? images.get(`File:${file}`) : undefined;
+  console.info(JSON.stringify({ event: 'place_photo_mapping', city: anchor.city, requestedFiles: files.length, acceptedFiles: images.size, rejected: photoRejected,
+    placesWithoutP18: [...new Set(places.filter(place => !place.file).map(place => place.placeId))] }));
+  const used = new Set<string>(), idsSeen = new Set<string>();
+  return places.filter(place => !idsSeen.has(place.placeId) && !!idsSeen.add(place.placeId)).map(({ file, ...place }) => {
+    const image = file ? images.get(`File:${file}`.replaceAll('_', ' ').normalize('NFC')) : undefined;
     if (!image || used.has(image.imageUrl)) return place;
     used.add(image.imageUrl);
     return { ...place, ...image };
   });
 }
 
-export async function loadGroundedPlaces(anchor: DestinationAnchor, signal?: AbortSignal) {
-  const key = `grounded-places:${anchor.countryCode}:${normalized(anchor.city)}:${anchor.latitude.toFixed(5)}:${anchor.longitude.toFixed(5)}`;
+export async function loadGroundedPlaces(anchor: DestinationAnchor, signal?: AbortSignal, includePhotos = true) {
+  const key = `grounded-places:v11:${includePhotos ? 'photos' : 'places'}:${anchor.countryCode}:${normalized(anchor.city)}:${anchor.latitude.toFixed(5)}:${anchor.longitude.toFixed(5)}`;
   try {
-    const result = await withProviderCache(key, { source: 'activities', freshForMs: 6 * 3600000, staleForMs: 24 * 3600000 }, () => retrieveGroundedPlaces(anchor, fetch, signal));
+    const result = await withProviderCache(key, { source: 'activities', freshForMs: 6 * 3600000, staleForMs: 24 * 3600000 }, () => retrieveGroundedPlaces(anchor, fetch, signal, includePhotos));
     return { places: result.value, status: result.freshness.status };
   } catch { return { places: [] as GroundedPlace[], status: 'unavailable' as const }; }
 }

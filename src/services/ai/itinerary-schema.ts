@@ -41,7 +41,7 @@ const budgetSummarySchema = z.object({
 }).strict();
 
 const generatedItinerarySchema = z.object({
-  destination: z.string().trim().min(2).max(120),
+  destination: z.string().trim().min(2).max(2000),
   totalBudget: money(1_000_000_000, true),
   currency: z.enum(SUPPORTED_CURRENCIES),
   days: z.array(daySchema).min(1).max(31),

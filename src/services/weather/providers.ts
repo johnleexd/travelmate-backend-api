@@ -40,6 +40,7 @@ export class OpenMeteoWeatherProvider implements WeatherProvider {
     const response = await this.fetchImplementation(`https://api.open-meteo.com/v1/forecast?latitude=${place.latitude}&longitude=${place.longitude}&current=${currentFields}&daily=${dailyFields}&wind_speed_unit=ms&timezone=auto&forecast_days=14`, { signal: AbortSignal.timeout(10_000) });
     if (!response.ok) return null;
     const result = await response.json() as {
+      timezone?: string;
       current?: { temperature_2m: number; apparent_temperature: number; relative_humidity_2m: number; wind_speed_10m: number; weather_code: number };
       daily?: { time: string[]; weather_code: number[]; temperature_2m_max: number[]; temperature_2m_min: number[]; precipitation_probability_max: number[] };
     };
@@ -60,6 +61,7 @@ export class OpenMeteoWeatherProvider implements WeatherProvider {
     const windSpeed = Math.round(current.wind_speed_10m * 10) / 10;
     return {
       source: this.source, city: [place.name, place.admin1].filter(Boolean).join(', '), country: place.country || place.country_code || '',
+      ...(typeof result.timezone === 'string' ? { timeZone: result.timezone } : {}),
       temperature, feelsLike: Math.round(current.apparent_temperature), humidity, windSpeed, description: details.description,
       icon: details.icon, iconUrl: `https://openweathermap.org/img/wn/${details.icon}@2x.png`,
       alerts: currentAlerts({ temperature, windSpeed, humidity, condition: details.description === 'thunderstorm' ? 'Thunderstorm' : details.description.includes('rain') ? 'Rain' : '' }),
@@ -69,6 +71,7 @@ export class OpenMeteoWeatherProvider implements WeatherProvider {
 }
 
 interface OpenWeatherCurrent {
+  timezone?: number;
   name?: string;
   coord?: { lat: number; lon: number };
   sys?: { country?: string };
@@ -78,10 +81,22 @@ interface OpenWeatherCurrent {
 }
 
 interface ThreeHourEntry {
+  dt?: number;
   dt_txt?: string;
   main?: { temp_min: number; temp_max: number };
   pop?: number;
   weather?: Array<{ description?: string; icon?: string }>;
+}
+
+function destinationForecastDate(timestamp: number, zone?: string, offset?: number): string | undefined {
+  if (!Number.isFinite(timestamp) || !Number.isFinite(new Date(timestamp).getTime())) return undefined;
+  if (zone) {
+    try {
+      const parts = new Intl.DateTimeFormat('en', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(timestamp));
+      return ['year', 'month', 'day'].map(type => parts.find(part => part.type === type)!.value).join('-');
+    } catch { /* Fall back only to an actual provider UTC offset. */ }
+  }
+  return typeof offset === 'number' && Number.isFinite(offset) && Math.abs(offset) <= 50400 ? new Date(timestamp + offset * 1000).toISOString().slice(0, 10) : undefined;
 }
 
 export class OpenWeatherMapProvider implements WeatherProvider {
@@ -105,10 +120,13 @@ export class OpenWeatherMapProvider implements WeatherProvider {
     if (!currentResponse.ok) return null;
     const current = await currentResponse.json() as OpenWeatherCurrent;
     if (!current.main || !current.wind || !Array.isArray(current.weather)) return null;
-    const rawForecast = forecastResponse.ok ? await forecastResponse.json() as { list?: ThreeHourEntry[] } : undefined;
+    const rawForecast = forecastResponse.ok ? await forecastResponse.json() as { list?: ThreeHourEntry[]; city?: { timezone?: number } } : undefined;
+    const forecastOffset = rawForecast?.city?.timezone ?? current.timezone;
+    let timeZone: string | undefined;
     const daily = new Map<string, { mins: number[]; maxs: number[]; rain: number[]; description: string; icon: string }>();
     for (const entry of rawForecast?.list || []) {
-      const date = entry.dt_txt?.split(' ')[0];
+      const epoch = typeof entry.dt === 'number' ? entry.dt * 1000 : Date.parse((entry.dt_txt ?? '').replace(' ', 'T') + 'Z');
+      const date = destinationForecastDate(epoch, undefined, forecastOffset);
       if (!date || !entry.main) continue;
       const bucket = daily.get(date) || { mins: [], maxs: [], rain: [], description: entry.weather?.[0]?.description || 'variable conditions', icon: entry.weather?.[0]?.icon || '03d' };
       bucket.mins.push(entry.main.temp_min); bucket.maxs.push(entry.main.temp_max); bucket.rain.push((entry.pop || 0) * 100); daily.set(date, bucket);
@@ -122,10 +140,12 @@ export class OpenWeatherMapProvider implements WeatherProvider {
       try {
         const response = await this.fetchImplementation(`https://api.openweathermap.org/data/3.0/onecall?lat=${current.coord.lat}&lon=${current.coord.lon}&exclude=minutely,hourly&appid=${this.apiKey}&units=metric`, { signal: AbortSignal.timeout(10_000) });
         if (response.ok) {
-          const result = await response.json() as { daily?: Array<{ dt: number; temp: { min: number; max: number }; pop?: number; weather?: Array<{ description?: string; icon?: string }> }> };
-          const dailyForecast = (result.daily || []).slice(0, 7).map((day): ForecastDay => {
+          const result = await response.json() as { timezone?: string; timezone_offset?: number; daily?: Array<{ dt: number; temp: { min: number; max: number }; pop?: number; weather?: Array<{ description?: string; icon?: string }> }> };
+          if (result.timezone) { try { timeZone = new Intl.DateTimeFormat('en', { timeZone: result.timezone }).resolvedOptions().timeZone; } catch { /* Unavailable zone stays absent. */ } }
+          const dailyForecast = (result.daily || []).slice(0, 7).flatMap((day): ForecastDay[] => {
             const description = day.weather?.[0]?.description || 'variable conditions'; const icon = day.weather?.[0]?.icon || '03d'; const rainChance = (day.pop || 0) * 100;
-            return normalizedForecastDay({ date: new Date(day.dt * 1000).toISOString().slice(0, 10), tempMin: day.temp.min, tempMax: day.temp.max, description, icon, iconUrl: `https://openweathermap.org/img/wn/${icon}@2x.png`, precipitationProbability: rainChance, weatherAlert: forecastAlert(description, rainChance, day.temp.max) });
+            const date = destinationForecastDate(day.dt * 1000, timeZone, result.timezone_offset ?? forecastOffset);
+            return date ? [normalizedForecastDay({ date, tempMin: day.temp.min, tempMax: day.temp.max, description, icon, iconUrl: `https://openweathermap.org/img/wn/${icon}@2x.png`, precipitationProbability: rainChance, weatherAlert: forecastAlert(description, rainChance, day.temp.max) })] : [];
           });
           if (dailyForecast.length) forecast = dailyForecast;
         }
@@ -136,6 +156,7 @@ export class OpenWeatherMapProvider implements WeatherProvider {
     const description = current.weather[0]?.description || 'variable conditions'; const icon = current.weather[0]?.icon || '03d';
     return {
       source: this.source, city: current.name || request.city, country: current.sys?.country || '', temperature,
+      ...(timeZone ? { timeZone } : {}),
       feelsLike: Math.round(current.main.feels_like), humidity, windSpeed, description, icon,
       iconUrl: `https://openweathermap.org/img/wn/${icon}@2x.png`, alerts: currentAlerts({ temperature, windSpeed, humidity, condition }),
       forecast, forecastAvailable: forecast.length > 0,

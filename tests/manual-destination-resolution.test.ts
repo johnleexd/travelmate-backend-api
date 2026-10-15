@@ -20,22 +20,28 @@ test('compound region/country names are parsed and filtered without mixing same-
     const url = new URL(String(input)); assert.equal(url.searchParams.get('name'),'Cordova'); assert.equal(url.searchParams.get('countryCode'),'PH');
     return Response.json({results:[{id:1,name:'Cordova',feature_code:'PPL',country_code:'PH',country:'Philippines',admin1:'Western Visayas',admin2:'Iloilo',latitude:10.73,longitude:122.4}]});
   };
-  assert.equal((await searchGlobalLocations('Cordova, Cebu Philippines',fake)).length,0);
+  const result=await searchGlobalLocations('Cordova, Cebu Philippines',fake);
+  assert.equal(result.length,1); assert.equal(result[0].providerId,'0702220000'); assert.equal(result[0].provinceCode,'0702200000');
 });
-test('manual resolution supplies actual coordinates, country and OSM ID; subsequent suggestions share that identity', async () => {
+test('manual resolution reuses official Philippine identity and its crosswalk geocode; subsequent suggestions share that identity', async () => {
   const urls: string[]=[];
   const result = await resolveDestination('Cordova, Cebu Philippines',async input => {
     urls.push(String(input)); return String(input).includes('geocoding-api') ? Response.json({results:[]}) : Response.json([geocoded]);
   });
-  assert.equal(result.location?.countryCode,'PH'); assert.equal(result.location?.providerId,'relation:10337872');
-  assert.equal(result.location?.latitude,10.2521909); assert.equal(resolveDestinationContext(result.location!.countryCode,result.location!.name).currency,'PHP');
-  assert.match(urls.at(-1)!,/q=Cordova%2C\+Cebu%2C\+Philippines/);
+  assert.equal(result.location?.countryCode,'PH'); assert.equal(result.location?.providerId,'0702220000');
+  assert.ok(Number.isFinite(result.location?.latitude)); assert.equal(resolveDestinationContext(result.location!.countryCode,result.location!.name).currency,'PHP');
+  assert.equal(urls.length,0, 'Existing verified geocodes need no new provider request.');
   const suggestions = await searchGlobalLocations('Cordova, Cebu Philippines',async () => {throw Error('Must use resolved cache.');});
   assert.equal(suggestions[0].providerId,result.location?.providerId);
 });
 test('geocoder identity filtering rejects wrong-country/region, road and malformed results', () => {
   const rows = normalizeResolvedPlaces([geocoded,{...geocoded,place_id:2,address:{...geocoded.address,state:'Iloilo'}},{...geocoded,place_id:3,address:{...geocoded.address,country_code:'es'}},{...geocoded,place_id:4,addresstype:'road'},{...geocoded,place_id:5,lat:'not a coordinate'}],'Cordova, Cebu, Philippines');
   assert.equal(rows.length,1); assert.ok(rows[0].bounds);
+});
+test('explicit geocoder types distinguish province, city, town and unconfirmed settlements', () => {
+  for (const [addresstype,expected] of [['province','Province'],['city','City'],['town','Town'],['municipality','Municipality'],['village','Settlement (type unconfirmed)']]) {
+    assert.equal(normalizeResolvedPlaces([{...geocoded,addresstype}],'Cordova, Cebu, Philippines')[0]?.placeType,expected);
+  }
 });
 test('ambiguous manual names require selection instead of blindly choosing the first result', async () => {
   const result = await resolveDestination('Unlisted Twin, France',async () => Response.json({results:[1,2].map(id=>({id:999900000+id,name:'Unlisted Twin',feature_code:'PPL',country:'France',country_code:'FR',admin1:`Different region ${id}`,latitude:45+id,longitude:2,population:200000}))}));

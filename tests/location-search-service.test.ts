@@ -42,12 +42,12 @@ for (const [query, expectedCountry, featureCode, population] of [
       place(`${query} Dam`, 'DAM', expectedCountry, 'AA'),
     ]);
     assert.equal(results[0]?.country, expectedCountry);
-    assert.equal(results.some((result) => result.country === 'Unrelated country'), false);
+    assert.equal(results.some((result) => result.country === 'Unrelated country'), true, 'Small same-name places remain searchable, with country labels.');
     assert.match(results[0]?.contextLabel || '', / • /);
   });
 }
 
-test('Cebu keeps the relevant island and Cebu City while suppressing unrelated localities', () => {
+test('Cebu ranks the island and city first while preserving similarly named places with country labels', () => {
   const results = rankLocationSuggestions('Cebu', [
     place('Cebu', 'PPL', 'Dominican Republic', 'DO'),
     place('Cebu', 'ISL', 'Philippines', 'PH', 4_164_535, 'Central Visayas'),
@@ -55,18 +55,18 @@ test('Cebu keeps the relevant island and Cebu City while suppressing unrelated l
     place('Cebu', 'PPL', 'China', 'CN'),
     place('Cebuano', 'PPL', 'Philippines', 'PH', 5_430, 'Soccsksargen'),
   ]);
-  assert.deepEqual(results.map((result) => result.name), ['Cebu', 'Cebu City']);
-  assert.ok(results.every((result) => result.countryCode === 'PH'));
+  assert.deepEqual(results.slice(0,2).map((result) => result.name), ['Cebu', 'Cebu City']);
+  assert.equal(results.length,5);
 });
 
-test('a strong exact city match suppresses low-prominence prefix noise', () => {
+test('a strong exact city match ranks first without deleting smaller valid prefix matches', () => {
   const results = rankLocationSuggestions('London', [
     place('London', 'PPLC', 'United Kingdom', 'GB', 8_961_989, 'England'),
     place('London', 'PPL', 'Canada', 'CA', 422_324, 'Ontario'),
     place('Londonderry', 'PPLA2', 'United Kingdom', 'GB', 83_652, 'Northern Ireland'),
     place('Londontowne', 'PPL', 'United States', 'US', 8_018, 'Maryland'),
   ]);
-  assert.deepEqual(results.map((result) => result.label), ['London, England, United Kingdom', 'London, Ontario, Canada']);
+  assert.deepEqual(results.map((result) => result.label), ['London, England, United Kingdom', 'London, Ontario, Canada', 'Londonderry, Northern Ireland, United Kingdom', 'Londontowne, Maryland, United States']);
 });
 
 test('ambiguous major cities remain distinguishable instead of being blindly deduplicated', () => {
@@ -76,8 +76,8 @@ test('ambiguous major cities remain distinguishable instead of being blindly ded
     place('Springfield', 'PPL', 'United States', 'US', 154_341, 'Massachusetts'),
     place('Springfield', 'PPL', 'Another country', 'ZZ'),
   ]);
-  assert.equal(results.length, 3);
-  assert.deepEqual(new Set(results.map((result) => result.region)), new Set(['Missouri', 'Illinois', 'Massachusetts']));
+  assert.equal(results.length, 4);
+  assert.deepEqual(new Set(results.map((result) => result.region)), new Set(['Missouri', 'Illinois', 'Massachusetts', '']));
 });
 
 test('country codes resolve capitals globally from structured country data', () => {

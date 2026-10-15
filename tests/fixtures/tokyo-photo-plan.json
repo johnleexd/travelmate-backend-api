@@ -1,0 +1,353 @@
+{
+  "destination": "Tokyo, Japan",
+  "totalBudget": 30000,
+  "currency": "JPY",
+  "source": "gemini",
+  "partyType": "solo",
+  "travelers": 1,
+  "preferences": {
+    "pace": "balanced",
+    "travelStyle": "balanced",
+    "accommodation": "no preference",
+    "transportation": "practical local transport",
+    "activities": []
+  },
+  "budgetOptimization": {
+    "status": "within_budget",
+    "targetSpend": 30000,
+    "amountToTarget": 0,
+    "combinedEstimatedSavings": 0,
+    "projectedSpendIfAllApplied": 18480,
+    "remainingGapAfterSuggestions": 0,
+    "suggestions": [],
+    "disclaimer": "Planning estimates only. Nothing is changed automatically; verify current prices and availability before editing the itinerary."
+  },
+  "selectedTravelCosts": {
+    "activities": [],
+    "total": 0
+  },
+  "costSharing": {
+    "partyType": "solo",
+    "travelers": 1,
+    "groupBudget": 30000,
+    "plannedGroupSpend": 18480,
+    "budgetShares": [
+      30000
+    ],
+    "plannedSpendShares": [
+      18480
+    ],
+    "accommodationShares": [
+      0
+    ],
+    "reserveShares": [
+      11520
+    ]
+  },
+  "days": [
+    {
+      "day": 1,
+      "date": "2026-10-15",
+      "theme": "Tokyo: Shinjuku Gyoen, Meiji Shrine Outer Garden, Watari Museum of Contemporary Art",
+      "imageUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/9d/Shinjuku_Gyoen_National_Garden_-_sakura_3.JPG/1280px-Shinjuku_Gyoen_National_Garden_-_sakura_3.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+      "imageAttribution": {
+        "creator": "Kakidai",
+        "license": "CC BY-SA 3.0",
+        "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0",
+        "sourceUrl": "https://commons.wikimedia.org/?curid=19072665"
+      },
+      "travelNote": "Suggested verified city and nearby visits; visit durations and walking transfers are estimates. Nearby visits reserve return travel to the selected city. Confirm current hours and access. Stops use verified city/country records. Transfers estimate straight-line walking at 4 km/h plus 15 minutes; real routes, hours and traffic need confirmation.",
+      "rideFare": 4200,
+      "totalCost": 16800,
+      "activities": [
+        {
+          "id": "616f9ee4-5b44-4af2-9e70-d31be561ed4c",
+          "status": "planned",
+          "time": "09:41 AM",
+          "title": "Visit Shinjuku Gyoen",
+          "description": "Opening hours need confirmation. park and garden in Shinjuku and Shibuya, Tokyo, Japan. Suggested 120-minute visit. Opening hours: Opening hours need confirmation. Tuesday to Sunday: 09:00–16:30; Tuesday to Sunday: 09:00–18:00; Tuesday to Sunday: 09:00–19:00; Tuesday to Sunday: 09:00–18:00 (Wikidata reference; seasonal/holiday exceptions and current hours need confirmation). Address: Not available.",
+          "estimatedCost": 2000,
+          "durationMinutes": 120,
+          "travelMinutes": 0,
+          "unitCost": 2000,
+          "category": "activity",
+          "icon": "map",
+          "imageUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/9d/Shinjuku_Gyoen_National_Garden_-_sakura_3.JPG/1280px-Shinjuku_Gyoen_National_Garden_-_sakura_3.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+          "imageAttribution": {
+            "creator": "Kakidai",
+            "license": "CC BY-SA 3.0",
+            "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0",
+            "sourceUrl": "https://commons.wikimedia.org/?curid=19072665"
+          },
+          "placeVerification": "supporting-source-found",
+          "place": {
+            "provider": "wikidata",
+            "placeId": "Q776863",
+            "name": "Shinjuku Gyoen",
+            "city": "Tokyo",
+            "country": "Japan",
+            "countryCode": "JP",
+            "latitude": 35.685,
+            "longitude": 139.71,
+            "sourceUrl": "https://www.wikidata.org/wiki/Q776863",
+            "fetchedAt": "2026-10-11T19:14:36.205Z",
+            "openingHours": "Opening hours need confirmation. Tuesday to Sunday: 09:00–16:30; Tuesday to Sunday: 09:00–18:00; Tuesday to Sunday: 09:00–19:00; Tuesday to Sunday: 09:00–18:00 (Wikidata reference; seasonal/holiday exceptions and current hours need confirmation)",
+            "address": "Not available",
+            "locationScope": "city",
+            "selectedCity": "Tokyo",
+            "distanceFromDestinationKm": 1.73,
+            "membershipSourceUrl": "https://www.openstreetmap.org/relation/1543125"
+          },
+          "priceEvidence": {
+            "status": "estimate",
+            "basis": "Planning allowance: 20% of the entered budget divided across catalog visits and participants. Admission prices are unavailable; this does not imply free entry.",
+            "source": "budget-allowance",
+            "fetchedAt": "2026-10-11T19:14:52.093Z",
+            "currency": "JPY",
+            "unitAmount": 2000,
+            "quantity": 1,
+            "unit": "per-person",
+            "participants": 1,
+            "needsConfirmation": true
+          },
+          "scheduleLabel": "Suggested"
+        },
+        {
+          "id": "d1b55519-ccaa-432e-9517-2a0ace58d58c",
+          "status": "planned",
+          "time": "01:17 PM",
+          "title": "Visit Meiji Shrine Outer Garden",
+          "description": "Opening hours need confirmation. garden in Tokyo, Japan. Suggested 90-minute visit. Allow at least 32 minutes from the previous stop (straight-line walking estimate plus 15-minute buffer; confirm the real route). Address: Not available.",
+          "estimatedCost": 2000,
+          "durationMinutes": 90,
+          "travelMinutes": 32,
+          "unitCost": 2000,
+          "category": "activity",
+          "icon": "map",
+          "imageUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1d/Jingu_Gaien_Ginkgo_Street_in_Autumn_4.jpg/1280px-Jingu_Gaien_Ginkgo_Street_in_Autumn_4.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+          "imageAttribution": {
+            "creator": "Kakidai",
+            "license": "CC BY-SA 4.0",
+            "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+            "sourceUrl": "https://commons.wikimedia.org/?curid=53417094"
+          },
+          "placeVerification": "supporting-source-found",
+          "place": {
+            "provider": "wikidata",
+            "placeId": "Q6631448",
+            "name": "Meiji Shrine Outer Garden",
+            "city": "Tokyo",
+            "country": "Japan",
+            "countryCode": "JP",
+            "latitude": 35.6775,
+            "longitude": 139.71833333,
+            "sourceUrl": "https://www.wikidata.org/wiki/Q6631448",
+            "fetchedAt": "2026-10-11T19:14:36.205Z",
+            "openingHours": "Opening hours need confirmation",
+            "address": "Not available",
+            "locationScope": "city",
+            "selectedCity": "Tokyo",
+            "distanceFromDestinationKm": 2.75,
+            "membershipSourceUrl": "https://www.openstreetmap.org/relation/1543125"
+          },
+          "priceEvidence": {
+            "status": "estimate",
+            "basis": "Planning allowance: 20% of the entered budget divided across catalog visits and participants. Admission prices are unavailable; this does not imply free entry.",
+            "source": "budget-allowance",
+            "fetchedAt": "2026-10-11T19:14:52.093Z",
+            "currency": "JPY",
+            "unitAmount": 2000,
+            "quantity": 1,
+            "unit": "per-person",
+            "participants": 1,
+            "needsConfirmation": true
+          },
+          "scheduleLabel": "Suggested"
+        },
+        {
+          "id": "dc7ba81c-ee85-4efb-9c26-806029a2aebc",
+          "status": "planned",
+          "time": "03:16 PM",
+          "title": "Visit Watari Museum of Contemporary Art",
+          "description": "Opening hours need confirmation. museum in Japan. Suggested 90-minute visit. Allow at least 29 minutes from the previous stop (straight-line walking estimate plus 15-minute buffer; confirm the real route). Address: Not available.",
+          "estimatedCost": 2000,
+          "durationMinutes": 90,
+          "travelMinutes": 29,
+          "unitCost": 2000,
+          "category": "activity",
+          "icon": "map",
+          "imageUrl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e4/Watarium.jpg/1280px-Watarium.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+          "imageAttribution": {
+            "creator": "Wiiii",
+            "license": "CC BY-SA 3.0",
+            "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0",
+            "sourceUrl": "https://commons.wikimedia.org/?curid=5043596"
+          },
+          "placeVerification": "supporting-source-found",
+          "place": {
+            "provider": "wikidata",
+            "placeId": "Q3915469",
+            "name": "Watari Museum of Contemporary Art",
+            "city": "Tokyo",
+            "country": "Japan",
+            "countryCode": "JP",
+            "latitude": 35.670695,
+            "longitude": 139.713365,
+            "sourceUrl": "https://www.wikidata.org/wiki/Q3915469",
+            "fetchedAt": "2026-10-11T19:14:36.205Z",
+            "openingHours": "Opening hours need confirmation",
+            "address": "Not available",
+            "locationScope": "city",
+            "selectedCity": "Tokyo",
+            "distanceFromDestinationKm": 2.86,
+            "membershipSourceUrl": "https://www.openstreetmap.org/relation/1543125"
+          },
+          "priceEvidence": {
+            "status": "estimate",
+            "basis": "Planning allowance: 20% of the entered budget divided across catalog visits and participants. Admission prices are unavailable; this does not imply free entry.",
+            "source": "budget-allowance",
+            "fetchedAt": "2026-10-11T19:14:52.093Z",
+            "currency": "JPY",
+            "unitAmount": 2000,
+            "quantity": 1,
+            "unit": "per-person",
+            "participants": 1,
+            "needsConfirmation": true
+          },
+          "scheduleLabel": "Suggested"
+        },
+        {
+          "id": "c235757c-fef3-4914-9066-911607bb0253",
+          "time": "Daily allowance",
+          "title": "Daily meals in Tokyo",
+          "description": "Daily allowance for all meals, not the price of one restaurant visit. Venue and menu: Not available; choose and confirm locally.",
+          "estimatedCost": 6600,
+          "unitCost": 6600,
+          "category": "food",
+          "icon": "food",
+          "priceEvidence": {
+            "status": "estimate",
+            "basis": "Planning allowance: 22% of the entered budget divided by travelers and days. Restaurant/menu prices and venues are not available.",
+            "source": "budget-allowance",
+            "fetchedAt": "2026-10-11T19:14:52.093Z",
+            "currency": "JPY",
+            "unitAmount": 6600,
+            "quantity": 1,
+            "unit": "daily-per-person",
+            "participants": 1,
+            "needsConfirmation": true
+          }
+        },
+        {
+          "id": "a40a9fc9-21e5-4e97-9a31-1eca8acbc0ee",
+          "time": "Daily allowance",
+          "title": "Daily transport in Tokyo",
+          "description": "practical local transport. Daily fare per traveler, multiplied by the party size. Route, timetable and capacity require confirmation.",
+          "estimatedCost": 4200,
+          "unitCost": 4200,
+          "category": "transport",
+          "icon": "bus",
+          "priceEvidence": {
+            "status": "estimate",
+            "basis": "Planning allowance: 14% of the entered budget divided by days and fare basis. No verified route fare is available.",
+            "source": "budget-allowance",
+            "fetchedAt": "2026-10-11T19:14:52.093Z",
+            "currency": "JPY",
+            "unitAmount": 4200,
+            "quantity": 1,
+            "unit": "per-person",
+            "participants": 1,
+            "needsConfirmation": true
+          }
+        }
+      ],
+      "crowdLevel": "low",
+      "crowdSource": "estimated",
+      "crowdConfidence": "low",
+      "crowdNote": "Low-confidence estimate from weekday timing; this is not live foot-traffic or venue-capacity data. Check the venue before traveling.",
+      "crowdRecommendation": "No crowd-based timing change is suggested, but confirm venue hours before traveling.",
+      "crowdFetchedAt": "2026-10-11T19:14:52.098Z",
+      "crowdRefreshAfter": "2026-10-12T19:14:52.098Z",
+      "planningStatus": "suggested",
+      "planningReason": "Suggested verified city and nearby visits; visit durations and walking transfers are estimates. Nearby visits reserve return travel to the selected city. Confirm current hours and access.",
+      "scheduleBlocks": [
+        {
+          "kind": "meal",
+          "startMinutes": 720,
+          "endMinutes": 765,
+          "label": "Meal break — venue not selected; daily meal allowance covers the cost"
+        }
+      ]
+    }
+  ],
+  "budgetSummary": {
+    "accommodation": 10200,
+    "food": 6600,
+    "activities": 6000,
+    "transport": 4200,
+    "reserve": 3000,
+    "total": 30000,
+    "dailyAverage": 18480,
+    "accommodationActual": 0,
+    "travelOptionsActual": 0,
+    "variableBudget": 27000,
+    "plannedSpend": 18480,
+    "remainingBudget": 11520,
+    "shortfall": 0
+  },
+  "grounding": {
+    "version": 1,
+    "destination": {
+      "city": "Tokyo",
+      "country": "Japan",
+      "countryCode": "JP",
+      "latitude": 35.6895,
+      "longitude": 139.69171
+    },
+    "startingLocation": "",
+    "startDate": "2026-10-15",
+    "endDate": "2026-10-15",
+    "timeZone": "Asia/Tokyo",
+    "fetchedAt": "2026-10-11T19:14:52.093Z",
+    "placeDataStatus": "live",
+    "currency": "JPY",
+    "rooms": 1,
+    "nights": 0,
+    "foodDailyPerPerson": 6600,
+    "accommodation": {
+      "status": "estimate",
+      "basis": "No overnight accommodation is included: zero nights. An overnight stay requires a separate selection and price confirmation.",
+      "source": "budget-allowance",
+      "fetchedAt": "2026-10-11T19:14:52.093Z",
+      "currency": "JPY",
+      "unitAmount": 0,
+      "quantity": 0,
+      "unit": "per-room-night",
+      "participants": 1,
+      "needsConfirmation": true
+    },
+    "additionalFees": 0,
+    "contingencyPercent": 10,
+    "contingencyAmount": 1680,
+    "categories": {
+      "accommodation": 0,
+      "food": 6600,
+      "activities": 6000,
+      "transportation": 4200,
+      "fees": 0,
+      "contingency": 1680
+    },
+    "subtotal": 16800,
+    "total": 18480,
+    "verifiedAmount": 0,
+    "estimatedAmount": 18480,
+    "unknownPriceCount": 5,
+    "budgetStatus": "needs-confirmation",
+    "limitations": [
+      "Food, local transport and admission allowances are not researched market prices. Missing prices do not mean free entry.",
+      "Opening hours, street routes, venue access, transport capacity and unquoted taxes/fees need confirmation.",
+      "Schedules use destination-local calendar dates and wall clocks. Supplied arrival/departure times reserve estimated 90-minute arrival and 120-minute departure buffers; booking and hotel check-in times still need confirmation.",
+      "Travel from the starting location to the destination is not priced; compare flights or supply pre-trip estimates."
+    ]
+  }
+}
