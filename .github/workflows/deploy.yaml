@@ -69,6 +69,19 @@ jobs:
           done
 
       - name: Copy Docker Compose & Script to Server
+        id: copy_deploy_files
+        continue-on-error: true
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          source: 'docker/docker-compose.yaml,scripts/deploy.sh'
+          target: ${{ env.TRAVELMATE_DEPLOY_DIR }}
+
+      - name: Retry Copy Docker Compose & Script to Server
+        if: steps.copy_deploy_files.outcome == 'failure'
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SSH_HOST }}
