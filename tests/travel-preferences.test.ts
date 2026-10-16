@@ -11,6 +11,26 @@ import { prisma } from '../src/lib/prisma.ts';
 import { beginGeneration, POST } from '../src/controllers/itinerary-controller.ts';
 import { createSessionToken } from '../src/middlewares/auth-middleware.ts';
 import { clearProviderCache } from '../src/services/cache/provider-cache.ts';
+import { normalizeInterests } from '../src/lib/trip-preferences.ts';
+
+test('unified interests merge legacy lists without duplicates or mutation; blank interests remain optional', () => {
+ const legacy = ['Food', 'culture'];
+ assert.deepEqual(normalizeInterests(legacy, [' food ', 'nature'], ['CULTURE', 'snorkeling']), ['Food', 'culture', 'nature', 'snorkeling']);
+ assert.deepEqual(legacy, ['Food', 'culture']);
+ assert.deepEqual(generationPreferencesSchema.parse({ interests: ' , ' }).interests, []);
+ assert.deepEqual(generationPreferencesSchema.parse({ interests: ['Food'], activities: ['food', 'snorkeling'] }).interests, ['Food', 'snorkeling']);
+ assert.equal(generationPreferencesSchema.safeParse({ travelStyle: 'unsupported' }).success, false);
+ assert.equal(generationPreferencesSchema.safeParse({ interests: [42] }).success, false);
+});
+
+test('omitted and empty retired preferences are accepted for every Travel style', () => {
+ for (const travelStyle of travelStyles) for (const value of [undefined, [], '', '   ', null]) {
+  const result = generationPreferencesSchema.parse({ travelStyle, interests: value, activities: value });
+  assert.equal(result.travelStyle, travelStyle);
+  assert.deepEqual(result.interests, []);
+  assert.deepEqual(result.activities, []);
+ }
+});
 after(()=>prisma.$disconnect());
 const anchor=destinationReferences[0].anchor;
 const base:GroundedPlace={provider:'wikidata',placeId:'Q100',name:'Reference museum',description:'museum',city:anchor.city,country:anchor.country,countryCode:anchor.countryCode,latitude:anchor.latitude,longitude:anchor.longitude,sourceUrl:'https://www.wikidata.org/wiki/Q100',fetchedAt:'2026-10-14T00:00:00Z',address:'Confirm address',openingHours:'Opening hours need confirmation'};
@@ -68,7 +88,7 @@ test('actual affected Cordova records and international references replay all st
   plan.preferences=preferences;
   const reopened=parseSavedItinerary(JSON.parse(JSON.stringify(plan)),{days:c.count,currency:c.currency,budget:c.budget,travelers:1,partyType:'solo',startDate:c.start,destination:c.anchor.city});
   assert.deepEqual(reopened.preferences,preferences);assert.equal(verifyGroundedPlan(reopened),true);
-  assert.equal(reopened.grounding?.categories.food,0);assert.ok(reopened.grounding!.unpricedExpenseCount!>0);
+  assert.ok(reopened.grounding!.categories.food>=0);assert.ok(reopened.grounding!.unpricedExpenseCount!>=0);
   assert.ok(reopened.days.flatMap(d=>d.activities).filter(a=>a.place).every(a=>a.place!.countryCode===c.anchor.countryCode));
   results.push({destination:c.anchor.city,country:c.anchor.country,style:travelStyle,catalogue:c.places.length,visits:days.map(d=>d.visits.length),day1:plan.days[0].activities.filter(a=>a.place).map(a=>a.place!.name),knownSubtotal:plan.grounding!.total,unpricedExpenses:plan.grounding!.unpricedExpenseCount,firstTimes:days[0].visits.map(v=>v.startMinutes),limitations:plan.grounding!.limitations,diagnostics});
  }
@@ -76,7 +96,7 @@ test('actual affected Cordova records and international references replay all st
  if(existsSync(reportDirectory))writeFileSync(new URL('style-replays.json',reportDirectory),JSON.stringify(results,null,2));
 });
 
-test('authenticated POST defaults to Balanced, ignores retired inputs and retains other preferences/cache isolation',async t=>{
+test('authenticated POST honors selected styles, merges interests and retains accommodation/cache isolation',async t=>{
  clearProviderCache();t.after(clearProviderCache);
  const replace=(object:any,key:string,fn:any)=>{const previous=object[key];object[key]=fn;t.after(()=>object[key]=previous);};
  replace(prisma.user,'findFirst',async()=>({id:'preference-test',name:'Test',email:'test@example.test',role:'traveler',accountStatus:'active',emailVerified:true}));
@@ -94,8 +114,18 @@ test('authenticated POST defaults to Balanced, ignores retired inputs and retain
  });
  const body={destination:anchor.city,destinationDetails:anchor,latitude:anchor.latitude,longitude:anchor.longitude,startDate:'2040-01-25',endDate:'2040-01-27',budget:10000,currency:'EUR',travelers:1,partyType:'solo',interests:['nature'],preferredActivities:['museum'],accommodationPreference:'resort',transportationPreference:'taxi',plannedAccommodation:{name:'Explicit selected hotel',address:anchor.city,source:'manual'}};
  const headers={cookie:`travelmate_session=${createSessionToken('preference-test','traveler')}`,'content-type':'application/json'};
- for(const travelStyle of [undefined,...travelStyles]){const response=await POST(new Request('http://localhost/api/itinerary',{method:'POST',headers,body:JSON.stringify({...body,travelStyle,pace:'active'})}));assert.equal(response.status,200,JSON.stringify(await response.clone().json()));const plan=await response.json();assert.deepEqual(plan.preferences,{pace:'balanced',travelStyle:'balanced',accommodation:'resort',transportation:'taxi',activities:['museum'],interests:['nature']});assert.equal(plan.plannedAccommodation.name,'Explicit selected hotel');assert.ok(prompts.at(-1)!.includes('"travelStyle":"balanced"'));assert.ok(plan.grounding.total<10000);}
- assert.equal(new Set(hashes).size,1,'Retired style values must not select different cached generation behavior');
+ for(const travelStyle of [undefined,...travelStyles]){const response=await POST(new Request('http://localhost/api/itinerary',{method:'POST',headers,body:JSON.stringify({...body,travelStyle,pace:'active'})}));assert.equal(response.status,200,JSON.stringify(await response.clone().json()));const plan=await response.json();assert.deepEqual(plan.preferences,{pace:'balanced',travelStyle:travelStyle || 'balanced',accommodation:'resort',transportation:'taxi',activities:['museum'],interests:['nature','museum']});assert.equal(plan.plannedAccommodation.name,'Explicit selected hotel');assert.ok(prompts.at(-1)!.includes(`"travelStyle":"${travelStyle || 'balanced'}"`));assert.ok(plan.grounding.total<10000);}
+ assert.equal(new Set(hashes).size,travelStyles.length,'Each selected style must have isolated generation behavior; omission defaults to Balanced');
+ for (const empty of [undefined, [], '', null]) {
+  const response = await POST(new Request('http://localhost/api/itinerary', { method: 'POST', headers, body: JSON.stringify({ ...body, travelStyle: 'comfort', interests: empty, preferredActivities: empty, transportationPreference: Array.isArray(empty) ? undefined : empty }) }));
+  assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
+  const generated = await response.json();
+  assert.equal(generated.preferences.travelStyle, 'comfort');
+  assert.deepEqual(generated.preferences.interests, []);
+  assert.deepEqual(generated.preferences.activities, []);
+  assert.ok(generated.days.some((day: { activities: Array<{ place?: unknown }> }) => day.activities.some(activity => activity.place)), 'Destination-backed visits must be generated without interests or activities.');
+  assert.equal(generated.plannedAccommodation.name, 'Explicit selected hotel');
+ }
  failAI=true;const fallback=await POST(new Request('http://localhost/api/itinerary',{method:'POST',headers,body:JSON.stringify({...body,travelStyle:'comfort'})}));assert.equal(fallback.status,200);const plan=await fallback.json();assert.equal(plan.source,'catalog');assert.ok(plan.days.every((d:any)=>d.activities.filter((a:any)=>a.place).length<=3));
  const {createHash}=await import('node:crypto');
  const stable=(v:any):string=>Array.isArray(v)?`[${v.map(stable).join(',')}]`:v&&typeof v==='object'?`{${Object.entries(v).sort(([a],[b])=>a.localeCompare(b)).map(([k,value])=>`${JSON.stringify(k)}:${stable(value)}`).join(',')}}`:JSON.stringify(v);

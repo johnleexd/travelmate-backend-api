@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { validateActivitySchedule } from './activity-schedule.ts';
-import { SUPPORTED_CURRENCIES, allocateEqualShares, allocateNightlyCosts, currencyFractionDigits, hasValidCurrencyPrecision, type CurrencyCode, type PartyType } from "../../schemas/domain.ts";
+import { SUPPORTED_CURRENCIES, allocateEqualShares, allocateNightlyCosts, currencyFractionDigits, currencyStep, roundMoney, sumMoney, hasValidCurrencyPrecision, type CurrencyCode, type PartyType } from "../../schemas/domain.ts";
 import { accommodationQuoteSchema, propertyPhotoSchema } from '../travel/hotel-quote.ts';
 import { plannedAccommodationSchema } from '../destination/planned-accommodation.ts';
 import { buildBudgetOptimization } from '../budget/budget-optimization-service.ts';
@@ -9,14 +9,12 @@ import { calculateExpense, refreshGroundedTotals, verifyGroundedPlan } from './g
 import { placeMatchesAnchor } from './grounded-places.ts';
 import type { ItineraryResponse } from '../../controllers/itinerary-controller.ts';
 import { canonicalStoredMedia } from '../../lib/stored-trip-media.ts';
+import { expenseLedger, accommodationNights, dayExpenseRows } from '../../lib/expense-ledger.ts';
 import { isUnsplashActivityPhoto } from './unsplash-activity-photos.ts';
 
 const isoDate = /^\d{4}-\d{2}-\d{2}$/;
 const isoDateTime = z.string().datetime({ offset: true });
-const money = z.number().finite().min(0).max(1_000_000_000).refine(
-  (value) => Math.abs(value * 100 - Math.round(value * 100)) < 1e-7,
-  "Use at most two decimal places.",
-);
+const money = z.number().finite().min(0).max(1_000_000_000);
 const text = (maximum: number) => z.string().trim().max(maximum);
 const savedImageUrl = text(1_000).refine(value => {
   if (!value) return true;
@@ -54,6 +52,7 @@ const daySchema = z.object({
   crowdConfidence: z.literal("low").optional(), crowdNote: text(500).optional(), crowdRecommendation: text(500).optional(),
   crowdFetchedAt: isoDateTime.optional(), crowdRefreshAfter: isoDateTime.optional(),
   planningStatus: z.enum(['suggested', 'incomplete', 'rest', 'travel']).optional(), planningReason: text(500).optional(),
+  planningIssue: z.enum(['provider-failure', 'no-results', 'insufficient-coverage', 'scheduling-conflict']).optional(),
   scheduleBlocks: z.array(z.object({ kind: z.enum(['meal', 'free-time', 'unscheduled']), startMinutes: z.number().int().min(0).max(1439), endMinutes: z.number().int().min(1).max(1440), label: text(200) }).strict().refine(block => block.endMinutes > block.startMinutes)).max(20).optional(),
 }).strict();
 
@@ -111,11 +110,11 @@ const itinerarySchema = z.object({
   source: z.enum(["openai", "gemini", "mock", "catalog"]).optional(), partyType: z.enum(["solo", "couple", "family", "friends"]).optional(),
   travelers: z.number().int().min(1).max(20).optional(), preferences: z.object({
     pace: z.enum(['relaxed', 'balanced', 'active']).optional(),
-    travelStyle: text(80), accommodation: text(120), transportation: text(120), activities: z.array(text(160)).max(20), interests: z.array(text(200)).max(20).optional(),
+    travelStyle: text(80).optional(), accommodation: text(120), transportation: text(120), activities: z.array(text(160)).max(20).default([]), interests: z.array(text(200)).max(60).optional(),
   }).strict().optional(), accommodation: accommodationSchema.optional(), plannedAccommodation: plannedAccommodationSchema.optional(), budgetOptimization: budgetOptimizationSchema.optional(),
   selectedTravelCosts: selectedTravelCostsSchema.optional(), costSharing: costSharingSchema.optional(), manuallyEdited: z.boolean().optional(), days: z.array(daySchema).min(1).max(31),
   budgetSummary: budgetSummarySchema,
-  grounding: groundingSchema.optional(), groundingProof: text(200).optional(),
+  grounding: groundingSchema.optional(), groundingProof: text(200).optional(), accommodationEstimate: priceEvidenceSchema.optional(),
 }).strict();
 
 const freshnessSchema = z.object({
@@ -163,9 +162,15 @@ export function parseSavedItinerary(value: unknown, context: { days: number; cur
   if (context.destination && destinationKey(itinerary.destination) !== destinationKey(context.destination)) throw new Error('Itinerary destination must match the trip destination.');
   if (itinerary.days.length !== context.days) throw new Error(`Itinerary must contain exactly ${context.days} days.`);
   if (itinerary.currency !== context.currency) throw new Error("Itinerary currency must match the trip currency.");
+  const tolerance = currencyStep(context.currency)/2;
   if (!hasValidCurrencyPrecision(context.budget, context.currency)) throw new Error('Trip budget has invalid currency precision.');
-  if (Math.round(itinerary.totalBudget * 100) !== Math.round(context.budget * 100)) throw new Error("Itinerary budget must match the trip budget.");
+  if (!hasValidCurrencyPrecision(itinerary.totalBudget,context.currency) || itinerary.totalBudget !== context.budget) throw new Error("Itinerary budget must match the trip budget.");
   const stay = itinerary.accommodation;
+  if (itinerary.accommodationEstimate) {
+    const estimate = itinerary.accommodationEstimate, nights = accommodationNights(itinerary as ItineraryResponse);
+    if (estimate.source !== 'user-entered' || estimate.status !== 'estimate' || estimate.currency !== context.currency || estimate.unit !== 'per-room-night' || !hasValidCurrencyPrecision(estimate.unitAmount, context.currency)
+      || (nights ? estimate.quantity < nights || estimate.quantity % nights !== 0 || estimate.quantity / nights > 20 : estimate.quantity !== 0)) throw new Error('Accommodation estimate must use user-entered room/night amounts and the stay dates.');
+  }
   if (stay?.providerQuote) {
     const quote = stay.providerQuote;
     const guests = quote.occupancy.reduce((sum, room) => sum + room.adults + room.childAges.length, 0);
@@ -182,9 +187,9 @@ export function parseSavedItinerary(value: unknown, context: { days: number; cur
   }
   if (stay && stay.currency !== context.currency) throw new Error('Accommodation currency must match the trip currency.');
   if (stay && stay.nights !== Math.max(1, context.days - 1)) throw new Error('Accommodation nights must match the trip dates.');
-  const lodgingByNight = stay ? allocateNightlyCosts(stay.quotedTotal ?? Math.round(stay.nightlyRate * stay.nights * (stay.rooms ?? 1) * 100)/100, stay.nights, context.currency)
+  const lodgingByNight = itinerary.accommodationEstimate && context.days > 1 ? allocateNightlyCosts(itinerary.accommodationEstimate.unitAmount * itinerary.accommodationEstimate.quantity, context.days - 1, context.currency) : itinerary.grounding?.estimationVersion && itinerary.grounding.nights ? allocateNightlyCosts(itinerary.grounding.categories.accommodation, itinerary.grounding.nights, context.currency) : stay ? allocateNightlyCosts(stay.quotedTotal ?? roundMoney(stay.nightlyRate * stay.nights * (stay.rooms ?? 1),context.currency), stay.nights, context.currency)
     : itinerary.grounding?.nights ? allocateNightlyCosts(itinerary.grounding.categories.accommodation, itinerary.grounding.nights, context.currency) : [];
-  if (stay && Math.abs(stay.total - lodgingByNight.reduce((a,b) => a+b,0)) > 0.011) throw new Error('Accommodation total does not match its quoted cost.');
+  if (stay && !itinerary.accommodationEstimate && !itinerary.grounding?.estimationVersion && Math.abs(stay.total - lodgingByNight.reduce((a,b) => a+b,0)) > tolerance) throw new Error('Accommodation total does not match its quoted cost.');
   itinerary.days.forEach((day, index) => {
     day.activities = validateActivitySchedule(day.activities, itinerary.preferences?.transportation);
     if (day.day !== index + 1) throw new Error(`Itinerary day ${index + 1} is out of sequence.`);
@@ -192,25 +197,31 @@ export function parseSavedItinerary(value: unknown, context: { days: number; cur
     if (!Number.isFinite(expected.getTime())) throw new Error('Itinerary start date is invalid.');
     expected.setUTCDate(expected.getUTCDate() + index);
     if (day.date !== expected.toISOString().slice(0, 10)) throw new Error(`Itinerary day ${index + 1} must use the corresponding trip date.`);
-    const activityTotal = day.activities.reduce((sum, activity) => sum + activity.estimatedCost, 0);
+    const activityTotal = sumMoney(day.activities.map(activity=>activity.estimatedCost),context.currency);
     if (day.activities.some(activity => !hasValidCurrencyPrecision(activity.estimatedCost, context.currency))) throw new Error('Activity costs have invalid currency precision.');
     const accommodation = lodgingByNight[index] || 0;
     if (!hasValidCurrencyPrecision(day.totalCost, context.currency)) throw new Error('Day costs have invalid currency precision.');
-    if (Math.abs(day.totalCost - activityTotal - accommodation) > 0.011) throw new Error(`Itinerary day ${index + 1} total does not match its item costs.`);
+    const effective = dayExpenseRows(itinerary as ItineraryResponse,index).reduce((sum,row)=>sum+(row.amount ?? 0),0) + accommodation;
+    if (Math.abs(day.totalCost - (itinerary.grounding?.estimationVersion ? expenseLedger(itinerary as ItineraryResponse).days[index].amount ?? 0 : activityTotal + accommodation)) > tolerance
+      && !(itinerary.manuallyEdited && !itinerary.grounding && Math.abs(day.totalCost-effective)<tolerance)) throw new Error(`Itinerary day ${index + 1} total does not match its item costs.`);
   });
   if (itinerary.partyType && itinerary.partyType !== context.partyType) throw new Error("Itinerary party type must match the trip party type.");
   if (itinerary.travelers && itinerary.travelers !== context.travelers) throw new Error("Itinerary traveler count must match the trip traveler count.");
-  if (!itinerary.grounding && itinerary.days.some(day => day.activities.some(activity => activity.priceEvidence || activity.place))) throw new Error('Price/place evidence requires a signed grounded plan.');
+  if (!itinerary.grounding && itinerary.days.some(day => day.activities.some(activity => activity.place || activity.priceEvidence && (activity.priceEvidence.source !== 'user-entered' || activity.priceEvidence.status !== 'estimate')))) throw new Error('Provider price/place evidence requires a signed grounded plan.');
+  if (!itinerary.grounding) for (const activity of itinerary.days.flatMap(day=>day.activities)) {
+    const price = activity.priceEvidence;
+    if (price && (price.currency !== context.currency || !hasValidCurrencyPrecision(price.unitAmount,context.currency) || Math.abs(calculateExpense(price.unitAmount,price.quantity,price.participants,price.unit,context.currency)-activity.estimatedCost)>tolerance)) throw new Error('User estimate total does not match its amount and units.');
+  }
   if (itinerary.grounding) {
     const grounding = itinerary.grounding;
     if (grounding.currency !== context.currency || grounding.startDate !== itinerary.days[0].date || grounding.endDate !== itinerary.days.at(-1)!.date) throw new Error('Grounding context does not match the trip.');
     if (grounding.nights !== (stay?.nights ?? Math.max(0, context.days - 1)) || grounding.accommodation.quantity !== grounding.rooms * grounding.nights || grounding.accommodation.unit !== 'per-room-night'
-      || grounding.accommodation.currency !== context.currency || Math.abs(calculateExpense(grounding.accommodation.unitAmount, grounding.rooms * grounding.nights, context.travelers, 'per-room-night', context.currency) - grounding.categories.accommodation) > 0.001) throw new Error('Accommodation total does not match rooms, nights and the nightly price basis.');
+      || grounding.accommodation.currency !== context.currency || Math.abs(calculateExpense(grounding.accommodation.unitAmount, grounding.rooms * grounding.nights, context.travelers, 'per-room-night', context.currency) - grounding.categories.accommodation) > tolerance) throw new Error('Accommodation total does not match rooms, nights and the nightly price basis.');
     for (const activity of itinerary.days.flatMap(day => day.activities)) {
       const price = activity.priceEvidence;
       if (!price || price.currency !== context.currency || price.participants > context.travelers || !hasValidCurrencyPrecision(price.unitAmount, context.currency)) throw new Error('Activity price basis is missing or inconsistent.');
       const expected = calculateExpense(price.unitAmount, price.quantity, price.participants, price.unit, context.currency);
-      if (Math.abs(expected - activity.estimatedCost) > 0.001) throw new Error('Activity total does not match its price basis.');
+      if (Math.abs(expected - activity.estimatedCost) > tolerance) throw new Error('Activity total does not match its price basis.');
       const place = activity.place;
       if (place && !placeMatchesAnchor(place, grounding.destination)) throw new Error('Attraction location does not match the selected city and country or verified nearby boundary.');
       if (activity.imageUrl) {
@@ -220,8 +231,8 @@ export function parseSavedItinerary(value: unknown, context: { days: number; cur
       }
     }
     const recomputed = refreshGroundedTotals(itinerary as ItineraryResponse).grounding!;
-    if (Object.keys(grounding.categories).some(key => Math.abs(grounding.categories[key as keyof typeof grounding.categories] - recomputed.categories[key as keyof typeof grounding.categories]) > 0.001)
-      || Math.abs(grounding.total - recomputed.total) > 0.001 || Math.abs(grounding.subtotal - recomputed.subtotal) > 0.001) throw new Error('Grounded expense totals are inconsistent.');
+    if (Object.keys(grounding.categories).some(key => Math.abs(grounding.categories[key as keyof typeof grounding.categories] - recomputed.categories[key as keyof typeof grounding.categories]) > tolerance)
+      || Math.abs(grounding.total - recomputed.total) > tolerance || Math.abs(grounding.subtotal - recomputed.subtotal) > tolerance) throw new Error('Grounded expense totals are inconsistent.');
   }
   if (itinerary.selectedTravelCosts) {
     const costs = itinerary.selectedTravelCosts;
@@ -231,16 +242,16 @@ export function parseSavedItinerary(value: unknown, context: { days: number; cur
     if (itinerary.selectedTravelCosts.flight?.currency !== undefined && itinerary.selectedTravelCosts.flight.currency !== context.currency) throw new Error("Selected flight currency must match the trip currency.");
     for (const activity of itinerary.selectedTravelCosts.activities) {
       if (activity.currency !== context.currency || activity.travelers !== context.travelers) throw new Error("Selected activity costs must match the trip currency and traveler count.");
-      if (Math.abs(activity.total - activity.unitCost * activity.travelers) > 0.011) throw new Error("Selected activity total is inconsistent.");
+      if (Math.abs(activity.total - activity.unitCost * activity.travelers) > tolerance) throw new Error("Selected activity total is inconsistent.");
     }
     const preTrip = itinerary.selectedTravelCosts.preTrip;
     if (preTrip) {
       if (preTrip.currency !== context.currency) throw new Error('Pre-trip currency must match the trip currency.');
       const preTripTotal = preTrip.airportTransferOutbound + preTrip.airportTransferReturn + preTrip.passport + preTrip.visaOrAuthorization + preTrip.departureTaxes + preTrip.insurance + preTrip.other;
-      if (Math.abs(preTripTotal - preTrip.total) > 0.011) throw new Error('Pre-trip cost total is inconsistent.');
+      if (Math.abs(preTripTotal - preTrip.total) > tolerance) throw new Error('Pre-trip cost total is inconsistent.');
     }
     const selectedTotal = (itinerary.selectedTravelCosts.flight?.total ?? 0) + itinerary.selectedTravelCosts.activities.reduce((sum, activity) => sum + activity.total, 0) + (preTrip?.total ?? 0);
-    if (Math.abs(selectedTotal - itinerary.selectedTravelCosts.total) > 0.011) throw new Error("Selected travel cost total is inconsistent.");
+    if (Math.abs(selectedTotal - itinerary.selectedTravelCosts.total) > tolerance) throw new Error("Selected travel cost total is inconsistent.");
   }
   if (itinerary.costSharing) {
     if (itinerary.costSharing.travelers !== context.travelers || itinerary.costSharing.partyType !== context.partyType) throw new Error("Itinerary cost sharing does not match the trip party.");

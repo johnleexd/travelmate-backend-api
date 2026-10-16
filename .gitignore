@@ -29,3 +29,8 @@ credentials*.json
 /scripts/serve-visited-page-verification.ts
 /scripts/verify-cheonan-itinerary-navigation.ts
 /scripts/verify-non-google-photo-lifecycle.ts
+
+# Local provider evidence and one-off checks of private generation records.
+/diagnostics/
+/scripts/diagnose-incomplete-days.ts
+/scripts/verify-afn-draft-save.ts

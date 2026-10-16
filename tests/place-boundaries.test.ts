@@ -149,7 +149,7 @@ test('nearby visits reserve outbound and return travel, survive save validation,
   const activity = parsed.days[0].activities.find(activity => activity.place)!;
   assert.equal(activity.place!.city, 'Neighboring town');
   assert.match(activity.description, /Nearby attraction.*Neighboring town, outside Gimcheon/);
-  assert.match(activity.description, /each way.*Return time is reserved/);
+  assert.match(activity.description, /route confirmation.*Return time is reserved/);
   const distant = { ...place, longitude: reference.anchor.longitude + 0.3 };
   distant.distanceFromDestinationKm = Math.round(distanceKm(distant, reference.anchor) * 100) / 100;
   assert.equal(completeGroundedSchedule(reference.anchor, [distant], [], '2040-01-01', 1, 1, 'balanced')[0].visits.length, 0);

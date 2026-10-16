@@ -24,7 +24,7 @@ for (const reference of destinationReferences) test(`${reference.anchor.city}: p
   assert.deepEqual(map.days.flatMap(day => day.activities.filter(activity => !activity.budgetOnly).map(activity => activity.activityId)), visits.map(activity => activity.id));
   assert.deepEqual(map.days.flatMap(day => day.activities.filter(activity => !activity.budgetOnly).map(activity => activity.place?.id)), visits.map(activity => activity.place!.placeId));
   if (!places.length) {
-    assert.ok(reopened.days.every(day => day.planningStatus === 'incomplete' && /coverage/.test(day.planningReason!)));
+    assert.ok(reopened.days.every(day => day.planningStatus === 'incomplete' && day.planningIssue === 'no-results'));
     assert.equal(visits.length, 0);
   } else {
     assert.deepEqual(reopened.days.map(day => day.activities.filter(activity => activity.place).length), [3,3,3,3,3,3,3]);

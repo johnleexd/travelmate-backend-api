@@ -1,4 +1,4 @@
-import { formatMoney, type CurrencyCode } from '../../schemas/domain.ts';
+import { formatMoney, roundMoney, type CurrencyCode } from '../../schemas/domain.ts';
 
 /** Pure budget assessment and optimization rules. */
 export type BudgetOptimizationStatus = 'within_budget' | 'near_limit' | 'over_budget';
@@ -51,6 +51,7 @@ function money(value: number): number {
 }
 
 export function buildBudgetOptimization(input: BudgetOptimizationInput): BudgetOptimization {
+  const money = (value: number) => Math.max(0,roundMoney(value,input.currency));
   const budget = money(input.budget);
   const plannedSpend = money(input.plannedSpend);
   const reserve = Math.min(budget, money(input.reserve));

@@ -5,6 +5,7 @@ export interface CachePolicy {
   freshForMs: number;
   staleForMs: number;
   emptyForMs?: number;
+  isEmpty?: (value: unknown) => boolean;
 }
 
 export interface FreshnessMetadata {
@@ -43,13 +44,13 @@ function prune(now: number): void {
   while (cache.size >= MAX_ENTRIES) cache.delete(cache.keys().next().value as string);
 }
 
-export async function withProviderCache<T>(key: string, policy: CachePolicy, loader: () => Promise<T>, now = Date.now()): Promise<{ value: T; freshness: FreshnessMetadata }> {
+export async function withProviderCache<T>(key: string, policy: CachePolicy, loader: () => Promise<T>, now = Date.now(), forceRefresh = false): Promise<{ value: T; freshness: FreshnessMetadata }> {
   const cacheKey = `${policy.source}:${key}`;
   let cached = cache.get(cacheKey) as Entry<T> | undefined;
-  const empty = (value: unknown) => value === null || Array.isArray(value) && value.length === 0;
+  const empty = (value: unknown) => policy.isEmpty?.(value) ?? (value === null || Array.isArray(value) && value.length === 0);
   // Apply shorter miss lifetimes to existing entries too, preserving successes.
   if (cached && policy.emptyForMs !== undefined && empty(cached.value)) cached = { ...cached, expiresAt: Math.min(cached.expiresAt, cached.fetchedAt + policy.emptyForMs), staleUntil: Math.min(cached.staleUntil, cached.fetchedAt + policy.emptyForMs) };
-  if (cached && cached.expiresAt > now) return { value: cached.value, freshness: metadata(cached, policy, 'fresh-cache') };
+  if (!forceRefresh && cached && cached.expiresAt > now) return { value: cached.value, freshness: metadata(cached, policy, 'fresh-cache') };
 
   try {
     let pending = inFlight.get(cacheKey) as Promise<Entry<T>> | undefined;

@@ -10,6 +10,10 @@ import type { PublicUser } from '../src/schemas/domain.ts';
 import type { ItineraryResponse } from '../src/controllers/itinerary-controller.ts';
 import { reusableStoredActivityPhoto } from '../src/services/itinerary/activity-photo-fallback.ts';
 import { signGroundedPlan } from '../src/services/itinerary/grounded-plan.ts';
+import { buildGroundedPlan } from '../src/services/itinerary/grounded-plan.ts';
+import { completeGroundedSchedule } from '../src/services/itinerary/generated-day-scheduler.ts';
+import { retryIncompleteDays } from '../src/services/itinerary/incomplete-day-retry.ts';
+import type { GroundedPlace } from '../src/services/itinerary/grounded-places.ts';
 
 const user: PublicUser = { id: 'snapshot-owner', role: 'traveler', name: 'Test', email: 'test@example.test', emailVerified: true, profileStatus: 'unverified', accountStatus: 'active', trustScore: 50 };
 const context = { days: 1, currency: 'PHP' as const, budget: 1000, travelers: 1, partyType: 'solo' as const, destination: 'Tokyo', startDate: '2040-01-01' };
@@ -46,6 +50,63 @@ function transaction(t: TestContext, current: Trip, snapshot: unknown, accessibl
   return () => updates;
 }
 after(() => prisma.$disconnect());
+
+test('saving a retried itinerary retains new verified places, edited notes and protected completed activities', async t => {
+  const anchor = { city: 'Tokyo', country: 'Japan', countryCode: 'JP', latitude: 35.68, longitude: 139.76 };
+  const catalog: GroundedPlace[] = Array.from({ length: 5 }, (_, index) => ({ provider: 'wikidata', placeId: `Q${100 + index}`, name: `Fixture museum ${index}`, description: 'museum', ...anchor, latitude: anchor.latitude + index / 100000, sourceUrl: `https://www.wikidata.org/wiki/Q${100 + index}`, fetchedAt: '2040-01-01T00:00:00Z', openingHours: 'Opening hours need confirmation', address: 'Unconfirmed' }));
+  const original = buildGroundedPlan({ destination: 'Tokyo', anchor, startingLocation: '', startDate: '2040-01-01', endDate: '2040-01-02', budget: 1000, currency: 'PHP', travelers: 1, partyType: 'solo', rooms: 1, places: catalog.slice(0, 1), placeDataStatus: 'live', source: 'catalog', transportation: '', schedule: completeGroundedSchedule(anchor, catalog.slice(0, 1), [], '2040-01-01', 2, 1, 'balanced') });
+  original.days[0].activities[0].status = 'completed';
+  const current = { ...trip(), endDate: new Date('2040-01-02'), itinerary: original } as unknown as Trip;
+  const updates = transaction(t, current, null);
+  const retried = retryIncompleteDays(original, [1], { places: catalog, status: 'live' }).itinerary;
+  assert.ok(retried.days[1].activities.some(item => item.place));
+  const edited = structuredClone(retried); edited.days[1].activities.find(item => item.place)!.description = 'My additional notes';
+  const response = await executePlatformAction(user, 'update-trip-itinerary', { id: current.id, itinerary: edited, providerBase: retried }) as { itinerary: ItineraryResponse };
+  assert.equal(updates(), 1);
+  assert.equal(response.itinerary.days[0].activities[0].status, 'completed');
+  assert.equal(response.itinerary.days[1].activities.find(item => item.place)!.description, 'My additional notes');
+  assert.deepEqual(response.itinerary.days[1].activities.flatMap(item => item.place ? [item.place.placeId] : []), retried.days[1].activities.flatMap(item => item.place ? [item.place.placeId] : []));
+  assert.doesNotThrow(() => parseSavedItinerary(response.itinerary, { ...context, days: 2 }));
+});
+
+test('manual activity save persists Travel style without replacing historical trip interests', async t => {
+  const current = trip();
+  const updates = transaction(t, current, null);
+  const submitted = plan();
+  submitted.days[0].activities[0].description = 'My updated visit notes';
+  const planningPreferences = { travelStyle: 'family-friendly', accommodation: 'resort', transportation: 'walking', activities: ['museum'], interests: ['Museum', 'nature', 'NATURE'] };
+  const response = await executePlatformAction(user, 'update-trip-itinerary', { id: current.id, itinerary: submitted, planningPreferences }) as { itinerary: ItineraryResponse; interests: string[] };
+  assert.equal(updates(), 1);
+  assert.equal(response.itinerary.preferences?.travelStyle, 'family-friendly');
+  assert.deepEqual(response.interests, ['culture']);
+  assert.deepEqual(response.itinerary.preferences?.activities, ['museum']);
+  assert.equal(response.itinerary.days[0].activities[0].description, 'My updated visit notes');
+});
+
+test('style and transport edits preserve exact historical lists in full and manual saves', async t => {
+  const historical = { travelStyle: 'luxury', accommodation: 'resort', transportation: 'walking', interests: ['Food', 'food', 'Nature'], activities: ['Snorkeling', 'SIGHTSEEING'] };
+  const current = { ...trip(), interests: ['Original', 'ORIGINAL'], itinerary: { ...plan(), preferences: historical } } as unknown as Trip;
+  const updates = transaction(t, current, null);
+  const incoming = { ...plan(), preferences: { travelStyle: 'comfort', accommodation: 'resort', transportation: 'taxi', interests: [], activities: [] } };
+  for (const interests of [undefined, [], '', null]) {
+    const result = await executePlatformAction(user, 'update-trip', { id: current.id, destination: 'Tokyo', budget: 1000, currency: 'PHP', startDate: '2040-01-01', endDate: '2040-01-01', travelers: 1, partyType: 'solo', interests, itinerary: incoming }) as { itinerary: ItineraryResponse; interests: string[] };
+    assert.deepEqual(result.interests, ['Original', 'ORIGINAL']);
+    assert.deepEqual(result.itinerary.preferences?.interests, historical.interests);
+    assert.deepEqual(result.itinerary.preferences?.activities, historical.activities);
+    assert.equal(result.itinerary.preferences?.travelStyle, 'comfort');
+    assert.equal(result.itinerary.preferences?.transportation, 'walking');
+    assert.deepEqual(result.itinerary.days, incoming.days);
+  }
+  const result = await executePlatformAction(user, 'update-trip-itinerary', { id: current.id, itinerary: incoming, planningPreferences: { travelStyle: 'family-friendly', transportation: 'walking' } }) as { itinerary: ItineraryResponse; interests: string[] };
+  assert.equal(updates(), 5);
+  assert.equal(result.itinerary.preferences?.travelStyle, 'family-friendly');
+  assert.deepEqual(result.interests, ['Original', 'ORIGINAL']);
+  assert.deepEqual(result.itinerary.preferences?.interests, historical.interests);
+  assert.deepEqual(result.itinerary.preferences?.activities, historical.activities);
+  const snapshot = createVersionSnapshot(current);
+  assert.deepEqual(snapshot.context.interests, ['Original', 'ORIGINAL']);
+  assert.deepEqual((snapshot.itinerary as unknown as ItineraryResponse).preferences?.activities, historical.activities);
+});
 
 test('the reported Tokyo photos retain their URLs and original rights metadata through validation, manual save, API serialization and reopening', async t => {
   const recorded: ItineraryResponse = JSON.parse(readFileSync(new URL('./fixtures/tokyo-photo-plan.json', import.meta.url), 'utf8'));
@@ -147,7 +208,9 @@ test('saving a mapped stay preserves its stable property identity in the trip an
   const findUnique = prisma.trip.findUnique; Reflect.set(prisma.trip, 'findUnique', async () => null);
   t.after(() => Reflect.set(prisma.trip, 'findUnique', findUnique));
   const plannedAccommodation = { source: 'openstreetmap', sourceId: 'osm:way:987654', name: 'Mapped Tokyo Guesthouse', address: 'Tokyo, Japan', type: 'Guesthouse' };
-  const itinerary = { ...plan(), plannedAccommodation };
+  const interests = Array.from({ length: 60 }, (_, index) => `Interest ${index + 1}`);
+  const preferences = { travelStyle: 'comfort', accommodation: 'resort', transportation: 'walking', activities: [], interests };
+  const itinerary = { ...plan(), plannedAccommodation, preferences };
   let persisted: Record<string, unknown> | undefined;
   let version: Record<string, unknown> | undefined;
   const tx = {
@@ -167,12 +230,15 @@ test('saving a mapped stay preserves its stable property identity in the trip an
   t.after(() => Reflect.set(prisma, '$transaction', previous));
   const result = await executePlatformAction(user, 'save-trip', {
     destination: 'Tokyo', budget: 1000, currency: 'PHP', travelers: 1, partyType: 'solo',
-    startDate: '2040-01-01', endDate: '2040-01-01', interests: ['culture'], itinerary,
+    startDate: '2040-01-01', endDate: '2040-01-01', interests: [...interests, 'INTEREST 1'], itinerary,
   }) as { itinerary: { plannedAccommodation: unknown } };
   assert.deepEqual(result.itinerary.plannedAccommodation, plannedAccommodation);
   assert.deepEqual((persisted!.itinerary as { plannedAccommodation: unknown }).plannedAccommodation, plannedAccommodation);
   const snapshot = version!.itinerary as { itinerary: { plannedAccommodation: unknown } };
   assert.deepEqual(snapshot.itinerary.plannedAccommodation, plannedAccommodation);
+  assert.deepEqual(persisted!.interests, interests);
+  assert.deepEqual((persisted!.itinerary as { preferences: unknown }).preferences, preferences);
+  assert.deepEqual((snapshot.itinerary as { preferences: unknown }).preferences, preferences);
   assert.equal(version!.kind, 'saved');
   assert.equal(version!.version, 1);
 });

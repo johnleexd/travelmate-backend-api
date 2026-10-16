@@ -48,7 +48,7 @@ test('authenticated search → rate refresh → generation → save validation k
  const request=(b:unknown)=>new Request('http://localhost/api/itinerary',{method:'POST',headers:{...headers,'content-type':'application/json'},body:JSON.stringify(b)});
  const response=await generate(request(tripBody));const itinerary=await response.json();assert.equal(response.status,200,JSON.stringify(itinerary));
  assert.equal(itinerary.accommodation.listingId,'liteapi:lp123');assert.equal(itinerary.accommodation.source,'liteapi');assert.equal(itinerary.accommodation.total,12645);assert.equal(itinerary.accommodation.providerQuote.total,12345);
- assert.equal(itinerary.grounding.categories.accommodation,12645);assert.equal(verifyGroundedPlan(itinerary),true);
+ assert.equal(itinerary.grounding.categories.accommodation,24000);assert.equal(itinerary.grounding.accommodation.status,'allowance');assert.equal(verifyGroundedPlan(itinerary),true);
  const saved=parseSavedItinerary(itinerary,{destination:place.label,days:3,startDate:body.checkInDate,budget:100000,currency:'JPY',travelers:3,partyType:'family'});
  assert.equal(saved.accommodation!.providerQuote!.guestNationality,'PH');assert.deepEqual(saved.accommodation!.providerQuote!.photoReferences,['lp123:/hotels/exact.jpg']);
  const expired=await generate(request({...tripBody,endDate:'2040-01-04'}));assert.equal(expired.status,409);

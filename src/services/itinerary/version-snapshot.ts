@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { Trip } from '../../generated/prisma/client.ts';
 import { SUPPORTED_CURRENCIES } from '../../schemas/domain.ts';
+import { MAX_INTERESTS, MAX_INTEREST_LENGTH } from '../../lib/trip-preferences.ts';
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const contextSchema = z.object({
@@ -10,7 +11,7 @@ const contextSchema = z.object({
   latitude: z.number().finite().min(-90).max(90).nullable(), longitude: z.number().finite().min(-180).max(180).nullable(),
   budget: z.number().finite().positive().max(1_000_000_000), currency: z.enum(SUPPORTED_CURRENCIES),
   startDate: date, endDate: date, travelers: z.number().int().min(1).max(20),
-  partyType: z.enum(['solo', 'couple', 'family', 'friends']), interests: z.array(z.string().max(200)).max(20),
+  partyType: z.enum(['solo', 'couple', 'family', 'friends']), interests: z.array(z.string().max(MAX_INTEREST_LENGTH)).max(MAX_INTERESTS),
 }).strict();
 const snapshotSchema = z.object({ snapshotVersion: z.literal(1), context: contextSchema, itinerary: z.unknown() }).strict();
 

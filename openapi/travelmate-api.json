@@ -1953,6 +1953,82 @@
           }
         }
       }
+    },
+    "/api/itinerary/retry-days": {
+      "post": {
+        "summary": "Refresh verified candidates for selected days without saving or calling AI",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "itinerary",
+                  "days"
+                ],
+                "properties": {
+                  "itinerary": {
+                    "$ref": "#/components/schemas/ItineraryResponse"
+                  },
+                  "providerBase": {
+                    "$ref": "#/components/schemas/ItineraryResponse"
+                  },
+                  "days": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 31,
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 30
+                    }
+                  },
+                  "includeNearby": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Add-only reviewable itinerary; existing activities retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "itinerary",
+                    "added"
+                  ],
+                  "properties": {
+                    "itinerary": {
+                      "$ref": "#/components/schemas/ItineraryResponse"
+                    },
+                    "added": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "422": {
+            "description": "Draft preserved; retry or reopen its original plan"
+          },
+          "429": {
+            "description": "Retry rate limit reached"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2006,26 +2082,161 @@
       "CurrencyCode": {
         "type": "string",
         "enum": [
-          "PHP",
-          "USD",
-          "EUR",
-          "JPY",
-          "KRW",
-          "THB",
-          "GBP",
+          "AED",
+          "AFN",
+          "ALL",
+          "AMD",
+          "AOA",
+          "ARS",
           "AUD",
+          "AWG",
+          "AZN",
+          "BAM",
+          "BBD",
+          "BDT",
+          "BHD",
+          "BIF",
+          "BMD",
+          "BND",
+          "BOB",
+          "BRL",
+          "BSD",
+          "BTN",
+          "BWP",
+          "BYN",
+          "BZD",
           "CAD",
-          "SGD",
-          "CNY",
-          "HKD",
-          "TWD",
-          "MYR",
-          "IDR",
-          "VND",
-          "INR",
-          "NZD",
+          "CDF",
           "CHF",
-          "AED"
+          "CLP",
+          "CNY",
+          "COP",
+          "CRC",
+          "CUP",
+          "CVE",
+          "CZK",
+          "DJF",
+          "DKK",
+          "DOP",
+          "DZD",
+          "EGP",
+          "ERN",
+          "ETB",
+          "EUR",
+          "FJD",
+          "FKP",
+          "GBP",
+          "GEL",
+          "GHS",
+          "GIP",
+          "GMD",
+          "GNF",
+          "GTQ",
+          "GYD",
+          "HKD",
+          "HNL",
+          "HTG",
+          "HUF",
+          "IDR",
+          "ILS",
+          "INR",
+          "IQD",
+          "IRR",
+          "ISK",
+          "JMD",
+          "JOD",
+          "JPY",
+          "KES",
+          "KGS",
+          "KHR",
+          "KMF",
+          "KPW",
+          "KRW",
+          "KWD",
+          "KYD",
+          "KZT",
+          "LAK",
+          "LBP",
+          "LKR",
+          "LRD",
+          "LSL",
+          "LYD",
+          "MAD",
+          "MDL",
+          "MGA",
+          "MKD",
+          "MMK",
+          "MNT",
+          "MOP",
+          "MRU",
+          "MUR",
+          "MVR",
+          "MWK",
+          "MXN",
+          "MYR",
+          "MZN",
+          "NAD",
+          "NGN",
+          "NIO",
+          "NOK",
+          "NPR",
+          "NZD",
+          "OMR",
+          "PAB",
+          "PEN",
+          "PGK",
+          "PHP",
+          "PKR",
+          "PLN",
+          "PYG",
+          "QAR",
+          "RON",
+          "RSD",
+          "RUB",
+          "RWF",
+          "SAR",
+          "SBD",
+          "SCR",
+          "SDG",
+          "SEK",
+          "SGD",
+          "SHP",
+          "SLE",
+          "SOS",
+          "SRD",
+          "SSP",
+          "STN",
+          "SVC",
+          "SYP",
+          "SZL",
+          "THB",
+          "TJS",
+          "TMT",
+          "TND",
+          "TOP",
+          "TRY",
+          "TTD",
+          "TWD",
+          "TZS",
+          "UAH",
+          "UGX",
+          "USD",
+          "UYU",
+          "UZS",
+          "VED",
+          "VES",
+          "VND",
+          "VUV",
+          "WST",
+          "XAF",
+          "XCD",
+          "XCG",
+          "XOF",
+          "XPF",
+          "YER",
+          "ZAR",
+          "ZMW",
+          "ZWG"
         ]
       },
       "FreshnessMetadata": {
@@ -2293,6 +2504,7 @@
             "type": "string",
             "enum": [
               "country-code",
+              "multiple",
               "unsupported"
             ]
           },
@@ -2314,6 +2526,12 @@
           },
           "currencyMessage": {
             "type": "string"
+          },
+          "currencies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CurrencyCode"
+            }
           }
         }
       },
@@ -3200,6 +3418,15 @@
                 }
               }
             }
+          },
+          "planningIssue": {
+            "type": "string",
+            "enum": [
+              "provider-failure",
+              "no-results",
+              "insufficient-coverage",
+              "scheduling-conflict"
+            ]
           }
         }
       },
@@ -3715,7 +3942,8 @@
           "endDate",
           "destinationDetails",
           "latitude",
-          "longitude"
+          "longitude",
+          "currency"
         ],
         "description": "Both dates count as travel days. End date must be between start date and start date plus 30 calendar days. Costs refer to the whole party's ONE trip budget.",
         "properties": {
@@ -3879,6 +4107,26 @@
               },
               "fetchedAt": {
                 "type": "string"
+              },
+              "amenities": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "distanceKm": {
+                "type": "number"
+              },
+              "originalName": {
+                "type": "string"
+              },
+              "nameSource": {
+                "type": "string",
+                "enum": [
+                  "provider-english",
+                  "transliterated",
+                  "unavailable"
+                ]
               }
             },
             "required": [
@@ -4072,6 +4320,9 @@
           },
           "groundingProof": {
             "type": "string"
+          },
+          "accommodationEstimate": {
+            "$ref": "#/components/schemas/PriceEvidence"
           }
         }
       },
@@ -5836,6 +6087,27 @@
             "minimum": -180,
             "maximum": 180
           },
+          "id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "geonames",
+              "openstreetmap",
+              "psgc"
+            ]
+          },
+          "providerId": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "region": {
+            "type": "string",
+            "maxLength": 1000
+          },
           "administrativeCode": {
             "type": "string",
             "pattern": "^\\d{10}$"
@@ -5860,24 +6132,12 @@
           },
           "coordinateSource": {
             "type": "string",
+            "maxLength": 1000,
             "format": "uri"
           },
-          "id": {
-            "type": "integer"
-          },
-          "provider": {
+          "placeType": {
             "type": "string",
-            "enum": [
-              "geonames",
-              "openstreetmap",
-              "psgc"
-            ]
-          },
-          "providerId": {
-            "type": "string"
-          },
-          "region": {
-            "type": "string"
+            "maxLength": 100
           },
           "sourceFeatureCode": {
             "type": "string",
@@ -5893,26 +6153,23 @@
             ]
           },
           "parentId": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "canBrowse": {
             "type": "boolean"
           },
           "locationPath": {
-            "type": "array",
             "maxItems": 10,
+            "type": "array",
             "items": {
               "type": "object",
-              "required": [
-                "id",
-                "providerId",
-                "name",
-                "type",
-                "countryCode"
-              ],
               "properties": {
                 "id": {
-                  "type": "integer"
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
                 },
                 "providerId": {
                   "type": "string",
@@ -5936,12 +6193,15 @@
                   "maximum": 5
                 }
               },
+              "required": [
+                "id",
+                "providerId",
+                "name",
+                "type",
+                "countryCode"
+              ],
               "additionalProperties": false
             }
-          },
-          "placeType": {
-            "type": "string",
-            "maxLength": 100
           }
         },
         "required": [
@@ -5961,7 +6221,19 @@
             "enum": [
               "provider-quote",
               "estimate",
+              "allowance",
               "unavailable"
+            ]
+          },
+          "ruleId": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "coverage": {
+            "type": "string",
+            "enum": [
+              "daily-food",
+              "daily-transport"
             ]
           },
           "basis": {
@@ -5985,26 +6257,161 @@
           "currency": {
             "type": "string",
             "enum": [
-              "PHP",
-              "USD",
-              "EUR",
-              "JPY",
-              "KRW",
-              "THB",
-              "GBP",
+              "AED",
+              "AFN",
+              "ALL",
+              "AMD",
+              "AOA",
+              "ARS",
               "AUD",
+              "AWG",
+              "AZN",
+              "BAM",
+              "BBD",
+              "BDT",
+              "BHD",
+              "BIF",
+              "BMD",
+              "BND",
+              "BOB",
+              "BRL",
+              "BSD",
+              "BTN",
+              "BWP",
+              "BYN",
+              "BZD",
               "CAD",
-              "SGD",
-              "CNY",
-              "HKD",
-              "TWD",
-              "MYR",
-              "IDR",
-              "VND",
-              "INR",
-              "NZD",
+              "CDF",
               "CHF",
-              "AED"
+              "CLP",
+              "CNY",
+              "COP",
+              "CRC",
+              "CUP",
+              "CVE",
+              "CZK",
+              "DJF",
+              "DKK",
+              "DOP",
+              "DZD",
+              "EGP",
+              "ERN",
+              "ETB",
+              "EUR",
+              "FJD",
+              "FKP",
+              "GBP",
+              "GEL",
+              "GHS",
+              "GIP",
+              "GMD",
+              "GNF",
+              "GTQ",
+              "GYD",
+              "HKD",
+              "HNL",
+              "HTG",
+              "HUF",
+              "IDR",
+              "ILS",
+              "INR",
+              "IQD",
+              "IRR",
+              "ISK",
+              "JMD",
+              "JOD",
+              "JPY",
+              "KES",
+              "KGS",
+              "KHR",
+              "KMF",
+              "KPW",
+              "KRW",
+              "KWD",
+              "KYD",
+              "KZT",
+              "LAK",
+              "LBP",
+              "LKR",
+              "LRD",
+              "LSL",
+              "LYD",
+              "MAD",
+              "MDL",
+              "MGA",
+              "MKD",
+              "MMK",
+              "MNT",
+              "MOP",
+              "MRU",
+              "MUR",
+              "MVR",
+              "MWK",
+              "MXN",
+              "MYR",
+              "MZN",
+              "NAD",
+              "NGN",
+              "NIO",
+              "NOK",
+              "NPR",
+              "NZD",
+              "OMR",
+              "PAB",
+              "PEN",
+              "PGK",
+              "PHP",
+              "PKR",
+              "PLN",
+              "PYG",
+              "QAR",
+              "RON",
+              "RSD",
+              "RUB",
+              "RWF",
+              "SAR",
+              "SBD",
+              "SCR",
+              "SDG",
+              "SEK",
+              "SGD",
+              "SHP",
+              "SLE",
+              "SOS",
+              "SRD",
+              "SSP",
+              "STN",
+              "SVC",
+              "SYP",
+              "SZL",
+              "THB",
+              "TJS",
+              "TMT",
+              "TND",
+              "TOP",
+              "TRY",
+              "TTD",
+              "TWD",
+              "TZS",
+              "UAH",
+              "UGX",
+              "USD",
+              "UYU",
+              "UZS",
+              "VED",
+              "VES",
+              "VND",
+              "VUV",
+              "WST",
+              "XAF",
+              "XCD",
+              "XCG",
+              "XOF",
+              "XPF",
+              "YER",
+              "ZAR",
+              "ZMW",
+              "ZWG"
             ]
           },
           "unitAmount": {
@@ -6024,7 +6431,12 @@
               "shared-fare",
               "per-room-night",
               "group",
-              "daily-per-person"
+              "daily-per-person",
+              "meal",
+              "day",
+              "night",
+              "room",
+              "transport-leg"
             ]
           },
           "participants": {
@@ -6153,7 +6565,161 @@
             "const": 1
           },
           "destination": {
-            "$ref": "#/components/schemas/DestinationAnchor"
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "country": {
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 100
+              },
+              "countryCode": {
+                "type": "string",
+                "pattern": "^[A-Z]{2}$"
+              },
+              "latitude": {
+                "type": "number",
+                "minimum": -90,
+                "maximum": 90
+              },
+              "longitude": {
+                "type": "number",
+                "minimum": -180,
+                "maximum": 180
+              },
+              "id": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "geonames",
+                  "openstreetmap",
+                  "psgc"
+                ]
+              },
+              "providerId": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "region": {
+                "type": "string",
+                "maxLength": 1000
+              },
+              "administrativeCode": {
+                "type": "string",
+                "pattern": "^\\d{10}$"
+              },
+              "provinceCode": {
+                "type": "string",
+                "pattern": "^\\d{10}$"
+              },
+              "geographicProvinceCode": {
+                "type": "string",
+                "pattern": "^\\d{10}$"
+              },
+              "administrativeLevel": {
+                "type": "string",
+                "enum": [
+                  "Region",
+                  "Province",
+                  "City",
+                  "Municipality",
+                  "Barangay"
+                ]
+              },
+              "coordinateSource": {
+                "type": "string",
+                "maxLength": 1000,
+                "format": "uri"
+              },
+              "placeType": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "sourceFeatureCode": {
+                "type": "string",
+                "maxLength": 10
+              },
+              "scopeType": {
+                "type": "string",
+                "enum": [
+                  "country",
+                  "area",
+                  "locality",
+                  "natural"
+                ]
+              },
+              "parentId": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "canBrowse": {
+                "type": "boolean"
+              },
+              "locationPath": {
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "providerId": {
+                      "type": "string",
+                      "maxLength": 100
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "type": {
+                      "type": "string",
+                      "maxLength": 100
+                    },
+                    "countryCode": {
+                      "type": "string",
+                      "pattern": "^[A-Z]{2}$"
+                    },
+                    "level": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 5
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "providerId",
+                    "name",
+                    "type",
+                    "countryCode"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "city",
+              "country",
+              "countryCode",
+              "latitude",
+              "longitude"
+            ],
+            "additionalProperties": false
+          },
+          "estimationVersion": {
+            "type": "string",
+            "const": "planning-v1"
           },
           "startingLocation": {
             "type": "string",
@@ -6164,6 +6730,43 @@
           },
           "endDate": {
             "type": "string"
+          },
+          "timeZone": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "scheduleConstraints": {
+            "type": "object",
+            "properties": {
+              "arrivalTime": {
+                "type": "string",
+                "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"
+              },
+              "departureTime": {
+                "type": "string",
+                "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"
+              },
+              "restDates": {
+                "maxItems": 31,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                }
+              }
+            },
+            "required": [
+              "restDates"
+            ],
+            "additionalProperties": false
+          },
+          "previousPlaceIds": {
+            "maxItems": 1000,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^Q\\d+$"
+            }
           },
           "fetchedAt": {
             "type": "string",
@@ -6182,26 +6785,161 @@
           "currency": {
             "type": "string",
             "enum": [
-              "PHP",
-              "USD",
-              "EUR",
-              "JPY",
-              "KRW",
-              "THB",
-              "GBP",
+              "AED",
+              "AFN",
+              "ALL",
+              "AMD",
+              "AOA",
+              "ARS",
               "AUD",
+              "AWG",
+              "AZN",
+              "BAM",
+              "BBD",
+              "BDT",
+              "BHD",
+              "BIF",
+              "BMD",
+              "BND",
+              "BOB",
+              "BRL",
+              "BSD",
+              "BTN",
+              "BWP",
+              "BYN",
+              "BZD",
               "CAD",
-              "SGD",
-              "CNY",
-              "HKD",
-              "TWD",
-              "MYR",
-              "IDR",
-              "VND",
-              "INR",
-              "NZD",
+              "CDF",
               "CHF",
-              "AED"
+              "CLP",
+              "CNY",
+              "COP",
+              "CRC",
+              "CUP",
+              "CVE",
+              "CZK",
+              "DJF",
+              "DKK",
+              "DOP",
+              "DZD",
+              "EGP",
+              "ERN",
+              "ETB",
+              "EUR",
+              "FJD",
+              "FKP",
+              "GBP",
+              "GEL",
+              "GHS",
+              "GIP",
+              "GMD",
+              "GNF",
+              "GTQ",
+              "GYD",
+              "HKD",
+              "HNL",
+              "HTG",
+              "HUF",
+              "IDR",
+              "ILS",
+              "INR",
+              "IQD",
+              "IRR",
+              "ISK",
+              "JMD",
+              "JOD",
+              "JPY",
+              "KES",
+              "KGS",
+              "KHR",
+              "KMF",
+              "KPW",
+              "KRW",
+              "KWD",
+              "KYD",
+              "KZT",
+              "LAK",
+              "LBP",
+              "LKR",
+              "LRD",
+              "LSL",
+              "LYD",
+              "MAD",
+              "MDL",
+              "MGA",
+              "MKD",
+              "MMK",
+              "MNT",
+              "MOP",
+              "MRU",
+              "MUR",
+              "MVR",
+              "MWK",
+              "MXN",
+              "MYR",
+              "MZN",
+              "NAD",
+              "NGN",
+              "NIO",
+              "NOK",
+              "NPR",
+              "NZD",
+              "OMR",
+              "PAB",
+              "PEN",
+              "PGK",
+              "PHP",
+              "PKR",
+              "PLN",
+              "PYG",
+              "QAR",
+              "RON",
+              "RSD",
+              "RUB",
+              "RWF",
+              "SAR",
+              "SBD",
+              "SCR",
+              "SDG",
+              "SEK",
+              "SGD",
+              "SHP",
+              "SLE",
+              "SOS",
+              "SRD",
+              "SSP",
+              "STN",
+              "SVC",
+              "SYP",
+              "SZL",
+              "THB",
+              "TJS",
+              "TMT",
+              "TND",
+              "TOP",
+              "TRY",
+              "TTD",
+              "TWD",
+              "TZS",
+              "UAH",
+              "UGX",
+              "USD",
+              "UYU",
+              "UZS",
+              "VED",
+              "VES",
+              "VND",
+              "VUV",
+              "WST",
+              "XAF",
+              "XCD",
+              "XCG",
+              "XOF",
+              "XPF",
+              "YER",
+              "ZAR",
+              "ZMW",
+              "ZWG"
             ]
           },
           "rooms": {
@@ -6227,7 +6965,19 @@
                 "enum": [
                   "provider-quote",
                   "estimate",
+                  "allowance",
                   "unavailable"
+                ]
+              },
+              "ruleId": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "coverage": {
+                "type": "string",
+                "enum": [
+                  "daily-food",
+                  "daily-transport"
                 ]
               },
               "basis": {
@@ -6251,26 +7001,161 @@
               "currency": {
                 "type": "string",
                 "enum": [
-                  "PHP",
-                  "USD",
-                  "EUR",
-                  "JPY",
-                  "KRW",
-                  "THB",
-                  "GBP",
+                  "AED",
+                  "AFN",
+                  "ALL",
+                  "AMD",
+                  "AOA",
+                  "ARS",
                   "AUD",
+                  "AWG",
+                  "AZN",
+                  "BAM",
+                  "BBD",
+                  "BDT",
+                  "BHD",
+                  "BIF",
+                  "BMD",
+                  "BND",
+                  "BOB",
+                  "BRL",
+                  "BSD",
+                  "BTN",
+                  "BWP",
+                  "BYN",
+                  "BZD",
                   "CAD",
-                  "SGD",
-                  "CNY",
-                  "HKD",
-                  "TWD",
-                  "MYR",
-                  "IDR",
-                  "VND",
-                  "INR",
-                  "NZD",
+                  "CDF",
                   "CHF",
-                  "AED"
+                  "CLP",
+                  "CNY",
+                  "COP",
+                  "CRC",
+                  "CUP",
+                  "CVE",
+                  "CZK",
+                  "DJF",
+                  "DKK",
+                  "DOP",
+                  "DZD",
+                  "EGP",
+                  "ERN",
+                  "ETB",
+                  "EUR",
+                  "FJD",
+                  "FKP",
+                  "GBP",
+                  "GEL",
+                  "GHS",
+                  "GIP",
+                  "GMD",
+                  "GNF",
+                  "GTQ",
+                  "GYD",
+                  "HKD",
+                  "HNL",
+                  "HTG",
+                  "HUF",
+                  "IDR",
+                  "ILS",
+                  "INR",
+                  "IQD",
+                  "IRR",
+                  "ISK",
+                  "JMD",
+                  "JOD",
+                  "JPY",
+                  "KES",
+                  "KGS",
+                  "KHR",
+                  "KMF",
+                  "KPW",
+                  "KRW",
+                  "KWD",
+                  "KYD",
+                  "KZT",
+                  "LAK",
+                  "LBP",
+                  "LKR",
+                  "LRD",
+                  "LSL",
+                  "LYD",
+                  "MAD",
+                  "MDL",
+                  "MGA",
+                  "MKD",
+                  "MMK",
+                  "MNT",
+                  "MOP",
+                  "MRU",
+                  "MUR",
+                  "MVR",
+                  "MWK",
+                  "MXN",
+                  "MYR",
+                  "MZN",
+                  "NAD",
+                  "NGN",
+                  "NIO",
+                  "NOK",
+                  "NPR",
+                  "NZD",
+                  "OMR",
+                  "PAB",
+                  "PEN",
+                  "PGK",
+                  "PHP",
+                  "PKR",
+                  "PLN",
+                  "PYG",
+                  "QAR",
+                  "RON",
+                  "RSD",
+                  "RUB",
+                  "RWF",
+                  "SAR",
+                  "SBD",
+                  "SCR",
+                  "SDG",
+                  "SEK",
+                  "SGD",
+                  "SHP",
+                  "SLE",
+                  "SOS",
+                  "SRD",
+                  "SSP",
+                  "STN",
+                  "SVC",
+                  "SYP",
+                  "SZL",
+                  "THB",
+                  "TJS",
+                  "TMT",
+                  "TND",
+                  "TOP",
+                  "TRY",
+                  "TTD",
+                  "TWD",
+                  "TZS",
+                  "UAH",
+                  "UGX",
+                  "USD",
+                  "UYU",
+                  "UZS",
+                  "VED",
+                  "VES",
+                  "VND",
+                  "VUV",
+                  "WST",
+                  "XAF",
+                  "XCD",
+                  "XCG",
+                  "XOF",
+                  "XPF",
+                  "YER",
+                  "ZAR",
+                  "ZMW",
+                  "ZWG"
                 ]
               },
               "unitAmount": {
@@ -6290,7 +7175,12 @@
                   "shared-fare",
                   "per-room-night",
                   "group",
-                  "daily-per-person"
+                  "daily-per-person",
+                  "meal",
+                  "day",
+                  "night",
+                  "room",
+                  "transport-leg"
                 ]
               },
               "participants": {
@@ -6395,6 +7285,11 @@
             "minimum": 0,
             "maximum": 1000000000
           },
+          "unpricedExpenseCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
           "unknownPriceCount": {
             "type": "integer",
             "minimum": 0,
@@ -6415,15 +7310,6 @@
               "type": "string",
               "maxLength": 1000
             }
-          },
-          "timeZone": {
-            "type": "string",
-            "maxLength": 100
-          },
-          "unpricedExpenseCount": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 1000
           }
         },
         "required": [
@@ -6911,26 +7797,161 @@
           "currency": {
             "type": "string",
             "enum": [
-              "PHP",
-              "USD",
-              "EUR",
-              "JPY",
-              "KRW",
-              "THB",
-              "GBP",
+              "AED",
+              "AFN",
+              "ALL",
+              "AMD",
+              "AOA",
+              "ARS",
               "AUD",
+              "AWG",
+              "AZN",
+              "BAM",
+              "BBD",
+              "BDT",
+              "BHD",
+              "BIF",
+              "BMD",
+              "BND",
+              "BOB",
+              "BRL",
+              "BSD",
+              "BTN",
+              "BWP",
+              "BYN",
+              "BZD",
               "CAD",
-              "SGD",
-              "CNY",
-              "HKD",
-              "TWD",
-              "MYR",
-              "IDR",
-              "VND",
-              "INR",
-              "NZD",
+              "CDF",
               "CHF",
-              "AED"
+              "CLP",
+              "CNY",
+              "COP",
+              "CRC",
+              "CUP",
+              "CVE",
+              "CZK",
+              "DJF",
+              "DKK",
+              "DOP",
+              "DZD",
+              "EGP",
+              "ERN",
+              "ETB",
+              "EUR",
+              "FJD",
+              "FKP",
+              "GBP",
+              "GEL",
+              "GHS",
+              "GIP",
+              "GMD",
+              "GNF",
+              "GTQ",
+              "GYD",
+              "HKD",
+              "HNL",
+              "HTG",
+              "HUF",
+              "IDR",
+              "ILS",
+              "INR",
+              "IQD",
+              "IRR",
+              "ISK",
+              "JMD",
+              "JOD",
+              "JPY",
+              "KES",
+              "KGS",
+              "KHR",
+              "KMF",
+              "KPW",
+              "KRW",
+              "KWD",
+              "KYD",
+              "KZT",
+              "LAK",
+              "LBP",
+              "LKR",
+              "LRD",
+              "LSL",
+              "LYD",
+              "MAD",
+              "MDL",
+              "MGA",
+              "MKD",
+              "MMK",
+              "MNT",
+              "MOP",
+              "MRU",
+              "MUR",
+              "MVR",
+              "MWK",
+              "MXN",
+              "MYR",
+              "MZN",
+              "NAD",
+              "NGN",
+              "NIO",
+              "NOK",
+              "NPR",
+              "NZD",
+              "OMR",
+              "PAB",
+              "PEN",
+              "PGK",
+              "PHP",
+              "PKR",
+              "PLN",
+              "PYG",
+              "QAR",
+              "RON",
+              "RSD",
+              "RUB",
+              "RWF",
+              "SAR",
+              "SBD",
+              "SCR",
+              "SDG",
+              "SEK",
+              "SGD",
+              "SHP",
+              "SLE",
+              "SOS",
+              "SRD",
+              "SSP",
+              "STN",
+              "SVC",
+              "SYP",
+              "SZL",
+              "THB",
+              "TJS",
+              "TMT",
+              "TND",
+              "TOP",
+              "TRY",
+              "TTD",
+              "TWD",
+              "TZS",
+              "UAH",
+              "UGX",
+              "USD",
+              "UYU",
+              "UZS",
+              "VED",
+              "VES",
+              "VND",
+              "VUV",
+              "WST",
+              "XAF",
+              "XCD",
+              "XCG",
+              "XOF",
+              "XPF",
+              "YER",
+              "ZAR",
+              "ZMW",
+              "ZWG"
             ]
           },
           "total": {

@@ -16,6 +16,7 @@ export interface ScheduleBlock { kind: 'meal' | 'free-time' | 'unscheduled'; sta
 export interface ScheduleMetadata {
   planningStatus?: 'suggested' | 'incomplete' | 'rest' | 'travel';
   planningReason?: string;
+  planningIssue?: 'provider-failure' | 'no-results' | 'insufficient-coverage' | 'scheduling-conflict';
   scheduleBlocks?: ScheduleBlock[];
 }
 export interface SchedulingOptions {
@@ -30,6 +31,8 @@ export interface SchedulingOptions {
   family?: boolean;
   weather?: Array<{ date: string; description: string; precipitationProbability: number; tempMax: number }>;
   providerUnavailable?: boolean;
+  providerPartial?: boolean;
+  occupied?: Record<string, { visits: number; minutes: number }>;
   diagnostics?: (event: Record<string, unknown>) => void;
 }
 const minutes = (clock: string) => Number(clock.slice(0, 2)) * 60 + Number(clock.slice(3));
@@ -53,7 +56,7 @@ export function completeGroundedSchedule(anchor: DestinationAnchor, catalog: Gro
   const constraints = options.constraints ?? { restDates: [] };
   const windows = Array.from({ length: count }, (_, index) => {
     const date = dateAt(startDate, index);
-    const start = index === 0 && constraints.arrivalTime ? Math.max(540, minutes(constraints.arrivalTime) + 90) : 540;
+    const start = (index === 0 && constraints.arrivalTime ? Math.max(540, minutes(constraints.arrivalTime) + 90) : 540) + (options.occupied?.[date]?.minutes ?? 0);
     const end = index === count - 1 && constraints.departureTime ? Math.min(1080, minutes(constraints.departureTime) - 120) : 1080;
     return { date, start, end, rest: constraints.restDates.includes(date) };
   });
@@ -84,7 +87,7 @@ export function completeGroundedSchedule(anchor: DestinationAnchor, catalog: Gro
     let previous: GroundedPlace | undefined, finish = window.start, lunch: { start: number; end: number } | undefined;
     const evaluate = (place: GroundedPlace, candidateWindow = window, from = previous, after = finish, existingMeal = lunch) => {
         const hint = hints.get(place.placeId);
-        const duration = hint?.durationMinutes ?? durationFor(place, pace === 'relaxed');
+        let duration = hint?.durationMinutes ?? durationFor(place, pace === 'relaxed');
         const buffer = (pace === 'relaxed' || options.family ? 30 : 15)+policy.buffer;
         const needsCityTransfer = !!place.locationScope && distanceKm(anchor, place) > 1;
         const transfer = from ? Math.ceil(distanceKm(from, place) / transport.speed * 60) + buffer : needsCityTransfer ? Math.ceil(distanceKm(anchor, place) / transport.speed * 60) + buffer : 0;
@@ -102,8 +105,15 @@ export function completeGroundedSchedule(anchor: DestinationAnchor, catalog: Gro
         const references = place.openingWindows?.filter(w => w.weekdays.includes(weekday));
         // A reference for another weekday does not prove this day's opening or closure.
         const hours = references?.length ? references : undefined;
-        const starts = hours ? hours.map(w => Math.max(earliest, w.startMinutes)).filter((start, i) => start + duration <= hours[i].endMinutes) : [earliest];
-        const start = starts.filter(start => start + duration + returnBuffer + (returnBuffer && !meal ? 45 : 0) <= candidateWindow.end).sort((a, b) => a - b)[0];
+        let starts = hours ? hours.map(w => Math.max(earliest, w.startMinutes)).filter((start, i) => start + duration <= hours[i].endMinutes) : [earliest];
+        let start: number | undefined = starts.filter(start => start + duration + returnBuffer + (returnBuffer && !meal ? 45 : 0) <= candidateWindow.end).sort((a, b) => a - b)[0];
+        // AI durations are suggestions, not provider minimum stays.
+        const suggested = durationFor(place, pace === 'relaxed');
+        if (start === undefined && duration > suggested) {
+          duration = suggested;
+          starts = hours ? hours.map(w => Math.max(earliest, w.startMinutes)).filter((value, i) => value + duration <= hours[i].endMinutes) : [earliest];
+          start = starts.find(value => value + duration + returnBuffer + (returnBuffer && !meal ? 45 : 0) <= candidateWindow.end);
+        }
         const referenceText = normalize(place.name + ' ' + place.description);
         const interest = words.filter(word => referenceText.includes(word)).length;
         const requested=preferredWords.filter(word=>referenceText.includes(word)).length;
@@ -120,13 +130,13 @@ export function completeGroundedSchedule(anchor: DestinationAnchor, catalog: Gro
         return { place, duration, transfer, returnBuffer, start:affordable?start:undefined, meal, score, cost, interest, requested, premium, family, lowCost, variety, participants: hint?.participants ?? travelers,
           rejectionReason: !affordable ? 'referenced-fee-exceeds-remaining-budget' : start !== undefined ? undefined : !starts.length ? 'known-opening-window-too-short' : 'visit-transfers-and-return-exceed-day-window' };
     };
-    const remainingWindows = windows.slice(index).filter(w => !w.rest && w.end - w.start >= 60);
+    const remainingWindows = windows.slice(index).filter(w => !w.rest && w.end - w.start >= 60 && (options.occupied?.[w.date]?.visits ?? 0) < cap);
     // Count only visits that can actually fit a remaining day. Counting distant,
     // unschedulable catalog entries spends the usable visits on early days.
     const unused = places.filter(place => !used.has(place.placeId));
     const firstFits = unused.map(place => ({ place, fits: remainingWindows.some(w => evaluate(place, w, undefined, w.start, undefined).start !== undefined) }));
     const feasibleRemaining = firstFits.filter(candidate => candidate.fits).length;
-    const target = Math.min(cap, Math.ceil(feasibleRemaining / remainingWindows.length));
+    const target = Math.max(0, Math.min(cap - (options.occupied?.[window.date]?.visits ?? 0), Math.ceil(feasibleRemaining / Math.max(1, remainingWindows.length))));
     options.diagnostics?.({ event: 'schedule_day_allocation', day: day.day, catalog: places.length, unused: unused.length, feasibleRemaining, remainingDays: remainingWindows.length, target,
       rejected: firstFits.filter(candidate => !candidate.fits).map(({ place }) => ({ placeId: place.placeId, reason: evaluate(place, window, undefined, window.start, undefined).rejectionReason })) });
     for (let slot = 0; slot < target; slot++) {
@@ -147,11 +157,14 @@ export function completeGroundedSchedule(anchor: DestinationAnchor, catalog: Gro
     }
     const visitMinutes = day.visits.reduce((sum, visit) => sum + visit.durationMinutes, 0);
     const expected = window.end - window.start < 240 ? 1 : 2;
-    const enough = day.visits.length >= expected || visitMinutes >= (pace === 'relaxed' ? 120 : 180);
+    const enough = day.visits.length + (options.occupied?.[window.date]?.visits ?? 0) >= expected || visitMinutes + (options.occupied?.[window.date]?.minutes ?? 0) >= (pace === 'relaxed' ? 120 : 180);
     day.planningStatus = enough ? 'suggested' : 'incomplete';
-    day.planningReason = enough ? 'Suggested verified city and nearby visits; visit durations and transport transfers are estimates. Nearby visits reserve return travel to the selected city. Confirm current hours and access.'
-      : options.providerUnavailable ? 'Place providers are unavailable; no attractions were invented.' : !places.length ? 'Place-provider coverage returned no suitable city/country-verified places within the supported search area. No attractions were invented.' : 'Not enough unused, city/country-verified places are available for this day, or known opening windows and travel gaps do not fit. Missing opening hours alone do not exclude places.';
-    day.planningReason += ` Style: ${options.travelStyle || 'balanced'}; ${transport.label} plus ${((pace==='relaxed'||options.family)?30:15)+policy.buffer}-minute transfer buffers; actual routes, fares and access need confirmation.`;
+    day.planningIssue = enough ? undefined : options.providerUnavailable || options.providerPartial ? 'provider-failure' : !places.length ? 'no-results' : feasibleRemaining === 0 && unused.length > 0 ? 'scheduling-conflict' : 'insufficient-coverage';
+    day.planningReason = enough ? 'Follow the suggested stop order at your own pace. Confirm opening hours, access and travel routes.'
+      : day.planningIssue === 'provider-failure' ? 'Some place information could not be retrieved. Retry this day when the provider is available.'
+      : day.planningIssue === 'no-results' ? 'No suitable verified places were found for this destination. Retry or add a place you have checked.'
+      : day.planningIssue === 'scheduling-conflict' ? 'The remaining places do not fit known opening windows or estimated travel. Retry or review travel options.'
+      : 'There are not enough unique verified places to complete this day. Retry to check for more places.';
     if (badWeather) day.planningReason += day.visits.some(visit => indoor(places.find(place => place.placeId === visit.placeId)!)) ? ' Verified indoor venues are prioritized; confirm access and use the visible weather alerts.' : ' No suitable verified indoor alternative is available; review the weather alert before outdoor visits.';
     day.theme = day.visits.length ? 'Suggested visits' : 'More places needed';
     // Time blocks are schedule context, never cost-bearing activity entries or map pins.

@@ -37,7 +37,7 @@ test('limited coverage is fairly spread and allowances-only days remain explicit
   assert.ok(days.every(day => day.planningStatus === 'incomplete'));
   assert.ok(days.at(-1)?.scheduleBlocks?.every(block => block.kind !== 'free-time'));
   const unavailable = schedule([], 3, 'balanced', { providerUnavailable: true });
-  assert.ok(unavailable.every(day => day.planningStatus === 'incomplete' && /unavailable/.test(day.planningReason!)));
+  assert.ok(unavailable.every(day => day.planningStatus === 'incomplete' && day.planningIssue === 'provider-failure'));
   assertSchedule(days, catalog);
 });
 test('unschedulable catalog places do not consume later days allocation', () => {

@@ -5,26 +5,9 @@ export type ItineraryVersionKind = 'saved' | 'regenerated' | 'manual_edit' | 'du
 export type GenerationStatus = 'pending' | 'completed' | 'failed';
 export type PaymentStatus = 'PENDING' | 'PAID_HELD' | 'Released' | 'FROZEN_HELD' | 'REFUNDED';
 export type PartyType = 'solo' | 'couple' | 'family' | 'friends';
-export const SUPPORTED_CURRENCIES = ['PHP', 'USD', 'EUR', 'JPY', 'KRW', 'THB', 'GBP', 'AUD', 'CAD', 'SGD', 'CNY', 'HKD', 'TWD', 'MYR', 'IDR', 'VND', 'INR', 'NZD', 'CHF', 'AED'] as const;
-export type CurrencyCode = typeof SUPPORTED_CURRENCIES[number];
-export const ZERO_DECIMAL_CURRENCIES: readonly CurrencyCode[] = ['JPY', 'KRW', 'VND'];
-
-export function normalizeCurrency(value: unknown): CurrencyCode {
-  const currency = typeof value === 'string' ? value.trim().toUpperCase() : '';
-  if (!SUPPORTED_CURRENCIES.includes(currency as CurrencyCode)) {
-    throw new Error(`Currency must be one of: ${SUPPORTED_CURRENCIES.join(', ')}.`);
-  }
-  return currency as CurrencyCode;
-}
-
-export function formatMoney(value: number, currency: CurrencyCode): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    currencyDisplay: 'code',
-    maximumFractionDigits: ZERO_DECIMAL_CURRENCIES.includes(currency) ? 0 : 2,
-  }).format(value);
-}
+export { SUPPORTED_CURRENCIES, ZERO_DECIMAL_CURRENCIES, CURRENCY_NAMES, normalizeCurrency, formatMoney, currencyFractionDigits, currencyStep, hasValidCurrencyPrecision, roundMoney, sumMoney } from '../lib/currency.ts';
+import { currencyFractionDigits, hasValidCurrencyPrecision, type CurrencyCode } from '../lib/currency.ts';
+export type { CurrencyCode } from '../lib/currency.ts';
 
 export const PARTY_TYPE_LABELS: Record<PartyType, string> = {
   solo: 'Solo',
@@ -210,16 +193,6 @@ export function travelersForParty(partyType: PartyType, requestedTravelers: numb
     throw new Error('Family and friends groups must have between 2 and 20 travelers.');
   }
   return requestedTravelers;
-}
-
-export function currencyFractionDigits(currency: CurrencyCode): 0 | 2 {
-  return ZERO_DECIMAL_CURRENCIES.includes(currency) ? 0 : 2;
-}
-
-export function hasValidCurrencyPrecision(value: number, currency: CurrencyCode): boolean {
-  if (!Number.isFinite(value)) return false;
-  const scale = 10 ** currencyFractionDigits(currency);
-  return Math.abs(value * scale - Math.round(value * scale)) < 1e-7;
 }
 
 /** Split money exactly in its smallest supported unit; the first members absorb any remainder. */

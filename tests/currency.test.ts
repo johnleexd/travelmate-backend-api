@@ -7,7 +7,7 @@ test('trip currencies normalize to the supported ISO codes', () => {
   assert.equal(normalizeCurrency('jpy'), 'JPY');
   assert.equal(normalizeCurrency('krw'), 'KRW');
   assert.equal(normalizeCurrency('thb'), 'THB');
-  assert.throws(() => normalizeCurrency('XYZ'), /PHP, USD, EUR, JPY/);
+  assert.throws(() => normalizeCurrency('XYZ'), /ISO 4217/);
 });
 
 test('money formatting always includes its currency code', () => {

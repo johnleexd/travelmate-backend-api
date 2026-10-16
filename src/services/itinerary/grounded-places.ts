@@ -23,6 +23,18 @@ export interface GroundedPlace extends PlaceEvidence {
   openingWindows?: Array<{ weekdays: number[]; startMinutes: number; endMinutes: number }>;
   admission?: { amount:number; currency:CurrencyCode; sourceUrl:string; fetchedAt:string };
 }
+export interface PlaceCoverage {
+  outcome: 'ready' | 'limited' | 'empty' | 'partial' | 'provider-failure';
+  requested: number; articles: number; uniqueCandidates: number; accepted: number;
+  providerFailures: number; requests: number; truncated: boolean;
+  inScope?: number; nearby?: number;
+}
+export interface PlaceSearchOptions {
+  tripDays?: number;
+  forceRefresh?: boolean;
+  diagnostics?: (coverage: PlaceCoverage) => void;
+}
+export const permittedPlaceCandidates = (places: GroundedPlace[], includeNearby = false) => places.filter(place => includeNearby || place.locationScope !== 'nearby');
 const normalized = (value: string) => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const values = (entity: Entity | undefined, property: string): any[] => (entity?.claims?.[property] ?? []).filter(claim => claim.rank !== 'deprecated').flatMap(claim => claim.mainsnak?.datavalue ? [claim.mainsnak.datavalue.value] : []);
 const ids = (entity: Entity | undefined, property: string): string[] => values(entity, property).flatMap(value => /^Q\d+$/.test(value?.id) ? [value.id] : []);
@@ -192,38 +204,83 @@ function conflictingCountry(id: string, entities: Record<string, Entity>, countr
   return false;
 }
 
-export async function retrieveGroundedPlaces(anchor: DestinationAnchor, fetcher: typeof fetch = fetch, signal?: AbortSignal, includePhotos = true): Promise<GroundedPlace[]> {
+export async function retrieveGroundedPlaces(anchor: DestinationAnchor, fetcher: typeof fetch = fetch, signal?: AbortSignal, includePhotos = true, options: PlaceSearchOptions = {}): Promise<GroundedPlace[]> {
   const requestSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(90000)]) : AbortSignal.timeout(90000);
+  const boundedFetcher: typeof fetch = (input, init) => fetcher(input, { ...init, signal: init?.signal ? AbortSignal.any([requestSignal, init.signal]) : requestSignal });
+  const requested = Math.max(MIN_LOCAL_PLACE_COVERAGE, Math.min(31, Math.max(1, options.tripDays ?? 1)) * 3);
+  let discoveryRequests = 0, rawArticles = 0, providerFailures = 0, truncated = false;
+  const throttledHosts = new Set<string>();
   const json = async (host: string, parameters: Record<string, string>, photoSignal?: AbortSignal) => {
+    if (throttledHosts.has(host)) throw new Error('Provider rate limit: retry on a later lookup.');
     const started = Date.now();
     const response = await fetcher(`${host}/w/api.php?${new URLSearchParams({ format: 'json', ...parameters })}`, {
       headers: { 'User-Agent': 'TravelMate/1.0 (destination reference lookup)', 'Api-User-Agent': 'TravelMate/1.0' }, signal: photoSignal || requestSignal,
     });
     console.info(JSON.stringify({ event: 'place_reference_request', provider: host, action: parameters.action, generator: parameters.generator, status: response.status, durationMs: Date.now() - started }));
+    if (response.status === 429) throttledHosts.add(host);
     if (!response.ok) throw new Error(`Destination reference provider unavailable (HTTP ${response.status}).`);
     const result = await response.json() as any;
-    if (result.error) throw new Error('Destination reference provider rejected the lookup.');
+    if (result.error) throw new Error(`Destination reference provider rejected the lookup (${String(result.error.code).slice(0, 80)}).`);
     return result;
   };
   const entities: Record<string, Entity> = {};
   const pages: Array<{ title: string; pageid: number; coordinates?: Array<{ lat: number; lon: number }>; pageprops?: { wikibase_item?: string } }> = [];
   let discoveryFailed = false;
-  const addPages = (data: any) => pages.push(...Object.values(data.query?.pages ?? {}) as typeof pages);
-  try { addPages(await json('https://en.wikipedia.org', {
+  const addPages = (data: any) => {
+    for (const page of Object.values(data.query?.pages ?? {}) as typeof pages) {
+      rawArticles++;
+      const existing = pages.find(other => page.pageprops?.wikibase_item ? other.pageprops?.wikibase_item === page.pageprops.wikibase_item : other.title === page.title);
+      if (existing) {
+        if (!existing.coordinates?.length && page.coordinates?.length) existing.coordinates = page.coordinates;
+        if (!existing.pageprops?.wikibase_item && page.pageprops?.wikibase_item) existing.pageprops = page.pageprops;
+      } else if (pages.length < 1500) pages.push(page);
+      else truncated = true;
+    }
+  };
+  // Follow property and generator continuation together. Both can be present.
+  const discover = async (host: string, parameters: Record<string, string>) => {
+    let continuation: Record<string, string> = {};
+    const seen = new Set<string>();
+    for (let page = 0; page < 3 && discoveryRequests < 16; page++) {
+      discoveryRequests++;
+      try {
+        const data = await json(host, { ...parameters, ...continuation });
+        addPages(data);
+        if (!data.continue) return;
+        continuation = Object.fromEntries(Object.entries(data.continue).map(([key, value]) => [key, String(value)]));
+        const identity = JSON.stringify(continuation);
+        if (seen.has(identity)) { truncated = true; return; }
+        seen.add(identity);
+      } catch (error) {
+        discoveryFailed = true; providerFailures++;
+        console.warn(JSON.stringify({ event: 'place_discovery_failure', provider: new URL(host).host, generator: parameters.generator, error: error instanceof Error ? error.name : 'RequestError' }));
+        return;
+      }
+    }
+    truncated = true;
+  };
+  await discover('https://en.wikipedia.org', {
     action: 'query', generator: 'geosearch', ggscoord: `${anchor.latitude}|${anchor.longitude}`, ggsradius: '10000', ggslimit: '500', ggsnamespace: '0',
     // Coordinates otherwise defaults to ten results, even when the generator returns many more pages.
     prop: 'coordinates|pageprops', coprimary: 'primary', colimit: 'max', ppprop: 'wikibase_item',
-  })); } catch (error) { discoveryFailed = true; console.warn('[TravelMate places] Initial discovery failed:', error instanceof Error ? error.message : 'Request failed'); }
+  });
+  const attemptedEntities = new Set<string>();
   const hydrate = async () => {
     let frontier = pages.flatMap(page => /^Q\d+$/.test(page.pageprops?.wikibase_item ?? '') ? [page.pageprops!.wikibase_item!] : []);
+    const visited = new Set<string>();
     for (let depth = 0; depth <= 5 && frontier.length; depth++) {
-      const missing = [...new Set(frontier)].filter(id => !entities[id]);
-      for (let offset = 0; offset < missing.length; offset += 150) {
-        const batches = [0, 50, 100].map(chunk => missing.slice(offset + chunk, Math.min(offset + chunk + 50, offset + 150))).filter(batch => batch.length);
-        const results = await Promise.all(batches.map(batch => json('https://www.wikidata.org', { action: 'wbgetentities', ids: batch.join('|'), props: 'labels|aliases|descriptions|claims', languages: 'en' })));
-        for (const data of results) Object.assign(entities, data.entities ?? {});
+      const current = [...new Set(frontier)].filter(id => !visited.has(id));
+      current.forEach(id => visited.add(id));
+      const missing = current.filter(id => !entities[id] && !attemptedEntities.has(id));
+      // A single request at a time avoids bursting the public reference API.
+      // Failed IDs are not fetched again for every additional category query.
+      for (let offset = 0; offset < missing.length; offset += 50) {
+        const batch = missing.slice(offset, offset + 50);
+        batch.forEach(id => attemptedEntities.add(id));
+        try { Object.assign(entities, (await json('https://www.wikidata.org', { action: 'wbgetentities', ids: batch.join('|'), props: 'labels|aliases|descriptions|claims', languages: 'en' })).entities ?? {}); }
+        catch { discoveryFailed = true; providerFailures++; }
       }
-      frontier = missing.flatMap(id => [...(entities[id]?.claims?.P2555 ?? []).flatMap(claim=>{const unit=claim.mainsnak?.datavalue?.value?.unit;const match=typeof unit==='string'?unit.match(/Q\d+$/):undefined;return match?[match[0]]:[];}), ...currentRelationshipIds(entities[id], 'P131'), ...currentRelationshipIds(entities[id], 'P17'), ...(depth === 0 ? ids(entities[id], 'P31') : []), ...ids(entities[id], 'P3025'), ...(entities[id]?.claims?.P3025 ?? []).flatMap(claim => Object.values(claim.qualifiers ?? {}).flatMap(snaks => snaks.flatMap(snak => /^Q\d+$/.test(snak.datavalue?.value?.id) ? [snak.datavalue!.value.id] : [])))]);
+      frontier = current.flatMap(id => [...(entities[id]?.claims?.P2555 ?? []).flatMap(claim=>{const unit=claim.mainsnak?.datavalue?.value?.unit;const match=typeof unit==='string'?unit.match(/Q\d+$/):undefined;return match?[match[0]]:[];}), ...currentRelationshipIds(entities[id], 'P131'), ...currentRelationshipIds(entities[id], 'P17'), ...(depth === 0 ? ids(entities[id], 'P31') : []), ...ids(entities[id], 'P3025'), ...(entities[id]?.claims?.P3025 ?? []).flatMap(claim => Object.values(claim.qualifiers ?? {}).flatMap(snaks => snaks.flatMap(snak => /^Q\d+$/.test(snak.datavalue?.value?.id) ? [snak.datavalue!.value.id] : [])))]);
     }
   };
   await hydrate();
@@ -261,7 +318,9 @@ export async function retrieveGroundedPlaces(anchor: DestinationAnchor, fetcher:
       && (corroboration || referencePoints.some(point => Number.isFinite(point.precision) && point.precision <= 0.001 && distanceKm(coordinate, point) < 0.25));
     if (!local && !boundary && !corroboratedNearby) return reject('city-or-country-membership-unverified');
     if (local && boundaries[0]?.city === anchor.city && !containsPlace(boundaries[0], coordinate)) return reject('conflicting-city-boundary-evidence');
-    const city = boundary?.city ?? (corroboratedNearby ? corroboration?.city ?? 'Locality unconfirmed' : anchor.city);
+    // A district polygon inside the selected city must not relabel a place
+    // whose administrative ancestry already verifies that selected city.
+    const city = local ? anchor.city : boundary?.city ?? (corroboratedNearby ? corroboration?.city ?? 'Locality unconfirmed' : anchor.city);
     const locationScope = city === anchor.city ? 'city' as const : 'nearby' as const;
     rejected.delete(id);
     const name = entity.labels?.en?.value || page.title;
@@ -273,20 +332,28 @@ export async function retrieveGroundedPlaces(anchor: DestinationAnchor, fetcher:
       file: values(entity, 'P18').find(value => typeof value === 'string') as string | undefined }];
   });
   let places = collect();
-  if (places.length < MIN_LOCAL_PLACE_COVERAGE) {
+  if (places.length < requested) {
     // GeoSearch's 10 km maximum and English-only coverage can omit local attractions.
     // CirrusSearch is bounded to 30 km; every result still passes the same membership checks.
     const languages = ['en', ...(countries[anchor.countryCode as TCountryCode]?.languages ?? []).filter(language => /^[a-z]{2,3}$/.test(language) && language !== 'en').slice(0, 2)];
     for (const language of languages) {
-      try { addPages(await json(`https://${language}.wikipedia.org`, { action: 'query', generator: 'search', gsrsearch: `nearcoord:${MAX_PLACE_DISTANCE_KM}km,${anchor.latitude},${anchor.longitude}`, gsrlimit: '500', gsrnamespace: '0', prop: 'coordinates|pageprops', coprimary: 'primary', colimit: 'max', ppprop: 'wikibase_item' })); }
-      catch (error) { discoveryFailed = true; console.warn('[TravelMate places] Expanded discovery failed:', error instanceof Error ? error.message : 'Request failed'); }
+      await discover(`https://${language}.wikipedia.org`, { action: 'query', generator: 'search', gsrsearch: `nearcoord:${MAX_PLACE_DISTANCE_KM}km,${anchor.latitude},${anchor.longitude}`, gsrlimit: '100', gsrnamespace: '0', prop: 'coordinates|pageprops', coprimary: 'primary', colimit: 'max', ppprop: 'wikibase_item' });
+    }
+    await hydrate();
+    places = collect();
+  }
+  if (places.length < requested) {
+    // Category searches can retrieve relevant records beyond a crowded first page.
+    for (const categories of ['museum OR gallery OR library OR monument', 'park OR garden OR market OR square', 'temple OR mosque OR church OR castle OR palace OR fortress']) {
+      await discover('https://en.wikipedia.org', { action: 'query', generator: 'search', gsrsearch: `nearcoord:${MAX_PLACE_DISTANCE_KM}km,${anchor.latitude},${anchor.longitude} (${categories})`, gsrlimit: '100', gsrnamespace: '0', prop: 'coordinates|pageprops', coprimary: 'primary', colimit: 'max', ppprop: 'wikibase_item' });
+      if (discoveryRequests >= 16) break;
     }
     await hydrate();
     places = collect();
   }
   // Resolve missing administrative chains using one selected-city polygon, not radius alone.
   if (pages.some(page => siteDescription(entities[page.pageprops?.wikibase_item ?? '']) && !entityBelongsToDestination(page.pageprops?.wikibase_item ?? '', entities, anchor))) {
-    const selected = await loadPlaceBoundary(anchor, fetcher);
+    const selected = await loadPlaceBoundary(anchor, boundedFetcher);
     if (selected) boundaries.push(selected);
     // Bound the extra requests to six evidenced neighboring municipalities, never provinces.
     const candidates = new Map<string, number>();
@@ -302,7 +369,7 @@ export async function retrieveGroundedPlaces(anchor: DestinationAnchor, fetcher:
     }
     for (const [id] of [...candidates].sort((a, b) => b[1] - a[1]).slice(0, 6)) {
       const admin = entities[id], point = values(admin, 'P625')[0];
-      const boundary = await loadPlaceBoundary({ ...anchor, city: admin.labels!.en!.value, latitude: point.latitude, longitude: point.longitude }, fetcher, id);
+      const boundary = await loadPlaceBoundary({ ...anchor, city: admin.labels!.en!.value, latitude: point.latitude, longitude: point.longitude }, boundedFetcher, id);
       if (boundary) boundaries.push(boundary);
     }
     places = collect();
@@ -314,7 +381,7 @@ export async function retrieveGroundedPlaces(anchor: DestinationAnchor, fetcher:
     const id = page.pageprops?.wikibase_item, point = page.coordinates?.[0];
     if (!id || !point || checked.has(id) || checked.size >= 8 || !['conflicting-coordinate-evidence', 'city-or-country-membership-unverified'].includes(rejected.get(id) ?? '')) continue;
     checked.add(id);
-    const result = await corroboratePlaceCoordinate(entities[id]?.labels?.en?.value || page.title, id, { latitude: point.lat, longitude: point.lon }, anchor, fetcher);
+    const result = await corroboratePlaceCoordinate(entities[id]?.labels?.en?.value || page.title, id, { latitude: point.lat, longitude: point.lon }, anchor, boundedFetcher);
     if (result) coordinateEvidence.set(id, result);
   }
   if (coordinateEvidence.size) places = collect();
@@ -327,7 +394,11 @@ export async function retrieveGroundedPlaces(anchor: DestinationAnchor, fetcher:
     if (!parent) return true;
     rejected.set(place.placeId, `part-of-visit:${parent.placeId}`); return false;
   });
-  console.info(JSON.stringify({ event: 'place_catalog_validation', city: anchor.city, countryCode: anchor.countryCode, returnedArticles: pages.length, acceptedPlaces: new Set(places.map(place => place.placeId)).size, rejected: [...rejected].map(([placeId, reason]) => ({ placeId, reason })), discoveryFailed }));
+    const accepted = new Set(places.map(place => place.placeId)).size;
+  const inScope = permittedPlaceCandidates(places).length;
+  const coverage: PlaceCoverage = { outcome: discoveryFailed ? accepted ? 'partial' : 'provider-failure' : !accepted ? 'empty' : inScope < requested ? 'limited' : 'ready', requested, articles: rawArticles, uniqueCandidates: pages.length, accepted, inScope, nearby: accepted - inScope, providerFailures, requests: discoveryRequests, truncated };
+  options.diagnostics?.(coverage);
+  console.info(JSON.stringify({ event: 'place_catalog_validation', city: anchor.city, countryCode: anchor.countryCode, ...coverage, rejected: [...rejected].map(([placeId, reason]) => ({ placeId, reason })), discoveryFailed }));
   if (!places.length && discoveryFailed) throw new Error('Place discovery was incomplete because a provider request failed.');
   if (!includePhotos) {
     const seen = new Set<string>();
@@ -371,10 +442,19 @@ export async function retrieveGroundedPlaces(anchor: DestinationAnchor, fetcher:
   });
 }
 
-export async function loadGroundedPlaces(anchor: DestinationAnchor, signal?: AbortSignal, includePhotos = true) {
-  const key = `grounded-places:v11:${includePhotos ? 'photos' : 'places'}:${anchor.countryCode}:${normalized(anchor.city)}:${anchor.latitude.toFixed(5)}:${anchor.longitude.toFixed(5)}`;
+export async function loadGroundedPlaces(anchor: DestinationAnchor, signal?: AbortSignal, includePhotos = true, options: PlaceSearchOptions = {}) {
+  const target = Math.max(MIN_LOCAL_PLACE_COVERAGE, Math.min(31, Math.max(1, options.tripDays ?? 1)) * 3);
+  const key = `grounded-places:v12:${includePhotos ? 'photos' : 'places'}:${anchor.countryCode}:${normalized(anchor.city)}:${anchor.latitude.toFixed(5)}:${anchor.longitude.toFixed(5)}:${target}`;
   try {
-    const result = await withProviderCache(key, { source: 'activities', freshForMs: 6 * 3600000, staleForMs: 24 * 3600000 }, () => retrieveGroundedPlaces(anchor, fetch, signal, includePhotos));
-    return { places: result.value, status: result.freshness.status };
-  } catch { return { places: [] as GroundedPlace[], status: 'unavailable' as const }; }
+    const result = await withProviderCache(key, { source: 'activities', freshForMs: 6 * 3600000, staleForMs: 24 * 3600000, emptyForMs: 60_000,
+      isEmpty: value => { const entry = value as { coverage: PlaceCoverage }; return entry.coverage.accepted === 0 || entry.coverage.providerFailures > 0; } }, async () => {
+      let coverage: PlaceCoverage | undefined;
+      const places = await retrieveGroundedPlaces(anchor, fetch, signal, includePhotos, { ...options, diagnostics: value => { coverage = value; options.diagnostics?.(value); } });
+      return { places, coverage: coverage! };
+    }, Date.now(), options.forceRefresh);
+    console.info(JSON.stringify({ event: 'place_catalog_cache', city: anchor.city, status: result.freshness.status, ...result.value.coverage }));
+    return { ...result.value, status: result.freshness.status };
+  } catch {
+    return { places: [] as GroundedPlace[], status: 'unavailable' as const, coverage: { outcome: 'provider-failure' as const, requested: target, articles: 0, uniqueCandidates: 0, accepted: 0, providerFailures: 1, requests: 0, truncated: false } };
+  }
 }

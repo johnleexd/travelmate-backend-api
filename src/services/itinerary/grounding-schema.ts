@@ -18,11 +18,13 @@ export const destinationAnchorSchema = z.object({
   locationPath: z.array(z.object({ id: z.number().int().safe(), providerId: z.string().max(100), name: z.string().max(200), type: z.string().max(100), countryCode: z.string().regex(/^[A-Z]{2}$/), level: z.number().int().min(1).max(5).optional() }).strict()).max(10).optional(),
 }).strict();
 export const priceEvidenceSchema = z.object({
-  status: z.enum(['provider-quote', 'estimate', 'unavailable']),
+  status: z.enum(['provider-quote', 'estimate', 'allowance', 'unavailable']),
+  ruleId: z.string().max(100).optional(),
+  coverage: z.enum(['daily-food', 'daily-transport']).optional(),
   basis: text, source: text, sourceUrl: z.string().url().max(1000).optional(),
   fetchedAt: z.string().datetime({ offset: true }), currency: z.enum(SUPPORTED_CURRENCIES),
   unitAmount: amount, quantity: z.number().int().min(0).max(10000),
-  unit: z.enum(['per-person', 'shared-fare', 'per-room-night', 'group', 'daily-per-person']),
+  unit: z.enum(['per-person', 'shared-fare', 'per-room-night', 'group', 'daily-per-person', 'meal', 'day', 'night', 'room', 'transport-leg']),
   participants: z.number().int().min(1).max(20), needsConfirmation: z.boolean(),
 }).strict();
 export const placeEvidenceSchema = z.object({
@@ -39,8 +41,15 @@ export const placeEvidenceSchema = z.object({
 }).strict();
 export const groundingSchema = z.object({
   version: z.literal(1), destination: destinationAnchorSchema,
+  estimationVersion: z.literal('planning-v1').optional(),
   startingLocation: z.string().max(200), startDate: z.string(), endDate: z.string(),
   timeZone: z.string().max(100).optional(),
+  scheduleConstraints: z.object({
+    arrivalTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/).optional(),
+    departureTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/).optional(),
+    restDates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).max(31),
+  }).strict().optional(),
+  previousPlaceIds: z.array(z.string().regex(/^Q\d+$/)).max(1000).optional(),
   fetchedAt: z.string().datetime({ offset: true }),
   placeDataStatus: z.enum(['live', 'fresh-cache', 'stale-cache', 'unavailable']),
   currency: z.enum(SUPPORTED_CURRENCIES), rooms: z.number().int().min(1).max(20),

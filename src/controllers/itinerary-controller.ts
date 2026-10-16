@@ -16,7 +16,7 @@ import {
   normalizeCurrency,
   splitBudget,
   travelersForParty,
-  ZERO_DECIMAL_CURRENCIES,
+  currencyFractionDigits, roundMoney, sumMoney,
   type CurrencyCode,
   type PartyType,
 } from '../schemas/domain.ts';
@@ -39,7 +39,7 @@ import { forecastAlert, weatherForTripDates } from '../services/weather/weather-
 import { PROVIDER_CACHE_POLICIES } from '../services/cache/policies.ts';
 import { withProviderCache } from '../services/cache/provider-cache.ts';
 import { generateGroundedSchedule, dateAt, type GroundedScheduleDay } from '../services/ai/grounded-schedule.ts';
-import { loadGroundedPlaces, validateDestinationAnchor } from '../services/itinerary/grounded-places.ts';
+import { loadGroundedPlaces, validateDestinationAnchor, permittedPlaceCandidates } from '../services/itinerary/grounded-places.ts';
 import { type PlaceEvidence, type PriceEvidence, type PlanGrounding } from '../services/itinerary/grounding-schema.ts';
 import { generationPreferencesSchema, preferenceInstructions, generationDefaults, generationPolicyVersion } from '../services/itinerary/travel-preferences.ts';
 import { buildGroundedPlan, signGroundedPlan, verifyGroundedPlan } from '../services/itinerary/grounded-plan.ts';
@@ -318,7 +318,7 @@ export function normalizeItinerary(itinerary: ItineraryResponse, budgetSummary: 
   const lodgingByNight = accommodation ? allocateNightlyCosts(accommodationTotal, nights, itinerary.currency) : [];
   const travelOptionsTotal = selectedTravelCosts?.total ?? 0;
   const variableBudget = Math.max(0, budgetSummary.total - accommodationTotal - travelOptionsTotal - budgetSummary.reserve);
-  const estimatedUnitCosts = itinerary.days.flatMap((day) => day.activities.map((activity) => Math.max(0, Math.round((Number.isFinite(activity.estimatedCost) ? activity.estimatedCost : 0) * 100) / 100)));
+  const estimatedUnitCosts = itinerary.days.flatMap((day) => day.activities.map((activity) => Math.max(0, roundMoney(Number.isFinite(activity.estimatedCost) ? activity.estimatedCost : 0,itinerary.currency))));
   let costIndex = 0;
   const crowdRetrievedAt = new Date();
   const days = itinerary.days.map((day, index) => {
@@ -338,7 +338,7 @@ export function normalizeItinerary(itinerary: ItineraryResponse, budgetSummary: 
       imageUrl: day.imageUrl || DAY_IMAGES[index % DAY_IMAGES.length],
       returnToStayAt: accommodation ? day.returnToStayAt || '08:00 PM' : undefined,
       rideFare,
-      totalCost: Math.round((activityTotal + nightlyCost) * 100) / 100,
+      totalCost: sumMoney([activityTotal,nightlyCost],itinerary.currency),
       activities,
     };
   }).map((day, index) => {
@@ -358,7 +358,7 @@ export function normalizeItinerary(itinerary: ItineraryResponse, budgetSummary: 
       crowdRefreshAfter: crowd.refreshAfter,
     };
   });
-  const plannedSpend = Math.round((days.reduce((sum, day) => sum + day.totalCost, 0) + travelOptionsTotal) * 100) / 100;
+  const plannedSpend = sumMoney([...days.map(day=>day.totalCost),travelOptionsTotal],itinerary.currency);
   const budgetOptimization = buildBudgetOptimization({
     budget: budgetSummary.total,
     currency: itinerary.currency as CurrencyCode,
@@ -413,8 +413,9 @@ export interface ItineraryResponse {
   partyType?: PartyType;
   travelers?: number;
   grounding?: PlanGrounding;
+  accommodationEstimate?: PriceEvidence;
   groundingProof?: string;
-  preferences?: { travelStyle: string; accommodation: string; transportation: string; activities: string[]; interests?: string[]; pace?: 'relaxed' | 'balanced' | 'active' };
+  preferences?: { travelStyle?: string; accommodation: string; transportation: string; activities: string[]; interests?: string[]; pace?: 'relaxed' | 'balanced' | 'active' };
   accommodation?: AccommodationPlan;
   plannedAccommodation?: PlannedAccommodation;
   selectedTravelCosts?: SelectedTravelCosts;
@@ -501,7 +502,7 @@ Rules:
 - Group each day inside one compact nearby zone or around one main attraction; avoid backtracking and cross-city transfers.
 - Set travelNote for every day with a realistic travel, boarding, check-in, traffic, tide, or weather allowance.
 - Keep enough time between activities for travel and rest. Never create a rushed schedule merely to add more stops.
-- Use realistic ${currency} price estimates for each item. Never inflate activity prices merely to consume the full entered budget.
+- Do not invent entrance fees, hotel rates, fares or price sources. The server supplies supported prices or clearly labeled editable planning allowances; never allocate the user budget as venue prices.
 - End each non-departure day with a realistic return time to the selected accommodation.
 - Include 3–5 activities per day.
 - Respond with ONLY valid JSON, no markdown fences, no explanatory text.`;
@@ -599,7 +600,7 @@ export async function POST(request: Request) {
     }
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== 'object' || Array.isArray(body)) return Response.json({ error: 'Request body must be valid JSON.' }, { status: 400 });
-    const { destination, budget, currency: requestedCurrency = 'PHP', travelers: requestedTravelers = 1, partyType: requestedPartyType, latitude, longitude, startDate: requestedStartDate, endDate: requestedEndDate, interests = [], preferredActivities = [], accommodationPreference, transportationPreference, accommodationListingId, externalAccommodation, plannedAccommodation: requestedPlannedAccommodation, selectedFlight, selectedActivities = [], preTripCosts: requestedPreTripCosts } = body as { destination: string; budget: number; currency?: string; travelers?: number; partyType?: PartyType; latitude?: number; longitude?: number; startDate?: string; endDate?: string; interests?: string[]; preferredActivities?: string[]; travelStyle?: string; accommodationPreference?: string; transportationPreference?: string; accommodationListingId?: string; plannedAccommodation?: unknown; externalAccommodation?: { fetchedAt?: string; total?: number; hotelId?: string; offerId?: string; name?: string; address?: string; nightlyRate?: number; currency?: string; isLive?: boolean; selectionToken?: string }; selectedFlight?: { id?: string; name?: string; price?: number; currency?: string; fetchedAt?: string; selectionToken?: string }; selectedActivities?: Array<{ id?: string; name?: string; price?: number; currency?: string; fetchedAt?: string; selectionToken?: string }>; preTripCosts?: unknown };
+    const { destination, budget, currency: requestedCurrency, travelers: requestedTravelers = 1, partyType: requestedPartyType, latitude, longitude, startDate: requestedStartDate, endDate: requestedEndDate, interests = [], preferredActivities = [], accommodationPreference, transportationPreference, accommodationListingId, externalAccommodation, plannedAccommodation: requestedPlannedAccommodation, selectedFlight, selectedActivities = [], preTripCosts: requestedPreTripCosts } = body as { destination: string; budget: number; currency?: string; travelers?: number; partyType?: PartyType; latitude?: number; longitude?: number; startDate?: string; endDate?: string; interests?: string[]; preferredActivities?: string[]; travelStyle?: string; accommodationPreference?: string; transportationPreference?: string; accommodationListingId?: string; plannedAccommodation?: unknown; externalAccommodation?: { fetchedAt?: string; total?: number; hotelId?: string; offerId?: string; name?: string; address?: string; nightlyRate?: number; currency?: string; isLive?: boolean; selectionToken?: string }; selectedFlight?: { id?: string; name?: string; price?: number; currency?: string; fetchedAt?: string; selectionToken?: string }; selectedActivities?: Array<{ id?: string; name?: string; price?: number; currency?: string; fetchedAt?: string; selectionToken?: string }>; preTripCosts?: unknown };
 
     if (typeof destination !== 'string' || destination.trim().length < 2 || typeof budget !== 'number' || !Number.isFinite(budget) || budget <= 0 || budget > 1_000_000_000) {
       return Response.json(
@@ -616,7 +617,7 @@ export async function POST(request: Request) {
       return Response.json({ error: error instanceof Error ? error.message : 'Currency is invalid.' }, { status: 400 });
     }
     if (!hasValidCurrencyPrecision(budget, currency)) {
-      const precision = ZERO_DECIMAL_CURRENCIES.includes(currency) ? 'whole currency units' : 'no more than two decimal places';
+      const precision = currencyFractionDigits(currency) === 0 ? 'whole currency units' : `no more than ${currencyFractionDigits(currency)} decimal places`;
       return Response.json({ error: `${currency} budgets must use ${precision}.` }, { status: 400 });
     }
     let range: { startDate: string; endDate: string; tripDays: number };
@@ -646,7 +647,7 @@ export async function POST(request: Request) {
     }
     const rooms = body.rooms === undefined ? Math.ceil(travelers / 2) : Number(body.rooms);
     if (!Number.isInteger(rooms) || rooms < 1 || rooms > 20) return Response.json({ error: 'Rooms must be a whole number between 1 and 20.' }, { status: 400 });
-    splitBudget(budget, travelers, tripDays);
+
     const listings = await readApprovedListings();
     const stay = anchor.countryCode === 'PH' ? listings.find((listing) => listing.id === accommodationListingId && listing.category === 'stay' && anchor.city.toLowerCase() === listing.municipality.toLowerCase()) : undefined;
     if (accommodationListingId && !stay) {
@@ -730,14 +731,11 @@ export async function POST(request: Request) {
     }
     const selectedTravelCosts: SelectedTravelCosts = {
       ...(normalizedFlight ? { flight: { id: normalizedFlight.id, name: normalizedFlight.name, total: normalizedFlight.price, currency, fetchedAt: normalizedFlight.fetchedAt, source: "amadeus", isLive: normalizedFlight.isLive } } : {}),
-      activities: normalizedActivities.map((selection) => ({ id: selection!.id, name: selection!.name, unitCost: selection!.price, travelers, total: Math.round(selection!.price * travelers * 100) / 100, currency, fetchedAt: selection!.fetchedAt, source: selection!.id.startsWith("travelmate:") ? "travelmate" : "amadeus", isLive: selection!.isLive, priceBasis: "per-person-assumption" })),
+      activities: normalizedActivities.map((selection) => ({ id: selection!.id, name: selection!.name, unitCost: selection!.price, travelers, total: roundMoney(selection!.price * travelers,currency), currency, fetchedAt: selection!.fetchedAt, source: selection!.id.startsWith("travelmate:") ? "travelmate" : "amadeus", isLive: selection!.isLive, priceBasis: "per-person-assumption" })),
       ...(preTripCosts ? { preTrip: preTripCosts } : {}),
       total: 0,
     };
-    selectedTravelCosts.total = Math.round(((selectedTravelCosts.flight?.total ?? 0) + selectedTravelCosts.activities.reduce((sum, activity) => sum + activity.total, 0) + (selectedTravelCosts.preTrip?.total ?? 0)) * 100) / 100;
-    if (Math.round((accommodationTotal + selectedTravelCosts.total) * 100) > Math.round(budget * 100)) {
-      return Response.json({ error: 'Selected accommodation and travel costs exceed your total trip budget. Increase the budget or change your selections.' }, { status: 400 });
-    }
+    selectedTravelCosts.total = sumMoney([selectedTravelCosts.flight?.total ?? 0,...selectedTravelCosts.activities.map(activity=>activity.total),selectedTravelCosts.preTrip?.total ?? 0],currency);
     const estimates: { foodDailyPerPerson?: number; nightlyRoomEstimate?: number; transportFare?: number; fees?: number; contingencyPercent?: number; transportFareType?: 'shared-fare' | 'per-person' } = {};
     for (const key of ['foodDailyPerPerson', 'nightlyRoomEstimate', 'transportFare', 'fees', 'contingencyPercent'] as const) {
       if (body[key] === undefined) continue;
@@ -752,23 +750,23 @@ export async function POST(request: Request) {
     const explicitFareBasis = estimates.transportFareType ?? (/taxi|ride.hailing|private|rental/i.test(String(transportationPreference)) ? 'shared-fare' : 'per-person');
     const minimumEnteredCosts = accommodationTotal + selectedTravelCosts.total + (accommodation ? 0 : (estimates.nightlyRoomEstimate ?? 0) * Math.max(0, tripDays - 1) * rooms)
       + (estimates.foodDailyPerPerson ?? 0) * travelers * tripDays + (estimates.transportFare ?? 0) * tripDays * (explicitFareBasis === 'shared-fare' ? 1 : travelers) + (estimates.fees ?? 0);
-    if (minimumEnteredCosts * (1 + (estimates.contingencyPercent ?? 10) / 100) > budget + 0.001) return Response.json({ error: 'Selected costs and your entered estimates, including contingency, exceed the whole-group budget. Increase the budget, reduce the duration/party, or change the selections and estimates. Missing prices still need confirmation.', retryable: false }, { status: 422 });
     const preferenceResult = generationPreferencesSchema.safeParse({ pace,
-      travelStyle: generationDefaults.travelStyle,
+      travelStyle: body.travelStyle,
       accommodation: typeof accommodationPreference === 'string' ? accommodationPreference.trim().toLowerCase() : accommodationPreference,
       transportation: transportationPreference, activities: preferredActivities, interests });
-    if (!preferenceResult.success) return Response.json({ error: 'Invalid travel preferences. Choose a supported style/stay preference and valid interests, activities and transportation.', retryable: false }, { status: 400 });
+    if (!preferenceResult.success) return Response.json({ error: `Invalid travel preferences: ${preferenceResult.error.issues[0]?.message}. Choose a supported travel style.`, retryable: false }, { status: 400 });
     const preferences = preferenceResult.data;
     const safeInterests = preferences.interests;
     const schedulingOptions = { constraints: scheduleConstraints, interests: safeInterests, preferredActivities: preferences.activities, committedActivityNames: selectedTravelCosts.activities.map(activity => activity.name),
       travelStyle: preferences.travelStyle, transportation: preferences.transportation, currency,
       visitBudget: Math.max(0, budget / (1 + (estimates.contingencyPercent ?? 10) / 100) - minimumEnteredCosts),
-      family: partyType === 'family' };
+      family: partyType === 'family',
+      diagnostics: (event: Record<string, unknown>) => console.info(JSON.stringify({ ...event, city: anchor.city, countryCode: anchor.countryCode })) };
 
 
     let generation;
     try {
-      generation = await beginGeneration(user.id, normalizedDestination, { ...body, ...generationDefaults, generationPolicyVersion }, request.headers.get('idempotency-key'));
+      generation = await beginGeneration(user.id, normalizedDestination, { ...body, pace, travelStyle: preferences.travelStyle, generationPolicyVersion }, request.headers.get('idempotency-key'));
     } catch (error) {
       if (error instanceof Error && error.message === 'INVALID_IDEMPOTENCY_KEY') return Response.json({ error: 'Idempotency-Key must be 8-100 letters, numbers, dots, colons, underscores, or hyphens.' }, { status: 400 });
       throw error;
@@ -782,11 +780,13 @@ export async function POST(request: Request) {
     const resolvedProvider = resolvedProviders[0] || { name: 'openai' as const };
 
     const generationSignal = AbortSignal.timeout(540_000);
-    const catalog = await loadGroundedPlaces(anchor, generationSignal);
+    const catalog = await loadGroundedPlaces(anchor, generationSignal, true, { tripDays });
+    const permittedPlaces = permittedPlaceCandidates(catalog.places);
+    console.info(JSON.stringify({ event: 'generation_place_scope', city: anchor.city, destinationId: anchor.id, latitude: anchor.latitude, longitude: anchor.longitude, countryCode: anchor.countryCode, scope: anchor.scopeType ?? 'locality', available: catalog.places.length, inScope: permittedPlaces.length, nearbyExcluded: catalog.places.length - permittedPlaces.length }));
     let trustedTimeZone: string | undefined;
     const buildPlan = (schedule: GroundedScheduleDay[], source: 'openai' | 'gemini' | 'mock' | 'catalog', generationWarning?: string) => buildGroundedPlan({
       destination: normalizedDestination, anchor, startingLocation, startDate, endDate, budget, currency, travelers, partyType, rooms,
-      places: catalog.places, placeDataStatus: catalog.status, schedule, source, preferences, transportation: preferences.transportation, pace, familyBuffer: partyType === 'family', timeZone: trustedTimeZone,
+      places: permittedPlaces, placeDataStatus: catalog.status, schedule, source, preferences, transportation: preferences.transportation, pace, familyBuffer: partyType === 'family', timeZone: trustedTimeZone, scheduleConstraints,
       accommodation: accommodation ? { ...accommodation, rooms, quotedTotal: accommodationTotal, nights: accommodationNights, total: accommodationTotal } : undefined,
       selectedTravelCosts, ...estimates,
       generationWarning,
@@ -828,9 +828,9 @@ export async function POST(request: Request) {
     let itinerary: ItineraryResponse | undefined;
     let lastGenerationError: unknown;
     for (const candidate of resolvedProviders) {
-      if (!candidate.provider) continue;
+      if (!candidate.provider || !permittedPlaces.length) continue;
       try {
-        const schedule = await generateGroundedSchedule(candidate.provider!, anchor, catalog.places, startDate, tripDays, travelers, prompt, generationSignal, pace, { ...schedulingOptions, weather: trustedWeatherContext, providerUnavailable: catalog.status === 'unavailable' });
+        const schedule = await generateGroundedSchedule(candidate.provider!, anchor, permittedPlaces, startDate, tripDays, travelers, prompt, generationSignal, pace, { ...schedulingOptions, weather: trustedWeatherContext, providerUnavailable: catalog.status === 'unavailable', providerPartial: catalog.coverage.outcome === 'partial' });
         itinerary = buildPlan(schedule, candidate.name);
         break;
       } catch (error) {
@@ -841,7 +841,7 @@ export async function POST(request: Request) {
     }
     if (!itinerary) {
       console.warn('[TravelMate] AI scheduling unavailable; returning only catalog-backed recommendations.', lastGenerationError instanceof Error ? lastGenerationError.message : 'No usable provider response.');
-      itinerary = buildPlan(completeGroundedSchedule(anchor, catalog.places, [], startDate, tripDays, travelers, pace, { ...schedulingOptions, weather: trustedWeatherContext, providerUnavailable: catalog.status === 'unavailable' }), !resolvedProvider.provider && mockItinerariesEnabled() ? 'mock' : 'catalog', 'AI scheduling was unavailable. Recommendations use only verified destination records, interest matching and estimated local schedules. Missing place coverage remains explicitly incomplete; no attractions or provider prices were invented.');
+      itinerary = buildPlan(completeGroundedSchedule(anchor, permittedPlaces, [], startDate, tripDays, travelers, pace, { ...schedulingOptions, weather: trustedWeatherContext, providerUnavailable: catalog.status === 'unavailable', providerPartial: catalog.coverage.outcome === 'partial' }), !resolvedProvider.provider && mockItinerariesEnabled() ? 'mock' : 'catalog', 'AI scheduling was unavailable. Recommendations use only verified destination records, interest matching and estimated local schedules. Missing place coverage remains explicitly incomplete; no attractions or provider prices were invented.');
     }
 
     const completed = { ...itinerary, days: itinerary.days.map(day => {
@@ -850,10 +850,6 @@ export async function POST(request: Request) {
       return { ...day, weatherAlert: forecast ? forecastAlert(forecast.description, forecast.precipitationProbability, forecast.tempMax) : undefined,
         crowdLevel: crowd.crowdLevel, crowdSource: crowd.crowdSource, crowdConfidence: crowd.crowdConfidence, crowdNote: crowd.crowdNote, crowdRecommendation: crowd.crowdRecommendation, crowdFetchedAt: crowd.fetchedAt, crowdRefreshAfter: crowd.refreshAfter };
     }) };
-    if (Math.round((completed.grounding?.total ?? 0) * 100) > Math.round(budget * 100)) {
-      await failGeneration(generationRecordId, generationAttemptId, 'AI_GENERATION_FAILED');
-      return Response.json({ error: `Supported prices and entered estimates plus ${completed.grounding?.contingencyPercent}% contingency total ${completed.grounding?.total} ${currency}, exceeding the ${budget} ${currency} group budget. Increase the budget or change the trip; prices have not been reduced to force a fit.`, code: 'AI_GENERATION_FAILED', retryable: false }, { status: 422 });
-    }
     // Return selected attraction photos with the generated plan, under a separate
     // bounded deadline. The plan remains usable when photo providers are offline.
     // Catalog photos are already provider-verified. Save a usable plan immediately;

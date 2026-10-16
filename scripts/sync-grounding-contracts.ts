@@ -11,6 +11,14 @@ for (const [name, schema] of Object.entries({ DestinationAnchor: destinationAnch
 }
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
 Object.assign(schemas.DayActivity.properties, { priceEvidence: ref('PriceEvidence'), place: ref('PlaceEvidence') });
+schemas.DayPlan.properties.planningIssue = { type: 'string', enum: ['provider-failure', 'no-results', 'insufficient-coverage', 'scheduling-conflict'] };
+document.paths['/api/itinerary/retry-days'] = { post: {
+  summary: 'Refresh verified candidates for selected days without saving or calling AI',
+  security: document.paths['/api/itinerary'].post.security,
+  requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', additionalProperties: false,
+    required: ['itinerary', 'days'], properties: { itinerary: ref('ItineraryResponse'), providerBase: ref('ItineraryResponse'), days: { type: 'array', minItems: 1, maxItems: 31, items: { type: 'integer', minimum: 0, maximum: 30 } }, includeNearby: { type: 'boolean', default: false } } } } } },
+  responses: { '200': { description: 'Add-only reviewable itinerary; existing activities retained', content: { 'application/json': { schema: { type: 'object', required: ['itinerary', 'added'], properties: { itinerary: ref('ItineraryResponse'), added: { type: 'integer', minimum: 0 } } } } } }, '401': { description: 'Authentication required' }, '422': { description: 'Draft preserved; retry or reopen its original plan' }, '429': { description: 'Retry rate limit reached' } },
+} };
 Object.assign(schemas.ItineraryResponse.properties, { grounding: ref('PlanGrounding'), groundingProof: { type: 'string' } });
 schemas.AccommodationPlan.properties.fetchedAt = { type: 'string', format: 'date-time' };
 schemas.AccommodationPlan.properties.rooms = { type: 'integer', minimum: 1, maximum: 20 };
@@ -31,5 +39,5 @@ if (photoRequest?.properties) photoRequest.properties.itinerary = ref('Itinerary
 schemas.SelectedActivityCost.properties.source = { type: 'string', enum: ['amadeus', 'travelmate'] };
 schemas.SelectedActivityCost.properties.priceBasis = { type: 'string', enum: ['per-person-assumption'] };
 schemas.ItineraryDayResponse.properties.groundingProof = { type: 'string' };
-schemas.ItineraryGenerationRequest.required = [...new Set([...schemas.ItineraryGenerationRequest.required.filter((field: string) => field !== 'startingLocation'), 'destinationDetails', 'latitude', 'longitude'])];
+schemas.ItineraryGenerationRequest.required = [...new Set([...schemas.ItineraryGenerationRequest.required.filter((field: string) => field !== 'startingLocation'), 'destinationDetails', 'latitude', 'longitude', 'currency'])];
 writeFileSync(path, JSON.stringify(document, null, 2) + '\n');

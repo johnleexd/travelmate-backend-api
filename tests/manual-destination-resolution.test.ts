@@ -54,7 +54,7 @@ test('countries and regions offer genuine narrowing cities, including supported 
   const region = searchDestinationIndex('Central Visayas')[0];
   assert.ok(destinationAreas(region).some(place=>place.name==='Cebu City'));
   assert.equal(resolveDestinationContext('MT','Valletta').currency,'EUR');
-  assert.equal(resolveDestinationContext('CR','San Jose').currency,null);
+  assert.equal(resolveDestinationContext('CR','San Jose').currency,'CRC');
 });
 test('authenticated manual and suggestion coordinates use identical map queries; expansion and errors stay distinct', async t => {
   const replace = (object: object,key: string,value: unknown) => { const prior = Reflect.get(object,key); Reflect.set(object,key,value); t.after(()=>Reflect.set(object,key,prior)); };

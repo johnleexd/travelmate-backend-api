@@ -120,7 +120,8 @@ test('new HTTP endpoints require a signed traveler, enforce ownership and explic
 test('changed location drops the old verified pin/photo evidence and cost changes keep sanitized totals',()=>{
   const trip=fixture(),plan=managedItinerary(trip.id,trip.itinerary),activity=plan.days[0].activities[1];
   activity.place={provider:'wikidata',placeId:'Q123',name:'Old verified park',city:'Manila',country:'Philippines',countryCode:'PH',latitude:14.59,longitude:120.97,sourceUrl:'https://www.wikidata.org/wiki/Q123',address:'Old address',fetchedAt:'2026-10-09T00:00:00Z',openingHours:'Not available'} as never;
-  const changed=applyActivityMutation(withPlan(trip,plan),activity.id!,{revision:tripRevision(trip),confirm:true,action:'edit',changes:{title:'Exact new venue',location:'New exact venue, Manila',description:'Updated',estimatedCost:100.004}});
+  assert.throws(()=>applyActivityMutation(withPlan(trip,plan),activity.id!,{revision:tripRevision(trip),confirm:true,action:'edit',changes:{estimatedCost:100.004}}),/precision/);
+  const changed=applyActivityMutation(withPlan(trip,plan),activity.id!,{revision:tripRevision(trip),confirm:true,action:'edit',changes:{title:'Exact new venue',location:'New exact venue, Manila',description:'Updated',estimatedCost:100}});
   const saved=changed.days[0].activities.find(item=>item.id===activity.id)!;
   assert.equal(saved.place,undefined);assert.equal(saved.estimatedCost,100);assert.equal(saved.location,'New exact venue, Manila');assert.equal(saved.managementHistory?.length,1);
 });

@@ -1,4 +1,6 @@
+import { applyExpenseEdits } from '../itinerary/expense-edits.ts';
 import { publishReportChange } from './report-events.ts';
+import { normalizeInterests, interestsValidationMessage } from '../../lib/trip-preferences.ts';
 import type { ItineraryResponse } from '../../controllers/itinerary-controller.ts';
 import { retainSelectedActivityPhotos, retainStoredActivityPhotos } from '../itinerary/saved-activity-photos.ts';
 import { recordVisit, recordTripVisits, removeVisit } from './visited-place-service.ts';
@@ -11,7 +13,7 @@ import {
   ItineraryEditValidationError,
   PlatformActionError,
 } from "../../exceptions/index.ts";
-import { hasValidCurrencyPrecision, normalizeCurrency, publicUser, splitBudget, travelersForParty, ZERO_DECIMAL_CURRENCIES, type CurrencyCode, type PartyType, type PublicUser } from "../../schemas/domain.ts";
+import { hasValidCurrencyPrecision, normalizeCurrency, publicUser, splitBudget, travelersForParty, currencyFractionDigits, type CurrencyCode, type PartyType, type PublicUser } from "../../schemas/domain.ts";
 import { prisma } from "../../lib/prisma.ts";
 import { submitReport, resolveReport } from './report-service.ts';
 import { sendUserWarning } from './user-warning-service.ts';
@@ -19,6 +21,9 @@ import { reviewAppeal } from './appeal-service.ts';
 import { applyManualItineraryChanges } from "../itinerary/itinerary-edit-service.ts";
 import { parseSavedItinerary, parseSavedWeather } from "../itinerary/saved-trip-schema.ts";
 import { createVersionSnapshot, readVersionSnapshot } from '../itinerary/version-snapshot.ts';
+import { generationPreferencesSchema } from '../itinerary/travel-preferences.ts';
+import { ownedItineraryBaseline } from '../itinerary/itinerary-provenance.ts';
+import { verifyGroundedPlan } from '../itinerary/grounded-plan.ts';
 
 type Body = Record<string, unknown>;
 type Transaction = Prisma.TransactionClient;
@@ -67,9 +72,25 @@ function tripLength(startDate: Date, endDate: Date): number {
 }
 
 
-function stringList(value: unknown, maximum = 20): string[] {
-  const items = Array.isArray(value) ? value : String(value || "").split(",");
-  return items.map(String).map((item) => item.trim().slice(0, 200)).filter(Boolean).slice(0, maximum);
+function stringList(value: unknown): string[] {
+  if (value != null && typeof value !== 'string' && !(Array.isArray(value) && value.every(item => typeof item === 'string'))) fail('Interests must be text or a list of text entries.');
+  const items = normalizeInterests(value == null ? undefined : value as string | string[]);
+  const error = interestsValidationMessage(items);
+  if (error) fail(error);
+  return items;
+}
+
+function retainHistoricalActivityPreferences(plan: ItineraryResponse, stored: unknown): ItineraryResponse {
+  const historical = (stored as Partial<ItineraryResponse> | null)?.preferences;
+  if (!historical) return plan;
+  return { ...plan, preferences: {
+    ...historical, ...plan.preferences,
+    // These lists are retired form fields. Preserve their original values and
+    // ordering when another setting changes or a new version is generated.
+    ...(Array.isArray(historical.interests) ? { interests: historical.interests } : {}),
+    ...(Array.isArray(historical.activities) ? { activities: historical.activities } : {}),
+    ...(typeof historical.transportation === 'string' ? { transportation: historical.transportation } : {}),
+  } };
 }
 
 function itineraryInput(value: unknown, days: number, currency: CurrencyCode, budget: number, travelers: number, partyType: PartyType, startDate: Date, destination: string): Prisma.InputJsonValue {
@@ -100,7 +121,7 @@ function groundedDestination(itinerary: Prisma.InputJsonValue, submitted: Return
 
 function tripCurrency(value: unknown): CurrencyCode {
   try {
-    return normalizeCurrency(value ?? "PHP");
+    return normalizeCurrency(value);
   } catch (error) {
     fail(error instanceof Error ? error.message : "Trip currency is invalid.");
   }
@@ -194,7 +215,7 @@ async function saveTrip(user: PublicUser, action: string, body: Body) {
   if (destination.length < 2) fail("Destination is required.");
   const budget = positiveMoney(body.budget, "Budget");
   const currency = tripCurrency(body.currency);
-  if (!hasValidCurrencyPrecision(budget, currency)) fail(`${currency} budgets must use ${ZERO_DECIMAL_CURRENCIES.includes(currency) ? "whole currency units" : "no more than two decimal places"}.`);
+  if (!hasValidCurrencyPrecision(budget, currency)) fail(`${currency} budgets must use ${currencyFractionDigits(currency) === 0 ? "whole currency units" : `no more than ${currencyFractionDigits(currency)} decimal places`}.`);
   const selectedDestination = destinationContext(body.destinationDetails);
   const travelers = wholeNumber(body.travelers, "Travelers", 1, 20);
   const partyType = tripParty(body.partyType, travelers);
@@ -206,7 +227,15 @@ async function saveTrip(user: PublicUser, action: string, body: Body) {
   } catch (error) {
     fail(error instanceof Error ? error.message : "Trip budget is invalid.");
   }
-  const itinerary = itineraryInput(body.itinerary, days, currency, budget, travelers, partyType, startDate, destination);
+  let submitted = body.itinerary;
+  const draft = submitted as ItineraryResponse | undefined;
+  if (draft?.grounding && !verifyGroundedPlan(draft)) {
+    try {
+      const baseline = await ownedItineraryBaseline(user.id, draft, body.providerBase);
+      submitted = applyManualItineraryChanges(baseline, draft, days, budget, travelers, currency);
+    } catch (error) { fail(error instanceof Error ? error.message : 'The draft could not be verified.'); }
+  }
+  const itinerary = itineraryInput(submitted, days, currency, budget, travelers, partyType, startDate, destination);
   const weather = weatherInput(body.weather);
   const interests = stringList(body.interests);
 
@@ -247,7 +276,7 @@ async function updateTrip(user: PublicUser, action: string, body: Body) {
   if (destination.length < 2) fail("Destination is required.");
   const budget = positiveMoney(body.budget, "Budget");
   const currency = tripCurrency(body.currency);
-  if (!hasValidCurrencyPrecision(budget, currency)) fail(`${currency} budgets must use ${ZERO_DECIMAL_CURRENCIES.includes(currency) ? "whole currency units" : "no more than two decimal places"}.`);
+  if (!hasValidCurrencyPrecision(budget, currency)) fail(`${currency} budgets must use ${currencyFractionDigits(currency) === 0 ? "whole currency units" : `no more than ${currencyFractionDigits(currency)} decimal places`}.`);
   const selectedDestination = destinationContext(body.destinationDetails);
   const travelers = wholeNumber(body.travelers, "Travelers", 1, 20);
   const partyType = tripParty(body.partyType, travelers);
@@ -256,12 +285,12 @@ async function updateTrip(user: PublicUser, action: string, body: Body) {
   const days = tripLength(startDate, endDate);
   const itinerary = itineraryInput(body.itinerary, days, currency, budget, travelers, partyType, startDate, destination);
   const weather = weatherInput(body.weather);
-  const interests = stringList(body.interests);
+  const interests = body.interests === undefined ? undefined : stringList(body.interests);
 
   return prisma.$transaction(async (transaction) => {
     const existing = await transaction.trip.findFirst({ where: { id: tripId, userId: user.id, status: "active" } });
     if (!existing) fail("Saved trip not found.");
-    const withPhotos = retainStoredActivityPhotos(itinerary as unknown as ItineraryResponse, existing.itinerary as unknown as ItineraryResponse);
+    const withPhotos = retainStoredActivityPhotos(applyExpenseEdits(retainHistoricalActivityPreferences(itinerary as unknown as ItineraryResponse, existing.itinerary), body.expenseAssumptions), existing.itinerary as unknown as ItineraryResponse);
     const trip = await transaction.trip.update({
       where: { id: existing.id },
       data: {
@@ -273,7 +302,7 @@ async function updateTrip(user: PublicUser, action: string, body: Body) {
         endDate,
         travelers,
         partyType,
-        interests,
+        ...(interests?.length ? { interests } : {}),
         itinerary: withPhotos as unknown as Prisma.InputJsonValue,
         weather,
       },
@@ -291,10 +320,26 @@ async function updateTripItinerary(user: PublicUser, action: string, body: Body)
     const existing = await transaction.trip.findFirst({ where: { id: tripId, userId: user.id, status: "active" } });
     if (!existing) fail("Saved trip not found.");
     const days = tripLength(existing.startDate, existing.endDate);
+    const planningPreferences = body.planningPreferences === undefined ? undefined : generationPreferencesSchema.safeParse(body.planningPreferences);
+    if (planningPreferences && !planningPreferences.success) fail('Invalid travel preferences. Choose a supported travel style.');
     let itinerary: Prisma.InputJsonValue;
     try {
-      const edited = applyManualItineraryChanges(existing.itinerary, body.itinerary, days, Number(existing.budget), existing.travelers, normalizeCurrency(existing.currency));
-      itinerary = parseSavedItinerary(edited, { days, currency: normalizeCurrency(existing.currency), budget: Number(existing.budget), travelers: existing.travelers, partyType: existing.partyType, destination: existing.destination, startDate: existing.startDate.toISOString().slice(0, 10) }) as unknown as Prisma.InputJsonValue;
+      let source: unknown = existing.itinerary;
+      if (body.providerBase !== undefined) {
+        const trusted = parseSavedItinerary(body.providerBase, { days, currency: normalizeCurrency(existing.currency), budget: Number(existing.budget), travelers: existing.travelers, partyType: existing.partyType, destination: existing.destination, startDate: existing.startDate.toISOString().slice(0, 10) });
+        if (!trusted.grounding || !verifyGroundedPlan(trusted as ItineraryResponse)) fail('The refreshed place references could not be verified.');
+        const prior = existing.itinerary as unknown as ItineraryResponse;
+        for (const activity of prior.days.flatMap(day => day.activities).filter(item => item.status === 'completed' || item.status === 'skipped')) {
+          const reference = trusted.days.flatMap(day => day.activities).find(item => item.id === activity.id);
+          if (!reference) fail('Completed and skipped activities must remain recorded.');
+          Object.assign(reference, activity);
+        }
+        source = trusted;
+      }
+      let edited = applyManualItineraryChanges(source, body.itinerary, days, Number(existing.budget), existing.travelers, normalizeCurrency(existing.currency));
+      edited = applyExpenseEdits(edited as unknown as ItineraryResponse, body.expenseAssumptions) as unknown as Record<string, unknown>;
+      if (planningPreferences?.success) edited.preferences = planningPreferences.data;
+      itinerary = parseSavedItinerary(retainHistoricalActivityPreferences(edited as unknown as ItineraryResponse, existing.itinerary), { days, currency: normalizeCurrency(existing.currency), budget: Number(existing.budget), travelers: existing.travelers, partyType: existing.partyType, destination: existing.destination, startDate: existing.startDate.toISOString().slice(0, 10) }) as unknown as Prisma.InputJsonValue;
     } catch (error) {
       if (error instanceof ItineraryEditValidationError) fail(error.message);
       throw error;

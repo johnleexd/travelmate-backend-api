@@ -1,4 +1,4 @@
-import { hasValidCurrencyPrecision, type CurrencyCode } from '../../schemas/domain.ts';
+import { hasValidCurrencyPrecision, roundMoney, sumMoney, type CurrencyCode } from '../../schemas/domain.ts';
 
 export const PASSPORT_STATUSES = ['valid', 'needs_application', 'needs_renewal', 'not_sure'] as const;
 export type PassportStatus = typeof PASSPORT_STATUSES[number];
@@ -51,11 +51,11 @@ export function normalizePreTripCosts(value: unknown, currency: CurrencyCode): P
     if (!Number.isFinite(amount) || amount < 0 || amount > 100_000_000 || !hasValidCurrencyPrecision(amount, currency)) {
       throw new Error(`Pre-trip ${field} must be a valid non-negative ${currency} amount.`);
     }
-    return [field, Math.round(amount * 100) / 100];
+    return [field, roundMoney(amount,currency)];
   })) as Record<(typeof COST_FIELDS)[number], number>;
   const passportStatus = input.passportStatus === undefined || input.passportStatus === '' ? undefined : String(input.passportStatus);
   if (passportStatus && !PASSPORT_STATUSES.includes(passportStatus as PassportStatus)) throw new Error('Select a valid passport status.');
-  const total = Math.round(COST_FIELDS.reduce((sum, field) => sum + costs[field], 0) * 100) / 100;
+  const total = sumMoney(COST_FIELDS.map(field=>costs[field]),currency);
   return {
     startingLocation: optionalText(input.startingLocation, 'Starting location'),
     departureAirport: optionalText(input.departureAirport, 'Departure airport'),

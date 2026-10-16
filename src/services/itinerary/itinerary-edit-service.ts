@@ -1,8 +1,9 @@
 import { validateActivitySchedule } from './activity-schedule.ts';
-import { allocateEqualShares, allocateNightlyCosts, formatMoney, type CurrencyCode } from "../../schemas/domain.ts";
+import { allocateEqualShares, allocateNightlyCosts, formatMoney, hasValidCurrencyPrecision, roundMoney, sumMoney, type CurrencyCode } from "../../schemas/domain.ts";
 import { ItineraryEditValidationError } from "../../exceptions/index.ts";
 import { buildBudgetOptimization } from "../budget/budget-optimization-service.ts";
 import { refreshGroundedTotals } from './grounded-plan.ts';
+import { expenseLedger } from '../../lib/expense-ledger.ts';
 import type { ItineraryResponse } from '../../controllers/itinerary-controller.ts';
 import { canonicalStoredMedia } from '../../lib/stored-trip-media.ts';
 import { cachedActivityPhoto } from './activity-photo-fallback.ts';
@@ -21,7 +22,8 @@ function finiteMoney(value: unknown, currency: CurrencyCode): number {
   if (!Number.isFinite(amount) || amount < 0 || amount > 10_000_000) {
     throw new ItineraryEditValidationError(`Activity cost must be between ${formatMoney(0, currency)} and ${formatMoney(10_000_000, currency)}.`);
   }
-  return Math.round(amount * 100) / 100;
+  if (!hasValidCurrencyPrecision(amount,currency)) throw new ItineraryEditValidationError("Activity cost has invalid currency precision.");
+  return roundMoney(amount,currency);
 }
 
 function text(value: unknown, field: string, maximum: number, required = false): string {
@@ -65,7 +67,8 @@ function activityInput(value: unknown, travelers: number, currency: CurrencyCode
     title: text(activity.title, "Activity title", 160, true),
     description: text(activity.description, "Activity description", 1_000),
     estimatedCost,
-    unitCost: Math.round((estimatedCost / travelers) * 100) / 100,
+    unitCost: original?.unitCost ?? estimatedCost,
+    ...(original?.priceEvidence ? { priceEvidence: original.priceEvidence } : !original ? { priceEvidence: { status: 'estimate', basis: 'User-entered whole-group estimate after editing.', source: 'user-entered', fetchedAt: new Date().toISOString(), currency, unitAmount: estimatedCost, quantity: 1, unit: 'group', participants: travelers, needsConfirmation: true } } : {}),
     category,
     icon: category,
     ...(identity ? { imageUrl: identity.imageUrl, imageAttribution: identity.imageAttribution } : {}),
@@ -118,7 +121,7 @@ export function applyManualItineraryChanges(
   const nightlyRate = safeNumber(accommodation?.nightlyRate);
   const nights = Math.min(expectedDays, Math.floor(safeNumber(accommodation?.nights)));
   const grounding = existing.grounding as ItineraryResponse['grounding'];
-  const accommodationTotal = accommodation ? safeNumber(accommodation.quotedTotal ?? Math.round(nightlyRate * nights * 100)/100) : grounding?.categories.accommodation ?? 0;
+  const accommodationTotal = accommodation ? safeNumber(accommodation.quotedTotal ?? roundMoney(nightlyRate * nights,currency)) : grounding?.categories.accommodation ?? 0;
   const lodgingNights = nights || grounding?.nights || 0;
   const lodgingByNight = lodgingNights ? allocateNightlyCosts(accommodationTotal, lodgingNights, currency) : [];
 
@@ -135,8 +138,8 @@ export function applyManualItineraryChanges(
     if (accommodation) for (const activity of activities) {
       if (activity.category === 'accommodation') { activity.unitCost = 0; activity.estimatedCost = 0; }
     }
-    const activityTotal = activities.reduce((sum, activity) => sum + Number(activity.estimatedCost), 0);
-    const rideFare = activities.filter((activity) => activity.category === "transport").reduce((sum, activity) => sum + Number(activity.estimatedCost), 0);
+    const activityTotal = sumMoney(activities.map(activity => Number(activity.estimatedCost)),currency);
+    const rideFare = sumMoney(activities.filter(activity => activity.category === "transport").map(activity => Number(activity.estimatedCost)),currency);
     const removedCover = day.imageUrl && allStored.some(activity => activity.imageUrl === day.imageUrl)
       && !activities.some(activity => activity.imageUrl === day.imageUrl);
     const cover = removedCover ? activities.find(activity => activity.imageUrl) : undefined;
@@ -144,15 +147,17 @@ export function applyManualItineraryChanges(
       ...day,
       ...(removedCover ? { imageUrl: cover?.imageUrl || '', imageAttribution: cover?.imageAttribution } : {}),
       activities,
-      rideFare: Math.round(rideFare * 100) / 100,
-      totalCost: Math.round((activityTotal + (lodgingByNight[index] || 0)) * 100) / 100,
+      rideFare: roundMoney(rideFare,currency),
+      totalCost: sumMoney([activityTotal,lodgingByNight[index] || 0],currency),
     };
   });
 
   const selectedTravelCosts = existing.selectedTravelCosts && typeof existing.selectedTravelCosts === 'object' && !Array.isArray(existing.selectedTravelCosts) ? existing.selectedTravelCosts as JsonRecord : undefined;
-  const plannedSpend = Math.round((days.reduce((sum, day) => sum + Number(day.totalCost), 0) + safeNumber(selectedTravelCosts?.total)) * 100) / 100;
-  const remainingBudget = Math.max(0, Math.round((budget - plannedSpend) * 100) / 100);
-  const shortfall = Math.max(0, Math.round((plannedSpend - budget) * 100) / 100);
+  const review = expenseLedger({ ...existing, days } as unknown as ItineraryResponse);
+  const plannedSpend = review.total ?? 0;
+  for (const [index,day] of days.entries()) day.totalCost = review.days[index].amount ?? 0;
+  const remainingBudget = Math.max(0, roundMoney(budget-plannedSpend,currency));
+  const shortfall = Math.max(0, roundMoney(plannedSpend-budget,currency));
   const previousBudget = existing.budgetSummary && typeof existing.budgetSummary === "object" && !Array.isArray(existing.budgetSummary) ? existing.budgetSummary as JsonRecord : {};
   const previousSharing = existing.costSharing && typeof existing.costSharing === "object" && !Array.isArray(existing.costSharing) ? existing.costSharing as JsonRecord : {};
   const reserve = safeNumber(previousBudget.reserve);
@@ -183,6 +188,7 @@ export function applyManualItineraryChanges(
     budgetSummary: { ...previousBudget, total: budget, accommodationActual: accommodationTotal, travelOptionsActual: safeNumber(selectedTravelCosts?.total), plannedSpend, remainingBudget, shortfall },
     costSharing: {
       ...previousSharing,
+      partyType: existing.partyType ?? (travelers === 1 ? 'solo' : travelers === 2 ? 'couple' : 'friends'),
       travelers,
       groupBudget: budget,
       plannedGroupSpend: plannedSpend,

@@ -46,8 +46,8 @@ test('authenticated generation validates inputs, unavailable sources, full respo
   const response = await generate(body); assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
   const itinerary = await response.json();
   assert.equal(itinerary.days.length, 31); assert.equal(itinerary.grounding.placeDataStatus, 'unavailable'); assert.equal(itinerary.grounding.verifiedAmount, 0); assert.equal(itinerary.grounding.budgetStatus, 'needs-confirmation');
-  assert.ok(itinerary.days.every(day => day.planningStatus === 'incomplete' && /unavailable/.test(day.planningReason)));
-  assert.equal(verifyGroundedPlan(itinerary), true); assert.ok(itinerary.days.every(day => day.imageUrl === '' && day.activities.every(activity => activity.priceEvidence.status === 'unavailable' && activity.estimatedCost === 0)));
+  assert.ok(itinerary.days.every(day => day.planningStatus === 'incomplete' && day.planningIssue === 'provider-failure'));
+  assert.equal(verifyGroundedPlan(itinerary), true); assert.ok(itinerary.days.every(day => day.imageUrl === '' && day.activities.every(activity => activity.priceEvidence.status === 'allowance' && activity.estimatedCost > 0)));
   const photos = await POST_IMAGES(new Request('http://localhost/api/itinerary/images', { method: 'POST', headers, body: JSON.stringify({ destination: body.destination, day: itinerary.days[0], itinerary }) }));
   assert.equal(photos.status, 200); assert.equal((await photos.json()).day.imageUrl, '');
   const quote = { kind: 'activity' as const, id: 'amadeus:fixture', name: 'Provider activity', price: 20, currency: 'EUR', fetchedAt: new Date().toISOString(), isLive: true, destination: body.destination, tripContext: JSON.stringify([body.latitude, body.longitude, 'EUR']) };
@@ -60,7 +60,7 @@ test('authenticated generation validates inputs, unavailable sources, full respo
   assert.equal(quotedPlan.grounding.verifiedAmount, 0);
   const foreign = { ...quote, tripContext: JSON.stringify([35, 139, 'EUR']) };
   assert.equal((await generate({ ...body, selectedActivities: [{ ...foreign, selectionToken: createTravelSelectionToken(foreign) }] })).status, 400);
-  const insufficient = await generate({ ...body, budget: 10, foodDailyPerPerson: 100 }); assert.equal(insufficient.status, 422); assert.match((await insufficient.json()).error, /exceed/);
+  const insufficient = await generate({ ...body, budget: 10, foodDailyPerPerson: 100 }); assert.equal(insufficient.status, 200); assert.equal((await insufficient.json()).grounding.budgetStatus, 'exceeds-budget');
 });
 
 test('new generation preserves populated schedules and honestly falls back during missing AI credentials or provider outages', async t => {

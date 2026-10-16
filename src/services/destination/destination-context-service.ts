@@ -1,5 +1,5 @@
-import { SUPPORTED_CURRENCIES, type CurrencyCode } from '../../schemas/domain.ts';
-import { countries, type TCountryCode } from 'countries-list';
+import { type CurrencyCode } from '../../schemas/domain.ts';
+import { CURRENCY_NAMES, destinationCurrencies } from '../../lib/currency.ts';
 
 export interface TransportationOption {
   id: string;
@@ -9,19 +9,13 @@ export interface TransportationOption {
 
 export interface DestinationContext {
   currency: CurrencyCode | null;
-  currencySource: 'country-code' | 'unsupported';
+  currencies: CurrencyCode[];
+  currencySource: 'country-code' | 'multiple' | 'unsupported';
   currencyMessage: string;
   transportation: TransportationOption[];
   transportationSource: 'curated-country-city-guidance' | 'unavailable';
   transportationMessage: string;
 }
-
-const COUNTRY_CURRENCIES: Record<string, CurrencyCode> = {
-  AE: 'AED', AT: 'EUR', AU: 'AUD', BE: 'EUR', CA: 'CAD', CH: 'CHF', CN: 'CNY', DE: 'EUR',
-  ES: 'EUR', FI: 'EUR', FR: 'EUR', GB: 'GBP', GR: 'EUR', HK: 'HKD', ID: 'IDR', IE: 'EUR',
-  IN: 'INR', IT: 'EUR', JP: 'JPY', KR: 'KRW', LU: 'EUR', MY: 'MYR', NL: 'EUR', NZ: 'NZD',
-  PH: 'PHP', PT: 'EUR', SG: 'SGD', TH: 'THB', TW: 'TWD', US: 'USD', VN: 'VND',
-};
 
 const option = (id: string, label: string, category: TransportationOption['category']): TransportationOption => ({ id, label, category });
 
@@ -57,13 +51,14 @@ function transportFor(countryCode: string, city: string): TransportationOption[]
 
 export function resolveDestinationContext(countryCodeValue: string, city: string): DestinationContext {
   const countryCode = countryCodeValue.trim().toUpperCase();
-  const currency = (countries[countryCode as TCountryCode]?.currency.find(value => SUPPORTED_CURRENCIES.includes(value as CurrencyCode)) as CurrencyCode | undefined) || COUNTRY_CURRENCIES[countryCode] || null;
-  const localCurrencies = countries[countryCode as TCountryCode]?.currency ?? [];
+  const localCurrencies = destinationCurrencies(countryCode);
+  const currency = localCurrencies.length === 1 ? localCurrencies[0] : null;
   const transportation = transportFor(countryCode, city);
   return {
-    currency: currency && SUPPORTED_CURRENCIES.includes(currency) ? currency : null,
-    currencySource: currency ? 'country-code' : 'unsupported',
-    currencyMessage: currency ? `${currency} detected for the destination.` : localCurrencies.length ? `Local currency ${localCurrencies.join('/')} is not supported for planning. Choose a supported planning currency.` : 'Local currency could not be identified. Choose a supported planning currency.',
+    currency,
+    currencies: localCurrencies,
+    currencySource: currency ? 'country-code' : localCurrencies.length > 1 ? 'multiple' : 'unsupported',
+    currencyMessage: currency ? `${currency} · ${CURRENCY_NAMES[currency]}` : localCurrencies.length ? `Destination currencies: ${localCurrencies.join(', ')}. Choose one for your budget.` : 'Destination currency unconfirmed. Choose a planning currency.',
     transportation,
     transportationSource: transportation.length ? 'curated-country-city-guidance' : 'unavailable',
     transportationMessage: transportation.length

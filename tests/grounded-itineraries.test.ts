@@ -45,7 +45,7 @@ for (const [index, anchor] of anchors.entries()) {
       assert.equal(result.days[0].activities[0].place?.countryCode, anchor.countryCode);
       assert.ok(!result.days[0].theme.includes('Malicious'));
       assert.equal(result.days[0].imageUrl, '');
-      assert.equal(evidence.budgetStatus, 'needs-confirmation');
+      assert.equal(evidence.budgetStatus, evidence.total > result.totalBudget ? 'exceeds-budget' : 'needs-confirmation');
       assert.equal(evidence.verifiedAmount, 0);
       assert.equal(verifyGroundedPlan(result), true);
       assert.equal(parseSavedItinerary(result, { budget: result.totalBudget, currency, travelers, partyType: result.partyType!, startDate: start, destination: result.destination, days }).grounding?.total, evidence.total);

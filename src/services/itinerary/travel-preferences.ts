@@ -1,19 +1,25 @@
 import { z } from 'zod';
 import type { GroundedPlace } from './grounded-places.ts';
+import { normalizeInterests, MAX_INTERESTS, MAX_INTEREST_LENGTH } from '../../lib/trip-preferences.ts';
 
-// Historical styles remain readable; the public generator always uses these defaults.
+// Defaults apply to deliberate generation, never to reading historical saved plans.
 export const generationDefaults = { travelStyle: 'balanced', pace: 'balanced' } as const;
-export const generationPolicyVersion = 'balanced-physical-places-v2';
+export const generationPolicyVersion = 'trip-length-place-coverage-flexible-v7';
 export const travelStyles = ['budget','balanced','comfort','luxury','family-friendly'] as const;
 export const stayPreferences = ['budget-friendly','central location','hostel','condo','resort','family-friendly','luxury','no preference'] as const;
 export const generationPreferencesSchema = z.object({
   travelStyle:z.enum(travelStyles).default('balanced'),
-  accommodation:z.enum(stayPreferences).default('budget-friendly'),
-  transportation:z.string().trim().min(1).max(120).default('practical local transport'),
-  activities:z.array(z.string().trim().min(1).max(160)).max(20).default([]),
-  interests:z.array(z.string().trim().min(1).max(200)).max(20).default([]),
+  accommodation:z.string().trim().min(1).max(120).default('no preference'),
+  transportation:z.preprocess(value => value == null || typeof value === 'string' && !value.trim() ? undefined : value,
+    z.string().trim().min(1).max(120).default('route confirmation required')),
+  activities:z.preprocess(value => value == null || typeof value === 'string' && !value.trim() ? [] : value,
+    z.array(z.string().trim().min(1).max(160)).max(20).default([])).transform(values => normalizeInterests(values)),
+  interests:z.preprocess(value => value == null ? [] : typeof value === 'string' || Array.isArray(value) && value.every(item => typeof item === 'string') ? normalizeInterests(value) : value,
+    z.array(z.string().trim().min(1).max(MAX_INTEREST_LENGTH)).max(MAX_INTERESTS).default([])),
   pace:z.enum(['relaxed','balanced','active']).default('balanced'),
-}).strict();
+}).strict().transform(preferences => ({
+  ...preferences, interests: normalizeInterests(preferences.interests, preferences.activities),
+})).refine(preferences => preferences.interests.length <= MAX_INTERESTS, `Use at most ${MAX_INTERESTS} interests or activities.`);
 export type GenerationPreferences = z.infer<typeof generationPreferencesSchema>;
 export type TravelStyle = GenerationPreferences['travelStyle'];
 export const stylePolicy = {
@@ -30,5 +36,5 @@ export function premiumOpportunity(place:GroundedPlace) { return /\b(luxury|prem
 export function familyOpportunity(place:GroundedPlace) { return /\b(park|garden|museum|aquarium|zoo|science|playground)\b/i.test(place.description); }
 export function referencedAdmission(place:GroundedPlace,currency?:string) { const fee=place.admission;return fee && (!currency || fee.currency===currency) && Number.isFinite(fee.amount) && fee.amount>=0 ? fee : undefined; }
 export function preferenceInstructions(prefs:GenerationPreferences) {
-  return `${stylePolicy[prefs.travelStyle].instruction} Travel style is separate from stay preference (${prefs.accommodation}). ${stylePolicy[prefs.travelStyle].meal} Budget is a ceiling, not a spend target. Preserve all known prices and user estimates; leave unavailable prices unpriced. Transport: ${transportPlanning(prefs.transportation).label}; straight-line transfers, real routes and fares need confirmation.`;
+  return `${stylePolicy[prefs.travelStyle].instruction} Travel style sets the overall focus; interests and specific activity requests refine it. Match both against supplied place evidence; a nearby attraction does not prove that a requested activity is offered. Explain unsupported requests and suggest source-supported alternatives. Legacy stay preference: ${prefs.accommodation}; preserve explicitly selected accommodation. ${stylePolicy[prefs.travelStyle].meal} Budget is a ceiling, not a spend target. Preserve all known prices and user estimates; leave unavailable prices unpriced. Transport scheduling: ${transportPlanning(prefs.transportation).label}; internal buffers are not provider travel times. Next-stop guidance is supplied separately from routing data. Do not invent travel modes, routes, stops, schedules, fares, taxi or motorcycle availability. Real routes and local transport need confirmation.`;
 }

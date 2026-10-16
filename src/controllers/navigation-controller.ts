@@ -1,6 +1,20 @@
 import { currentUser } from '../middlewares/auth-middleware.ts';
 import { allowRequest } from '../middlewares/rate-limit-middleware.ts';
 import { NavigationError, fetchNavigationRoute, navigationRequestSchema, searchNavigationDestinations } from '../services/navigation/navigation-service.ts';
+import { nextStopOptions } from '../services/navigation/next-stop-service.ts';
+
+export async function POST_NEXT_STOP(request: Request) {
+  const user = await currentUser(request, 'traveler');
+  if (!user) return Response.json({ error: 'Unauthorized.' }, { status: 401 });
+  const parsed = navigationRequestSchema.omit({ mode: true }).safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return Response.json({ error: 'Exact start and destination coordinates are required.' }, { status: 400 });
+  if (!await allowRequest(`next-stop:${user.id}`, 30, 60_000)) return Response.json({ error: 'Route guidance is temporarily busy.' }, { status: 429, headers: { 'Retry-After': '60' } });
+  const { origin, destination } = parsed.data;
+  const options = await nextStopOptions(origin, destination, {
+    reservePublicRequest: () => allowRequest('navigation-routing:public-provider', 1, 1100),
+  });
+  return Response.json({ origin, destination, options });
+}
 
 export async function POST_SEARCH(request: Request) {
   const user = await currentUser(request, 'traveler');

@@ -1,3 +1,4 @@
+import { roundMoney, normalizeCurrency, hasValidCurrencyPrecision, SUPPORTED_CURRENCIES, type CurrencyCode } from '../../schemas/domain.ts';
 import { countryForQuery } from '../destination/destination-index.ts';
 
 export interface FlightOption {
@@ -121,7 +122,7 @@ function text(value: unknown): string {
 
 function amount(value: unknown): number | undefined {
   const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed * 100) / 100 : undefined;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
 function safeUrl(value: unknown): string | undefined {
@@ -158,7 +159,7 @@ export function normalizeFlightOffers(payload: unknown, fetchedAt: string, isLiv
     const priceData = object(offer?.price);
     const price = amount(priceData?.grandTotal ?? priceData?.total);
     const id = text(offer?.id);
-    if (!id || !first || !last || !departure || !arrival || price === undefined) return [];
+    if (!id || !first || !last || !departure || !arrival || price === undefined || !SUPPORTED_CURRENCIES.includes(text(priceData?.currency) as CurrencyCode) || !hasValidCurrencyPrecision(price,text(priceData?.currency) as CurrencyCode)) return [];
     const inboundSegments = array(itineraries[1]?.segments).map(object).filter((item): item is Record<string, unknown> => Boolean(item));
     const inboundFirst = inboundSegments[0];
     const inboundLast = inboundSegments.at(-1);
@@ -176,7 +177,7 @@ export function normalizeFlightOffers(payload: unknown, fetchedAt: string, isLiv
       returnArrival: text(object(inboundLast?.arrival)?.at) || undefined,
       duration: text(outbound.duration) || 'Duration unavailable',
       price,
-      currency: text(priceData?.currency) || 'PHP',
+      currency: text(priceData?.currency),
       stops: Math.max(0, outboundSegments.length - 1),
       seatsAvailable: Number.isInteger(seats) && seats >= 0 ? seats : undefined,
       fetchedAt,
@@ -192,7 +193,7 @@ export function normalizeActivityOffers(payload: unknown, destination: string, f
     const price = amount(priceData?.amount);
     const id = text(activity?.id);
     const name = text(activity?.name).trim();
-    if (!id || !name || price === undefined) return [];
+    if (!id || !name || price === undefined || !SUPPORTED_CURRENCIES.includes(text(priceData?.currencyCode) as CurrencyCode) || !hasValidCurrencyPrecision(price,text(priceData?.currencyCode) as CurrencyCode)) return [];
     const rating = Number(activity?.rating);
     return [{
       id: `amadeus:${id}`,
@@ -201,7 +202,7 @@ export function normalizeActivityOffers(payload: unknown, destination: string, f
       location: destination,
       description: text(activity?.shortDescription).replace(/\s+/g, ' ').trim().slice(0, 600) || 'See provider details for this activity.',
       price,
-      currency: text(priceData?.currencyCode) || 'Currency unavailable',
+      currency: text(priceData?.currencyCode),
       rating: Number.isFinite(rating) && rating >= 0 && rating <= 5 ? rating : undefined,
       referenceUrl: safeUrl(activity?.bookingLink),
       fetchedAt,
@@ -233,8 +234,8 @@ export function normalizeAccommodationOffers(
     const addressData = object(hotel?.address);
     const address = array(addressData?.lines).map(text).filter(Boolean).join(', ');
       const roomTotal = amount(price?.total);
-      if (!hotelId || !offerId || !name || roomTotal === undefined || roomTotal <= 0 || hotelResult?.available !== true || !text(price?.currency)) return [];
-      const total = Math.round(roomTotal * (input.roomQuantity || 1) * 100) / 100;
+      if (!hotelId || !offerId || !name || roomTotal === undefined || roomTotal <= 0 || hotelResult?.available !== true || !SUPPORTED_CURRENCIES.includes(text(price?.currency) as CurrencyCode)) return [];
+      const total = roundMoney(roomTotal * (input.roomQuantity || 1),normalizeCurrency(price?.currency));
     return [{
       id: `amadeus:${hotelId}:${offerId}`,
       hotelId,
@@ -248,7 +249,7 @@ export function normalizeAccommodationOffers(
       address: address || 'Not available; confirm with the hotel',
       checkInDate: text(offer?.checkInDate),
       checkOutDate: text(offer?.checkOutDate),
-        nightlyRate: Math.round(total / input.nights * (['JPY','KRW'].includes(text(price?.currency)) ? 1 : 100)) / (['JPY','KRW'].includes(text(price?.currency)) ? 1 : 100),
+        nightlyRate: roundMoney(total / input.nights,normalizeCurrency(price?.currency)),
         total,
       currency: text(price?.currency) || input.currency,
       roomDescription: text(description?.text).replace(/\s+/g, ' ').trim() || 'Available room',
