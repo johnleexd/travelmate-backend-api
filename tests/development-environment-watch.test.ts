@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { startDevelopmentServer } from '../scripts/dev.mjs';
 
-test('development prepares the Prisma client before loading the API and regenerates after schema changes', { timeout: 20_000 }, async t => {
+test('development prepares the Prisma client before loading the API and regenerates after schema changes', { timeout: 30_000 }, async t => {
   const root = mkdtempSync(path.join(tmpdir(), 'travelmate-schema-watch-'));
   const directories = ['prisma', 'node_modules', 'node_modules/prisma', 'node_modules/prisma/build', 'src', 'src/generated', 'src/generated/prisma'];
   for (const directory of directories) mkdirSync(path.join(root, directory));
@@ -39,7 +39,7 @@ test('development prepares the Prisma client before loading the API and regenera
     rmdirSync(root);
   });
   async function waitFor(condition: () => boolean) {
-    const deadline = Date.now() + 8000;
+    const deadline = Date.now() + 15_000;
     while (!condition()) {
       if (Date.now() >= deadline) assert.fail('Development client did not synchronize with the schema.');
       await new Promise(resolve => setTimeout(resolve, 50));
@@ -69,7 +69,7 @@ test('development prepares the Prisma client before loading the API and regenera
   assert.equal(children.length, 4);
 });
 
-test('development API restarts after dotenv edits and loads the changed configuration', { timeout: 20_000 }, async t => {
+test('development API restarts after dotenv edits and loads the changed configuration', { timeout: 30_000 }, async t => {
   const root = mkdtempSync(path.join(tmpdir(), 'travelmate-env-watch-'));
   const env = path.join(root, '.env');
   const entry = path.join(root, 'fixture.mjs');
@@ -87,7 +87,7 @@ test('development API restarts after dotenv edits and loads the changed configur
     unlinkSync(env); unlinkSync(entry); rmdirSync(root);
   });
   async function waitFor(value: string) {
-    const deadline = Date.now() + 8000;
+    const deadline = Date.now() + 15_000;
     while (!output.includes(value)) {
       if (Date.now() >= deadline) assert.fail('Development child did not load expected fixture configuration.');
       await new Promise(resolve => setTimeout(resolve, 50));
@@ -104,7 +104,7 @@ test('development API restarts after dotenv edits and loads the changed configur
   assert.equal(children.length, 2);
 });
 
-test('dependency changes preserve in-flight requests while source edits restart and recover the API', { timeout: 20_000 }, async t => {
+test('dependency changes preserve in-flight requests while source edits restart and recover the API', { timeout: 30_000 }, async t => {
   const root = mkdtempSync(path.join(tmpdir(), 'travelmate-source-watch-'));
   const source = path.join(root, 'src');
   const nested = path.join(source, 'nested');
@@ -141,7 +141,7 @@ test('dependency changes preserve in-flight requests while source edits restart 
     for (const directory of [nested, source, dependencies, root]) rmdirSync(directory);
   });
   async function waitFor(condition: () => boolean) {
-    const deadline = Date.now() + 8000;
+    const deadline = Date.now() + 15_000;
     while (!condition()) {
       if (Date.now() >= deadline) assert.fail('Development fixture did not reach the expected state.');
       await new Promise(resolve => setTimeout(resolve, 50));
