@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { propertyPhotoSchema } from '../travel/hotel-quote.ts';
+import type { DestinationAnchor } from '../itinerary/grounding-schema.ts';
 
 // A named stay is a planning preference, not a reservation or price quote.
 export const plannedAccommodationSchema = z.object({
@@ -23,3 +24,17 @@ export const plannedAccommodationSchema = z.object({
   }
 });
 export type PlannedAccommodation = z.infer<typeof plannedAccommodationSchema>;
+
+function distanceKm(first: { latitude: number; longitude: number }, second: { latitude: number; longitude: number }) {
+  const radians = (value: number) => value * Math.PI / 180;
+  const dLat = radians(second.latitude - first.latitude), dLon = radians(second.longitude - first.longitude);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(radians(first.latitude)) * Math.cos(radians(second.latitude)) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/** Use a verified selected stay as the day's travel origin without changing destination identity. */
+export function activityPlanningAnchor(destination: DestinationAnchor, stay?: { latitude?: number; longitude?: number } | null): DestinationAnchor {
+  if (!stay || !Number.isFinite(stay.latitude) || !Number.isFinite(stay.longitude)) return destination;
+  const point = { latitude: Number(stay.latitude), longitude: Number(stay.longitude) };
+  return distanceKm(destination, point) <= 30 ? { ...destination, ...point } : destination;
+}

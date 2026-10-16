@@ -21,7 +21,7 @@ import {
   type PartyType,
 } from '../schemas/domain.ts';
 import { readApprovedListings } from '../repositories/platform-repository.ts';
-import { plannedAccommodationSchema, type PlannedAccommodation } from '../services/destination/planned-accommodation.ts';
+import { activityPlanningAnchor, plannedAccommodationSchema, type PlannedAccommodation } from '../services/destination/planned-accommodation.ts';
 import { createAmadeusTravelProvider } from '../services/travel/amadeus-provider.ts';
 import { openQuote, type AccommodationQuote } from '../services/travel/hotel-quote.ts';
 import { revalidateHotelRecommendation } from '../services/travel/hotel-recommendations.ts';
@@ -782,7 +782,8 @@ export async function POST(request: Request) {
     const generationSignal = AbortSignal.timeout(540_000);
     const catalog = await loadGroundedPlaces(anchor, generationSignal, true, { tripDays });
     const permittedPlaces = permittedPlaceCandidates(catalog.places);
-    console.info(JSON.stringify({ event: 'generation_place_scope', city: anchor.city, destinationId: anchor.id, latitude: anchor.latitude, longitude: anchor.longitude, countryCode: anchor.countryCode, scope: anchor.scopeType ?? 'locality', available: catalog.places.length, inScope: permittedPlaces.length, nearbyExcluded: catalog.places.length - permittedPlaces.length }));
+    const activityAnchor = activityPlanningAnchor(anchor, plannedAccommodation || accommodation);
+    console.info(JSON.stringify({ event: 'generation_place_scope', city: anchor.city, destinationId: anchor.id, latitude: anchor.latitude, longitude: anchor.longitude, activityOriginLatitude: activityAnchor.latitude, activityOriginLongitude: activityAnchor.longitude, countryCode: anchor.countryCode, scope: anchor.scopeType ?? 'locality', available: catalog.places.length, inScope: permittedPlaces.length, nearbyExcluded: catalog.places.length - permittedPlaces.length }));
     let trustedTimeZone: string | undefined;
     const buildPlan = (schedule: GroundedScheduleDay[], source: 'openai' | 'gemini' | 'mock' | 'catalog', generationWarning?: string) => buildGroundedPlan({
       destination: normalizedDestination, anchor, startingLocation, startDate, endDate, budget, currency, travelers, partyType, rooms,
@@ -823,14 +824,14 @@ export async function POST(request: Request) {
     });
     const weatherSummary = safeWeather.length ? `Date-matched ${weatherProvenance} forecast: ${safeWeather.join('; ')}. Prefer indoor alternatives during heavy rain and cooler hours during extreme heat.` : '';
     const crowdSummary = `Low-confidence calendar crowd estimates (not live): ${estimateCrowdRange(startDate, endDate, normalizedDestination).map((condition) => `${condition.date} ${condition.crowdLevel}`).join('; ')}.`;
-    const prompt = `${startingLocation ? `Starting location: ${startingLocation}. ` : ''}Dates: ${startDate}–${endDate}. Currency: ${currency}. Total group budget: ${budget}; committed stay/travel: ${accommodationTotal + selectedTravelCosts.total}. ${JSON.stringify(preferences)}. ${preferenceInstructions(preferences)} Explicit selected hotel: ${plannedAccommodation?.name || accommodation?.name || "none; optional"}; preserve it even if a preference conflicts. Interests: ${safeInterests.join(', ')}. ${weatherSummary} ${crowdSummary}. Prices are supplied or explicitly unavailable; do not invent them. Confirm opening hours before travel.`;
+    const prompt = `${startingLocation ? `Starting location: ${startingLocation}. ` : ''}Dates: ${startDate}–${endDate}. Currency: ${currency}. Total group budget: ${budget}; committed stay/travel: ${accommodationTotal + selectedTravelCosts.total}. ${JSON.stringify(preferences)}. ${preferenceInstructions(preferences)} Explicit selected hotel: ${plannedAccommodation?.name || accommodation?.name || "none; optional"}; preserve it even if a preference conflicts. When hotel coordinates are verified, schedule feasible activities from that stay while retaining only verified places in the selected destination. Interests: ${safeInterests.join(', ')}. ${weatherSummary} ${crowdSummary}. Prices are supplied or explicitly unavailable; do not invent them. Confirm opening hours before travel.`;
 
     let itinerary: ItineraryResponse | undefined;
     let lastGenerationError: unknown;
     for (const candidate of resolvedProviders) {
       if (!candidate.provider || !permittedPlaces.length) continue;
       try {
-        const schedule = await generateGroundedSchedule(candidate.provider!, anchor, permittedPlaces, startDate, tripDays, travelers, prompt, generationSignal, pace, { ...schedulingOptions, weather: trustedWeatherContext, providerUnavailable: catalog.status === 'unavailable', providerPartial: catalog.coverage.outcome === 'partial' });
+        const schedule = await generateGroundedSchedule(candidate.provider!, activityAnchor, permittedPlaces, startDate, tripDays, travelers, prompt, generationSignal, pace, { ...schedulingOptions, weather: trustedWeatherContext, providerUnavailable: catalog.status === 'unavailable', providerPartial: catalog.coverage.outcome === 'partial' });
         itinerary = buildPlan(schedule, candidate.name);
         break;
       } catch (error) {
@@ -841,7 +842,7 @@ export async function POST(request: Request) {
     }
     if (!itinerary) {
       console.warn('[TravelMate] AI scheduling unavailable; returning only catalog-backed recommendations.', lastGenerationError instanceof Error ? lastGenerationError.message : 'No usable provider response.');
-      itinerary = buildPlan(completeGroundedSchedule(anchor, permittedPlaces, [], startDate, tripDays, travelers, pace, { ...schedulingOptions, weather: trustedWeatherContext, providerUnavailable: catalog.status === 'unavailable', providerPartial: catalog.coverage.outcome === 'partial' }), !resolvedProvider.provider && mockItinerariesEnabled() ? 'mock' : 'catalog', 'AI scheduling was unavailable. Recommendations use only verified destination records, interest matching and estimated local schedules. Missing place coverage remains explicitly incomplete; no attractions or provider prices were invented.');
+      itinerary = buildPlan(completeGroundedSchedule(activityAnchor, permittedPlaces, [], startDate, tripDays, travelers, pace, { ...schedulingOptions, weather: trustedWeatherContext, providerUnavailable: catalog.status === 'unavailable', providerPartial: catalog.coverage.outcome === 'partial' }), !resolvedProvider.provider && mockItinerariesEnabled() ? 'mock' : 'catalog', 'AI scheduling was unavailable. Recommendations use only verified destination records, interest matching and estimated local schedules. Missing place coverage remains explicitly incomplete; no attractions or provider prices were invented.');
     }
 
     const completed = { ...itinerary, days: itinerary.days.map(day => {

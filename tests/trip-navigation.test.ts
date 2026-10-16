@@ -20,6 +20,9 @@ const catalogPhoto = { ...place, description: 'Historic landmark', imageUrl: 'ht
 test('real dates/order/place IDs stay trip-specific and vague activities remain unpinned', () => {
   const manifest = buildTripMapManifest(trip);
   assert.equal(manifest.tripId, 'map-trip'); assert.deepEqual(manifest.days.map(day => day.date), ['2026-10-10', '2026-10-11']);
+  assert.equal(manifest.origin?.kind, 'destination'); assert.equal(manifest.origin?.name, 'Manila destination centre');
+  const hotelOrigin = buildTripMapManifest({ ...trip, itinerary: { ...trip.itinerary, plannedAccommodation: { name: 'Intramuros Hotel', latitude: 14.59, longitude: 120.975 } } });
+  assert.deepEqual(hotelOrigin.origin, { name: 'Intramuros Hotel', kind: 'accommodation', latitude: 14.59, longitude: 120.975 });
   assert.equal(manifest.days[0].activities[0].place?.id, 'Q112');
   assert.equal(manifest.days[0].activities[1].place, null); assert.equal(manifest.days[0].activities[1].locationStatus, 'Choose an exact place');
   assert.equal(vaguePlace('Hotel New Otani'), false);

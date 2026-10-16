@@ -11,8 +11,9 @@ import { withProviderCache } from '../cache/provider-cache.ts';
 
 export interface MapPhoto { src: string; attribution: { creator: string; license: string; licenseUrl?: string; sourceUrl: string } }
 export interface MapPlace extends NavigationCoordinate { id: string; name: string; address: string; sourceUrl: string; photo: MapPhoto | null }
+export interface MapRouteOrigin extends NavigationCoordinate { name: string; kind: 'accommodation' | 'destination' }
 export interface MapActivity { activityId: string; status: 'planned' | 'completed' | 'skipped' | 'rescheduled'; index: number; title: string; time: string; description: string; place: MapPlace | null; locationStatus: string; durationMinutes?: number; estimatedCost?: number; category?: string; budgetOnly: boolean }
-export interface TripMapManifest { revision: string; tripStatus?: string; tripId: string; destination: string; anchor: DestinationAnchor | null; currency?: string; days: { day: number; date: string; theme: string; activities: MapActivity[] }[] }
+export interface TripMapManifest { revision: string; tripStatus?: string; tripId: string; destination: string; anchor: DestinationAnchor | null; origin: MapRouteOrigin | null; currency?: string; days: { day: number; date: string; theme: string; activities: MapActivity[] }[] }
 type Trip = { id: string; destination: string; destinationCity?: string | null; destinationCountry?: string | null; destinationCountryCode?: string | null; latitude?: number | null; longitude?: number | null; currency?: string | null; status?: string; updatedAt?: string | Date; itinerary: unknown };
 const normalized = (value: string) => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' ? value as Record<string, unknown> : {};
@@ -53,10 +54,15 @@ export function isDailyBudgetEntry(value: unknown): boolean {
 }
 export function buildTripMapManifest(trip: Trip): TripMapManifest {
   const plan = record(trip.itinerary), anchor = tripNavigationAnchor(trip);
+  const stay = record(plan.plannedAccommodation || plan.accommodation);
+  const stayPoint = coordinateSchema.safeParse({ latitude: Number(stay.latitude), longitude: Number(stay.longitude) });
+  const origin = anchor && stayPoint.success && distanceKm(stayPoint.data, anchor) <= 30 && text(stay.name).trim()
+    ? { ...stayPoint.data, name: text(stay.name).trim(), kind: 'accommodation' as const }
+    : anchor ? { latitude: anchor.latitude, longitude: anchor.longitude, name: anchor.city + ' destination centre', kind: 'destination' as const } : null;
   let signed = false;
   try { signed = verifyGroundedPlan(plan as unknown as ItineraryResponse); } catch { /* Legacy or incomplete plans must reverify photos with the provider. */ }
   const days = Array.isArray(plan.days) ? plan.days.slice(0, 31) : [];
-  return { tripId: trip.id, revision: tripRevision(trip), tripStatus: trip.status, destination: trip.destination, anchor, currency: typeof trip.currency === 'string' ? trip.currency : typeof plan.currency === 'string' ? plan.currency : undefined, days: days.flatMap((value, dayIndex) => {
+  return { tripId: trip.id, revision: tripRevision(trip), tripStatus: trip.status, destination: trip.destination, anchor, origin, currency: typeof trip.currency === 'string' ? trip.currency : typeof plan.currency === 'string' ? plan.currency : undefined, days: days.flatMap((value, dayIndex) => {
     const day = record(value);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(text(day.date)) || !Array.isArray(day.activities)) return [];
     return [{ day: typeof day.day === 'number' ? day.day : dayIndex + 1, date: text(day.date), theme: text(day.theme),

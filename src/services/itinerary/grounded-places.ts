@@ -13,6 +13,7 @@ import { countries, type TCountryCode } from 'countries-list';
 import { MAX_PLACE_DISTANCE_KM, MIN_LOCAL_PLACE_COVERAGE } from './place-search-policy.ts';
 import { SUPPORTED_CURRENCIES, hasValidCurrencyPrecision, type CurrencyCode } from '../../schemas/domain.ts';
 import { loadPlaceBoundary, containsPlace, corroboratePlaceCoordinate, type PlaceBoundary } from './place-boundaries.ts';
+import { verifiedPlaceSnapshot } from './verified-place-snapshots.ts';
 
 type Claim = { rank?: string; mainsnak?: { datavalue?: { value?: any } }; qualifiers?: Record<string, Array<{ datavalue?: { value?: any } }>> };
 type Entity = { labels?: Record<string, { value: string }>; aliases?: Record<string, Array<{ value: string }>>; descriptions?: Record<string, { value: string }>; claims?: Record<string, Claim[]> };
@@ -453,8 +454,20 @@ export async function loadGroundedPlaces(anchor: DestinationAnchor, signal?: Abo
       return { places, coverage: coverage! };
     }, Date.now(), options.forceRefresh);
     console.info(JSON.stringify({ event: 'place_catalog_cache', city: anchor.city, status: result.freshness.status, ...result.value.coverage }));
+    const snapshot = verifiedPlaceSnapshot(anchor);
+    const knownIds = new Set(result.value.places.map(place => place.placeId));
+    const combined = [...result.value.places, ...snapshot.filter(place => !knownIds.has(place.placeId))];
+    if (result.value.places.length < target && combined.length > result.value.places.length) {
+      console.info(JSON.stringify({ event: 'place_catalog_reviewed_supplement', city: anchor.city, countryCode: anchor.countryCode, live: result.value.places.length, reviewed: combined.length - result.value.places.length, accepted: combined.length, requested: target }));
+      return { places: combined, status: 'stale-cache' as const, coverage: { ...result.value.coverage, outcome: combined.length >= target ? 'ready' as const : 'limited' as const, uniqueCandidates: Math.max(result.value.coverage.uniqueCandidates, combined.length), accepted: combined.length, inScope: combined.length, nearby: 0 } };
+    }
     return { ...result.value, status: result.freshness.status };
   } catch {
+    const snapshot = verifiedPlaceSnapshot(anchor);
+    if (snapshot.length) {
+      console.info(JSON.stringify({ event: 'place_catalog_reviewed_fallback', city: anchor.city, countryCode: anchor.countryCode, accepted: snapshot.length, requested: target }));
+      return { places: snapshot, status: 'stale-cache' as const, coverage: { outcome: snapshot.length >= target ? 'ready' as const : 'limited' as const, requested: target, articles: snapshot.length, uniqueCandidates: snapshot.length, accepted: snapshot.length, inScope: snapshot.length, nearby: 0, providerFailures: 1, requests: 0, truncated: false } };
+    }
     return { places: [] as GroundedPlace[], status: 'unavailable' as const, coverage: { outcome: 'provider-failure' as const, requested: target, articles: 0, uniqueCandidates: 0, accepted: 0, providerFailures: 1, requests: 0, truncated: false } };
   }
 }

@@ -84,6 +84,7 @@ test('retry adds only unused places to selected days, preserves every previous a
   assert.deepEqual(original, snapshot);
   for (let index = 0; index < 3; index++) assert.deepEqual(result.itinerary.days[index], original.days[index]);
   for (const [index, day] of original.days.entries()) for (const activity of day.activities) assert.deepEqual(result.itinerary.days[index].activities.find(item => item.id === activity.id), activity);
+  assert.match(result.itinerary.days[3].theme, /^Paris: Museum/);
   const visits = result.itinerary.days.flatMap(day => day.activities.filter(item => item.place));
   assert.equal(new Set(visits.map(item => item.place!.placeId)).size, visits.length);
   assert.ok(visits.every(item => item.time === 'Flexible'));

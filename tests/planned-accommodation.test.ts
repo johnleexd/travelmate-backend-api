@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { plannedAccommodationSchema } from '../src/services/destination/planned-accommodation.ts';
+import { activityPlanningAnchor, plannedAccommodationSchema } from '../src/services/destination/planned-accommodation.ts';
 import { parseSavedItinerary } from '../src/services/itinerary/saved-trip-schema.ts';
 import { normalizeItinerary, type ItineraryResponse } from '../src/controllers/itinerary-controller.ts';
 import { splitBudget } from '../src/schemas/domain.ts';
@@ -29,4 +29,11 @@ test('unquoted provider preferences survive saving without adding a confirmed ac
   assert.equal(plannedAccommodationSchema.safeParse({...displayPreference,longitude:undefined}).success,false);
   assert.equal(saved.accommodation, undefined);
   assert.equal(saved.budgetSummary.accommodationActual, 0);
+});
+
+test('a selected stay inside the destination area becomes the activity travel origin', () => {
+  const destination = { city: 'Tokyo', country: 'Japan', countryCode: 'JP', latitude: 35.6895, longitude: 139.6917 };
+  assert.deepEqual(activityPlanningAnchor(destination, { latitude: 35.68, longitude: 139.76 }), { ...destination, latitude: 35.68, longitude: 139.76 });
+  assert.equal(activityPlanningAnchor(destination, { latitude: 34.69, longitude: 135.5 }), destination);
+  assert.equal(activityPlanningAnchor(destination, { latitude: undefined, longitude: 139.76 }), destination);
 });

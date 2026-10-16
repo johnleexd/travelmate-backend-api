@@ -52,15 +52,17 @@ export async function POST_TRIP_DAY_ROUTE(request: Request) {
       const place = selected ? (await resolveTripMapActivity(trip, { ...selected, dayIndex: input.dayIndex })).activity.place : activity.place;
       if (place) stops.push({ index: activity.index, latitude: place.latitude, longitude: place.longitude });
     }
-    if (stops.length < 2) throw new NavigationError('Choose at least two exact places for this day before routing.', 400);
-    const points = stops.map(({ latitude, longitude }) => ({ latitude, longitude }));
+    const useOrigin = stops.length === 1 && manifest.origin;
+    if (stops.length < 2 && !useOrigin) throw new NavigationError('Choose at least one exact place and a valid trip starting point before routing.', 400);
+    const points = [...(useOrigin ? [{ latitude: manifest.origin!.latitude, longitude: manifest.origin!.longitude }] : []), ...stops.map(({ latitude, longitude }) => ({ latitude, longitude }))];
     const cached = await withProviderCache('trip-day-route:' + JSON.stringify([input.mode, points]),
       { source: 'activities', freshForMs: 300_000, staleForMs: 300_000 }, () => fetchNavigationRoute({
         origin: points[0], destination: points.at(-1)!, mode: input.mode,
       }, { stops: points, reservePublicRequest: () => allowRequest('navigation-routing:public-provider', 1, 1100) }));
     return Response.json({ route: cached.value, stopIndices: stops.map(stop => stop.index), totalActivities: day.activities.filter(activity => !activity.budgetOnly && activity.status !== 'skipped').length,
-      travelLegs: cached.value.legDurationsSeconds?.map((durationSeconds, index) => ({ fromActivityIndex: stops[index].index, toActivityIndex: stops[index + 1].index, durationSeconds })) || [],
-      message: stops.length < day.activities.filter(activity => !activity.budgetOnly && activity.status !== 'skipped').length ? 'Route includes only verified stops. Unresolved activities are omitted.' : 'Route follows the saved activity order; skipped activities are excluded.' });
+      ...(useOrigin ? { origin: manifest.origin } : {}),
+      travelLegs: useOrigin ? [] : cached.value.legDurationsSeconds?.map((durationSeconds, index) => ({ fromActivityIndex: stops[index].index, toActivityIndex: stops[index + 1].index, durationSeconds })) || [],
+      message: useOrigin ? `Route starts at ${manifest.origin!.name} and continues to the saved stop.` : stops.length < day.activities.filter(activity => !activity.budgetOnly && activity.status !== 'skipped').length ? 'Route includes only verified stops. Unresolved activities are omitted.' : 'Route follows the saved activity order; skipped activities are excluded.' });
   } catch (error) { return failure(error); }
 }
 export async function POST_TRIP_ACTIVITY_WEATHER(request: Request) {

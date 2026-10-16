@@ -41,11 +41,17 @@ export function retryIncompleteDays(plan: ItineraryResponse, indices: number[], 
   let added = 0;
   for (const index of selected) {
     const day = updated.days[index], proposal = generated.days[index];
+    const hadVisits = day.activities.some(visit);
     const additions = proposal.activities.filter(activity => activity.place);
     day.activities.push(...additions); added += additions.length;
     day.planningStatus = proposal.planningStatus;
     day.planningReason = proposal.planningReason;
     day.planningIssue = proposal.planningIssue;
+    if (!hadVisits && additions.length) {
+      day.theme = proposal.theme;
+      day.travelNote = proposal.travelNote;
+      day.scheduleBlocks = proposal.scheduleBlocks;
+    }
     if (!candidates.length && catalog.places.length && day.planningStatus === 'incomplete' && day.planningIssue !== 'provider-failure') {
       day.planningIssue = 'insufficient-coverage'; day.planningReason = 'No additional unique verified places were found within the selected scope. Existing activities are preserved.';
     }
