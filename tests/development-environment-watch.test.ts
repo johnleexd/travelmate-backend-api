@@ -1,9 +1,73 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, renameSync, utimesSync, writeFileSync, unlinkSync, rmdirSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, utimesSync, writeFileSync, unlinkSync, rmdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { startDevelopmentServer } from '../scripts/dev.mjs';
+
+test('development prepares the Prisma client before loading the API and regenerates after schema changes', { timeout: 20_000 }, async t => {
+  const root = mkdtempSync(path.join(tmpdir(), 'travelmate-schema-watch-'));
+  const directories = ['prisma', 'node_modules', 'node_modules/prisma', 'node_modules/prisma/build', 'src', 'src/generated', 'src/generated/prisma'];
+  for (const directory of directories) mkdirSync(path.join(root, directory));
+  const schema = path.join(root, 'prisma/schema.prisma');
+  const generated = path.join(root, 'src/generated/prisma/client.ts');
+  const cli = path.join(root, 'node_modules/prisma/build/index.js');
+  const counter = path.join(root, 'generations.txt');
+  const entry = path.join(root, 'src/server.mjs');
+  writeFileSync(schema, 'schema-v1');
+  writeFileSync(generated, "export default 'stale-client';");
+  writeFileSync(counter, '');
+  writeFileSync(cli, `
+    const fs = require('node:fs');
+    const schema = fs.readFileSync('prisma/schema.prisma', 'utf8');
+    if (schema === 'invalid') process.exit(2);
+    fs.writeFileSync('src/generated/prisma/client.ts', 'export default ' + JSON.stringify(schema) + ';');
+    fs.appendFileSync('generations.txt', schema + '\\n');
+  `);
+  writeFileSync(entry, "import value from './generated/prisma/client.ts'; console.log('READY:' + value); setInterval(()=>{},1000);");
+  let output = '';
+  const children: import('node:child_process').ChildProcess[] = [];
+  const server = startDevelopmentServer({ root, entry, stdio: 'pipe', onChild(child) {
+    children.push(child);
+    child.stdout.on('data', chunk => { output += chunk.toString(); });
+  } });
+  t.after(async () => {
+    server.stop();
+    await Promise.all(children.map(child => child.exitCode !== null || child.signalCode !== null ? Promise.resolve() : new Promise(resolve => child.once('exit', resolve))));
+    for (const file of [schema, generated, cli, counter, entry]) unlinkSync(file);
+    for (const directory of directories.toReversed()) rmdirSync(path.join(root, directory));
+    rmdirSync(root);
+  });
+  async function waitFor(condition: () => boolean) {
+    const deadline = Date.now() + 8000;
+    while (!condition()) {
+      if (Date.now() >= deadline) assert.fail('Development client did not synchronize with the schema.');
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+  }
+  await waitFor(() => output.includes('READY:schema-v1'));
+  assert.equal(readFileSync(counter, 'utf8'), 'schema-v1\n');
+  writeFileSync(schema, 'schema-v1');
+  await new Promise(resolve => setTimeout(resolve, 600));
+  assert.equal(children.length, 1);
+
+  writeFileSync(schema, 'schema-v2');
+  await waitFor(() => output.includes('READY:schema-v2'));
+  assert.equal(children.length, 2);
+  assert.equal(readFileSync(counter, 'utf8'), 'schema-v1\nschema-v2\n');
+  writeFileSync(entry, "import value from './generated/prisma/client.ts'; console.log('SOURCE:' + value); setInterval(()=>{},1000);");
+  await waitFor(() => output.includes('SOURCE:schema-v2'));
+  assert.equal(children.length, 3);
+  assert.equal(readFileSync(counter, 'utf8'), 'schema-v1\nschema-v2\n');
+
+  writeFileSync(schema, 'invalid');
+  await waitFor(() => children[2].exitCode !== null || children[2].signalCode !== null);
+  await new Promise(resolve => setTimeout(resolve, 500));
+  assert.equal(children.length, 3, 'Generation failure must not boot an API with the old client.');
+  writeFileSync(schema, 'schema-v3');
+  await waitFor(() => output.includes('SOURCE:schema-v3'));
+  assert.equal(children.length, 4);
+});
 
 test('development API restarts after dotenv edits and loads the changed configuration', { timeout: 20_000 }, async t => {
   const root = mkdtempSync(path.join(tmpdir(), 'travelmate-env-watch-'));

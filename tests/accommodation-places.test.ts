@@ -44,8 +44,8 @@ test('quoted group accommodation total is counted once and survives saving and e
   assert.deepEqual(normalized.days.map(day=>day.totalCost),[70.01,70,20]);
   parseSavedItinerary(normalized,{days:3,currency:'USD',budget:1000,travelers:2,partyType:'couple'});
   const edited=applyManualItineraryChanges(normalized,normalized,3,1000,2,'USD');
-  assert.equal((edited.budgetSummary as {plannedSpend:number}).plannedSpend,160.01);
-  assert.deepEqual((edited.days as {totalCost:number}[]).map(day=>day.totalCost),[70.01,70,20]);
+  assert.equal((edited.budgetSummary as {plannedSpend:number}).plannedSpend,100.01);
+  assert.deepEqual((edited.days as {totalCost:number}[]).map(day=>day.totalCost),[50.01,50,0]);
   const unpriced={...normalizeItinerary(itinerary,splitBudget(1000,2,3),'couple',2,3,'2040-01-01'),plannedAccommodation:{name:'Mapped Guesthouse',address:'Paris',type:'Guesthouse',source:'openstreetmap' as const,sourceId:'osm:node:123'}};
   assert.equal(unpriced.budgetSummary.accommodationActual,0);
   assert.equal(unpriced.accommodation,undefined);

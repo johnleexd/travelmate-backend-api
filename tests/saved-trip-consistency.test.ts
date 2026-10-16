@@ -19,7 +19,7 @@ const user: PublicUser = { id: 'snapshot-owner', role: 'traveler', name: 'Test',
 const context = { days: 1, currency: 'PHP' as const, budget: 1000, travelers: 1, partyType: 'solo' as const, destination: 'Tokyo', startDate: '2040-01-01' };
 function plan() {
   return { destination: 'Tokyo', totalBudget: 1000, currency: 'PHP', partyType: 'solo', travelers: 1,
-    days: [{ day: 1, date: '2040-01-01', theme: 'Museum day', imageUrl: '', totalCost: 100, activities: [{ time: '09:00', title: 'Museum', description: 'Visit the museum', estimatedCost: 100, category: 'activity', icon: 'map' }] }],
+    days: [{ day: 1, date: '2040-01-01', theme: 'Museum day', imageUrl: '', totalCost: 100, activities: [{ time: '09:00', title: 'Museum', description: 'Visit the museum', estimatedCost: 100, category: 'activity', icon: 'map', priceEvidence: { status: 'estimate', source: 'user-entered', basis: 'Explicit party total', currency: 'PHP', unit: 'group', unitAmount: 100, quantity: 1, participants: 1, needsConfirmation: true, fetchedAt: '2040-01-01T00:00:00Z' } }] }],
     budgetSummary: { accommodation: 0, food: 0, activities: 0, transport: 0, reserve: 0, dailyAverage: 1, total: 1, plannedSpend: 0, remainingBudget: 1000 },
     costSharing: { partyType: 'solo', travelers: 1, groupBudget: 1, plannedGroupSpend: 0, budgetShares: [1], plannedSpendShares: [0], accommodationShares: [0], reserveShares: [1000] },
   };
@@ -146,6 +146,7 @@ test('save validation replaces contradictory summaries and shares with exact ite
 test('selected travel costs are included once and fractional shares retain every currency unit', () => {
   const input = { ...plan(), totalBudget: 1000.01, currency: 'USD', partyType: 'friends', travelers: 3, costSharing: undefined,
     selectedTravelCosts: { activities: [], total: 20, flight: { id: 'flight', name: 'Flight', total: 20, currency: 'USD', fetchedAt: '2040-01-01T00:00:00.000Z' } } };
+  input.days[0].activities[0].priceEvidence.currency='USD';input.days[0].activities[0].priceEvidence.participants=3;
   const result = parseSavedItinerary(input, { ...context, budget: 1000.01, currency: 'USD', partyType: 'friends', travelers: 3 });
   assert.equal(result.budgetSummary.plannedSpend, 120);
   assert.equal(result.budgetSummary.remainingBudget, 880.01);

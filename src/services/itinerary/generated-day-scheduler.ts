@@ -117,7 +117,7 @@ export function completeGroundedSchedule(anchor: DestinationAnchor, catalog: Gro
         const referenceText = normalize(place.name + ' ' + place.description);
         const interest = words.filter(word => referenceText.includes(word)).length;
         const requested=preferredWords.filter(word=>referenceText.includes(word)).length;
-        const fee=referencedAdmission(place,options.currency),cost=options.committedActivityNames?.some(name=>normalize(name)===normalize(place.name))?0:fee?fee.amount*Math.min(travelers,hint?.participants ?? travelers):undefined;
+        const fee=referencedAdmission(place,options.currency),cost=options.committedActivityNames?.some(name=>normalize(name)===normalize(place.name))?0:fee?fee.amount*travelers:undefined;
         const affordable=cost===undefined || cost<=remainingBudget;
         const premium=options.travelStyle==='luxury' && premiumOpportunity(place) && cost!==undefined && affordable?3:0;
         const family=options.travelStyle==='family-friendly' && familyOpportunity(place)?3:0;
@@ -127,7 +127,7 @@ export function completeGroundedSchedule(anchor: DestinationAnchor, catalog: Gro
         // Geography dominates after the first stop; weather and interests choose suitable nearby stops.
         const variety = options.travelStyle === 'balanced' && day.visits.some(visit => genre(places.find(p => p.placeId === visit.placeId)!) === genre(place)) ? -1 : 0;
         const score = variety + interest * 2 + requested * 4 + preferred + premium + family + lowCost + (badWeather && indoor(place) ? 4 : 0) - distance * (from ? 3 : policy.distanceWeight);
-        return { place, duration, transfer, returnBuffer, start:affordable?start:undefined, meal, score, cost, interest, requested, premium, family, lowCost, variety, participants: hint?.participants ?? travelers,
+        return { place, duration, transfer, returnBuffer, start:affordable?start:undefined, meal, score, cost, interest, requested, premium, family, lowCost, variety, participants: travelers,
           rejectionReason: !affordable ? 'referenced-fee-exceeds-remaining-budget' : start !== undefined ? undefined : !starts.length ? 'known-opening-window-too-short' : 'visit-transfers-and-return-exceed-day-window' };
     };
     const remainingWindows = windows.slice(index).filter(w => !w.rest && w.end - w.start >= 60 && (options.occupied?.[w.date]?.visits ?? 0) < cap);

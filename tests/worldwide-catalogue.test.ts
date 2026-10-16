@@ -27,22 +27,42 @@ for(let i=0;i<45;i++) add(900000+i,'Small village '+String(i).padStart(2,'0'),'P
 add(760000,'Long parent label for an isolated source fixture used to verify persistence of administrative names beyond the previous one hundred character limit','ADM1','JP','27','',1861060);
 add(860000,'Long settlement name from an isolated source fixture used to verify complete storage of location names beyond the previous one hundred character limit','PPL','JP','27','one',760000);
 db.exec('UPDATE places SET latitude=35.12345678,longitude=139.98765432 WHERE id=860000;');
+db.prepare('INSERT INTO countries VALUES(?,?,?)').run('CN','China',1814991);
+add(1814991,'China','PCLI','CN','','',null);
+add(1785694,'Yunnan','ADM1','CN','29','',1814991);
+add(10260117,'Caohai Zhen','ADM4','CN','29','',1785694);
+db.exec('UPDATE places SET latitude=26.5684,longitude=100.176,a4=\'10260117\' WHERE id=10260117;');
+add(10260118,'Unclassified source division','ADM4','CN','29','',1785694);
 db.close();
 const { searchCatalogue,searchCatalogueCountries,catalogueLocation,catalogueContains,validateCatalogueSelection }=await import('../src/services/destination/global-catalogue.ts');
 const { searchGlobalLocationsPage }=await import('../src/services/destination/global-location-search.ts');
 const { searchDestinationAreas,selectedAreaParent,validatedAreaCities }=await import('../src/services/destination/destination-areas.ts');
 const { tripNavigationAnchor }=await import('../src/services/navigation/trip-map-service.ts');
 const { prisma }=await import('../src/lib/prisma.ts');
+const { validateDestinationAnchor }=await import('../src/services/itinerary/grounded-places.ts');
 const { executePlatformAction }=await import('../src/services/platform/platform-service.ts');
 const { buildGroundedPlan,signGroundedPlan }=await import('../src/services/itinerary/grounded-plan.ts');
 const { GET }=await import('../src/controllers/locations-controller.ts');
 const { createSessionToken }=await import('../src/middlewares/auth-middleware.ts');
 test.after(()=>{ /* Windows SQLite keeps its read handle open until this test worker exits; remove only its fixture if possible. */ try { rmSync(join(directory,'fixture.sqlite')); rmSync(directory); } catch {} });
+test('verified ADM towns can be destinations without children; unknown administrative divisions remain areas',async()=>{
+  const town=catalogueLocation(10260117,'CN')!;
+  assert.equal(town.placeType,'Town (Zhen)');assert.equal(town.scopeType,'locality');assert.equal(town.canBrowse,false);
+  assert.equal(catalogueLocation(10260118,'CN')!.scopeType,'area');
+  const offline:typeof fetch=async()=>{throw Error('No provider is needed to select this catalogue record.');};
+  const empty=await searchDestinationAreas(selectedAreaParent(town.id,'CN'),'',0,offline,true);
+  assert.equal(empty.status,'empty');assert.equal(empty.total,0);
+  assert.equal((await searchDestinationAreas(selectedAreaParent(1785694,'CN'),'Caohai',0,offline,true)).areas[0].id,town.id);
+  const anchor=await validateDestinationAnchor(town.label,{city:town.name,country:town.country,countryCode:town.countryCode,id:town.id,provider:town.provider,providerId:town.providerId,latitude:town.latitude,longitude:town.longitude},town.latitude,town.longitude,offline);
+  assert.equal(anchor.city,town.name);assert.equal(anchor.scopeType,'locality');
+  assert.equal((await searchGlobalLocationsPage('Caohai',0,offline,'JP')).total,0);
+});
+
 test('optional country browsing searches canonical roots and local aliases without namesake settlements',()=>{
-  assert.equal(searchCatalogueCountries().total,4);
+  assert.equal(searchCatalogueCountries().total,5);
   assert.deepEqual(searchCatalogueCountries('Japan').locations.map(p=>p.id),[1861060]);
   assert.deepEqual(searchCatalogueCountries('日本').locations.map(p=>p.id),[1861060]);
-  assert.equal(searchCatalogueCountries('',2).locations.length,2);
+  assert.equal(searchCatalogueCountries('',2).locations.length,3);
   assert.equal(searchCatalogue('',0,1861060,undefined,undefined,true)?.locations[0].sourceFeatureCode,'ADM1');
 });
 test('optional Philippine province browsing includes recorded independent-city associations and retains their official parent',async()=>{

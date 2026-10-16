@@ -327,7 +327,9 @@ export function normalizeItinerary(itinerary: ItineraryResponse, budgetSummary: 
     const activities = day.activities.map((activity) => {
       const estimated = estimatedUnitCosts[costIndex++] ?? 0;
       const unitCost = accommodation && activity.category === 'accommodation' ? 0 : estimated;
-      return { ...activity, imageUrl: activity.imageUrl || activityImage(activity.title, fallbackImage), unitCost, estimatedCost: unitCost * travelers };
+      // This legacy generator's prompt defines unannotated costs per person.
+      // An annotated saved/group amount is already extended; never multiply it again.
+      return { ...activity, imageUrl: activity.imageUrl || activityImage(activity.title, fallbackImage), unitCost: activity.priceEvidence ? activity.unitCost : unitCost, estimatedCost: activity.priceEvidence ? activity.estimatedCost : roundMoney(unitCost * travelers, itinerary.currency) };
     });
     const activityTotal = activities.reduce((sum, activity) => sum + activity.estimatedCost, 0);
     const rideFare = activities.filter((activity) => activity.category === 'transport').reduce((sum, activity) => sum + activity.estimatedCost, 0);
@@ -739,6 +741,17 @@ export async function POST(request: Request) {
     const resolvedProvider = resolvedProviders[0] || { name: 'openai' as const };
 
     const generationSignal = AbortSignal.timeout(GENERATION_DEADLINE_MS);
+    const weatherCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude)
+      && Number(latitude) >= -90 && Number(latitude) <= 90 && Number(longitude) >= -180 && Number(longitude) <= 180
+      ? { latitude: Number(latitude), longitude: Number(longitude) } : undefined;
+    const weatherKey = weatherCoordinates ? `${weatherCoordinates.latitude.toFixed(4)}:${weatherCoordinates.longitude.toFixed(4)}` : normalizedDestination.toLowerCase();
+    // Independent references start together. Handle a weather rejection immediately
+    // even if place discovery is still pending, so no rejection goes unhandled.
+    const generationWeather = withProviderCache(weatherKey, PROVIDER_CACHE_POLICIES.weather, async () => {
+      const resolved = await resolveWeather({ city: normalizedDestination, coordinates: weatherCoordinates }, configuredWeatherProviders());
+      if (resolved.source === 'unavailable') throw new Error('Weather providers are unavailable.');
+      return resolved;
+    }).then(result => ({ result }), error => ({ error }));
     const catalog = await loadGroundedPlaces(anchor, generationSignal, true, { tripDays });
     const permittedPlaces = permittedPlaceCandidates(catalog.places);
     const activityAnchor = activityPlanningAnchor(anchor, plannedAccommodation || accommodation);
@@ -753,18 +766,12 @@ export async function POST(request: Request) {
     });
 
     // Keep provider retries and repairs within the browser request window.
-    const weatherCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude)
-      && Number(latitude) >= -90 && Number(latitude) <= 90 && Number(longitude) >= -180 && Number(longitude) <= 180
-      ? { latitude: Number(latitude), longitude: Number(longitude) } : undefined;
     let trustedWeatherContext: Array<{ date: string; description: string; precipitationProbability: number; tempMax: number }> = [];
     let weatherProvenance = 'provider-backed';
     try {
-      const weatherKey = weatherCoordinates ? `${weatherCoordinates.latitude.toFixed(4)}:${weatherCoordinates.longitude.toFixed(4)}` : normalizedDestination.toLowerCase();
-      const weatherResult = await withProviderCache(weatherKey, PROVIDER_CACHE_POLICIES.weather, async () => {
-        const resolved = await resolveWeather({ city: normalizedDestination, coordinates: weatherCoordinates }, configuredWeatherProviders());
-        if (resolved.source === 'unavailable') throw new Error('Weather providers are unavailable.');
-        return resolved;
-      });
+      const outcome = await generationWeather;
+      if ('error' in outcome) throw outcome.error;
+      const weatherResult = outcome.result;
       const tripWeather = weatherForTripDates(weatherResult.value, startDate, endDate);
       if (tripWeather.timeZone) {
         try { trustedTimeZone = new Intl.DateTimeFormat('en', { timeZone: tripWeather.timeZone }).resolvedOptions().timeZone; } catch { /* Do not invent an IANA zone when the provider reference is invalid. */ }

@@ -7,6 +7,7 @@ import { fetchGeocoderSearch } from './geocoder-client.ts';
 import { parsePolygon, pointInGeography, type PolygonGeometry } from './geographic-membership.ts';
 import { createAreaCache } from './area-cache.ts';
 import { catalogueLocation, catalogueContains, catalogueContainsAny, searchCatalogue, globalCatalogueCoverage } from './global-catalogue.ts';
+import { isDestinationLocality } from '../../lib/location-scope.ts';
 
 export interface AreaSuggestion extends AdministrativeLocationSuggestion {
   description: string;
@@ -36,7 +37,7 @@ class AreaBoundaryCoverageError extends Error {}
 export function selectedAreaParent(id: number, countryCode: string): LocationCandidate {
   const official = countryCode === 'PH' ? administrativeRecord(id) : undefined;
   const parent = official ? administrativeCandidate(official) : indexedDestination(id, countryCode) || resolvedLocationById(id, countryCode);
-  if (!parent || !(needsAccommodationArea(parent) || parent.canBrowse)) throw new Error('Select a valid parent area again before browsing its places.');
+  if (!parent || !(needsAccommodationArea(parent) || parent.canBrowse || isDestinationLocality(parent))) throw new Error('Select a valid parent area again before browsing its places.');
   return parent;
 }
 const keyFor = (parent: LocationCandidate) => `${parent.countryCode}:${parent.provider || 'geonames'}:${parent.providerId || parent.id}`;

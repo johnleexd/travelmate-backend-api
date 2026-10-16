@@ -12,22 +12,22 @@ const anchor = { city: 'Manila', country: 'Philippines', countryCode: 'PH', lati
 function plan(extra: Partial<Parameters<typeof buildGroundedPlan>[0]> = {}) {
   return buildGroundedPlan({ destination: 'Manila, Philippines', anchor, startingLocation: '', startDate: '2040-01-25', endDate: '2040-01-27', budget: 50000, currency: 'PHP', travelers: 3, partyType: 'friends', rooms: 2, source: 'catalog', transportation: '', placeDataStatus: 'live',
     places: [{ provider: 'wikidata', placeId: 'Q100', name: 'Recorded museum', description: 'museum', ...anchor, sourceUrl: 'https://www.wikidata.org/wiki/Q100', fetchedAt: '2026-10-16T00:00:00Z', address: 'Recorded address', openingHours: 'Opening hours need confirmation' }],
-    schedule: [0,1,2].map(index=>({ day: index+1, date: `2040-01-${25+index}`, theme: 'Day', visits: index ? [] : [{ placeId: 'Q100', startMinutes: 600, durationMinutes: 60, participants: 2 }] })), ...extra });
+    schedule: [0,1,2].map(index=>({ day: index+1, date: `2040-01-${25+index}`, theme: 'Day', visits: index ? [] : [{ placeId: 'Q100', startMinutes: 600, durationMinutes: 60, participants: 3 }] })), ...extra });
 }
 const context = { days: 3, budget: 50000, currency: 'PHP' as const, travelers: 3, partyType: 'friends' as const, startDate: '2040-01-25' };
 test('fixed allowances cover categories without allocating the budget or inventing venue prices', () => {
   const value=plan(), review=expenseLedger(value);
-  assert.deepEqual(value.grounding!.categories, { accommodation: 8000, food: 5400, transportation: 1800, activities: 600, fees: 0, contingency: 1580 });
-  assert.equal(review.total,17380); assert.equal(review.allowanceTotal,17380);
-  assert.equal(value.grounding!.nights,2); assert.equal(review.days.reduce((sum,day)=>sum+day.amount!,0),15800);
-  assert.equal(expenseLedger(plan({ budget: 100 })).total,17380);
+  assert.deepEqual(value.grounding!.categories, { accommodation: 8000, food: 5400, transportation: 1800, activities: 900, fees: 0, contingency: 1610 });
+  assert.equal(review.total,17710); assert.equal(review.allowanceTotal,17710);
+  assert.equal(value.grounding!.nights,2); assert.equal(review.days.reduce((sum,day)=>sum+day.amount!,0),16100);
+  assert.equal(expenseLedger(plan({ budget: 100 })).total,17710);
   assert.equal(expenseLedger(plan({ budget: 100 })).status,'over-budget');
   assert.ok(value.days[0].activities[0].priceEvidence!.basis.includes('not an entrance fee'));
-  assert.equal(parseSavedItinerary(value,context).grounding!.total,17380);
+  assert.equal(parseSavedItinerary(value,context).grounding!.total,17710);
 });
 test('user amounts precede other estimates; shared/day and person units extend exactly once', () => {
   const value=plan({ nightlyRoomEstimate: 500, foodDailyPerPerson:100, transportFare:200, transportFareType:'shared-fare' });
-  assert.equal(value.grounding!.categories.accommodation,2000); assert.equal(value.grounding!.categories.food,900); assert.equal(value.grounding!.categories.transportation,600); assert.equal(value.grounding!.total,4510);
+  assert.equal(value.grounding!.categories.accommodation,2000); assert.equal(value.grounding!.categories.food,900); assert.equal(value.grounding!.categories.transportation,600); assert.equal(value.grounding!.total,4840);
   assert.equal(calculateExpense(25,3,3,'meal','PHP'),225);
   assert.equal(calculateExpense(25,2,3,'transport-leg','PHP'),50);
 });
@@ -49,7 +49,7 @@ test('unsupported currency stays unpriced; no fake conversion, zero or free fee 
 test('explicit estimate saves preserve provider/history objects and round-trip without regeneration', () => {
   const value=plan(), historical=structuredClone(value), updated=applyExpenseEdits(value,{ nightlyRoomEstimate:700,rooms:2,foodDailyPerPerson:100,transportFare:200,transportFareType:'shared-fare' });
   assert.deepEqual(value,historical); assert.equal(updated.accommodationEstimate!.source,'user-entered');
-  assert.equal(updated.days[0].activities[0].estimatedCost,600); assert.equal(updated.days[0].activities[0].place!.placeId,'Q100');
+  assert.equal(updated.days[0].activities[0].estimatedCost,900); assert.equal(updated.days[0].activities[0].place!.placeId,'Q100');
   assert.equal(updated.grounding!.categories.accommodation,2800); assert.equal(verifyGroundedPlan(updated),true);
   assert.equal(parseSavedItinerary(updated,context).accommodationEstimate!.unitAmount,700);
   assert.throws(()=>applyExpenseEdits(value,{ nightlyRoomEstimate: -1 }));
@@ -74,14 +74,14 @@ test('legacy activity editing preserves entered amounts and saves overlapping en
   const submitted=structuredClone(legacy);submitted.days[0].activities[1].estimatedCost=250;
   const edited=applyManualItineraryChanges(legacy,submitted,1,5000,3,'PHP') as unknown as ItineraryResponse;
   assert.equal(edited.days[0].activities[1].estimatedCost,250);assert.equal(edited.days[0].activities[1].priceEvidence!.unit,'group');
-  assert.equal(edited.days[0].totalCost,700);assert.equal(expenseLedger(edited).total,700);
-  const saved=parseSavedItinerary(edited,{...context,days:1,budget:5000});assert.equal(expenseLedger(saved).total,700);
+  assert.equal(edited.days[0].totalCost,250);assert.equal(expenseLedger(edited).total,250);assert.equal(expenseLedger(edited).needsBudgetRefresh,true);
+  const saved=parseSavedItinerary(edited,{...context,days:1,budget:5000});assert.equal(expenseLedger(saved).total,250);
   assert.equal(legacy.days[0].activities[1].estimatedCost,200);
 });
 test('reliable admission references precede visit allowances and user room estimates precede source quotes', () => {
   const base=plan(), place={...base.days[0].activities[0].place!,description:'museum',admission:{amount:50,currency:'PHP' as const,sourceUrl:'https://www.wikidata.org/wiki/Q100#P2555',fetchedAt:'2026-10-15T00:00:00Z'}};
   const value=plan({places:[place],nightlyRoomEstimate:700,accommodation:{listingId:'known',name:'Recorded property',address:'Manila',nightlyRate:5000,nights:2,total:10000,currency:'PHP',source:'travelmate'}});
-  assert.equal(value.days[0].activities[0].estimatedCost,100);assert.equal(value.days[0].activities[0].priceEvidence!.status,'estimate');
+  assert.equal(value.days[0].activities[0].estimatedCost,150);assert.equal(value.days[0].activities[0].priceEvidence!.status,'estimate');
   assert.equal(value.days[0].activities[0].priceEvidence!.fetchedAt,'2026-10-15T00:00:00Z');
   assert.equal(value.grounding!.categories.accommodation,2800);assert.equal(value.accommodation!.total,10000);
 });

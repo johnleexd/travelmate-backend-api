@@ -1,3 +1,4 @@
+import { expenseLedger, activityExpense } from '../../lib/expense-ledger.ts';
 import { activityIdentity, tripRevision } from '../itinerary/activity-management.ts';
 import { z } from 'zod';
 import { coordinateSchema, NavigationError, type NavigationCoordinate } from './navigation-service.ts';
@@ -13,7 +14,7 @@ export interface MapPhoto { src: string; attribution: { creator: string; license
 export interface MapPlace extends NavigationCoordinate { id: string; name: string; address: string; sourceUrl: string; photo: MapPhoto | null }
 export interface MapRouteOrigin extends NavigationCoordinate { name: string; kind: 'accommodation' | 'destination' }
 export interface MapActivity { activityId: string; status: 'planned' | 'completed' | 'skipped' | 'rescheduled'; index: number; title: string; time: string; description: string; place: MapPlace | null; locationStatus: string; durationMinutes?: number; estimatedCost?: number; category?: string; budgetOnly: boolean }
-export interface TripMapManifest { revision: string; tripStatus?: string; tripId: string; destination: string; anchor: DestinationAnchor | null; origin: MapRouteOrigin | null; currency?: string; days: { day: number; date: string; theme: string; activities: MapActivity[] }[] }
+export interface TripMapManifest { revision: string; tripStatus?: string; tripId: string; destination: string; anchor: DestinationAnchor | null; origin: MapRouteOrigin | null; currency?: string; days: { day: number; date: string; theme: string; estimatedTotal?: number | null; unpriced?: number; activities: MapActivity[] }[] }
 type Trip = { id: string; destination: string; destinationCity?: string | null; destinationCountry?: string | null; destinationCountryCode?: string | null; latitude?: number | null; longitude?: number | null; currency?: string | null; status?: string; updatedAt?: string | Date; itinerary: unknown };
 const normalized = (value: string) => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' ? value as Record<string, unknown> : {};
@@ -54,6 +55,9 @@ export function isDailyBudgetEntry(value: unknown): boolean {
 }
 export function buildTripMapManifest(trip: Trip): TripMapManifest {
   const plan = record(trip.itinerary), anchor = tripNavigationAnchor(trip);
+  const currency = (trip.currency || plan.currency) as ItineraryResponse['currency'];
+  let costs: ReturnType<typeof expenseLedger> | undefined;
+  try { costs = expenseLedger({ ...plan, currency } as unknown as ItineraryResponse); } catch { /* Incomplete legacy records keep their places without claimed costs. */ }
   const stay = record(plan.plannedAccommodation || plan.accommodation);
   const stayPoint = coordinateSchema.safeParse({ latitude: Number(stay.latitude), longitude: Number(stay.longitude) });
   const origin = anchor && stayPoint.success && distanceKm(stayPoint.data, anchor) <= 30 && text(stay.name).trim()
@@ -65,13 +69,13 @@ export function buildTripMapManifest(trip: Trip): TripMapManifest {
   return { tripId: trip.id, revision: tripRevision(trip), tripStatus: trip.status, destination: trip.destination, anchor, origin, currency: typeof trip.currency === 'string' ? trip.currency : typeof plan.currency === 'string' ? plan.currency : undefined, days: days.flatMap((value, dayIndex) => {
     const day = record(value);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(text(day.date)) || !Array.isArray(day.activities)) return [];
-    return [{ day: typeof day.day === 'number' ? day.day : dayIndex + 1, date: text(day.date), theme: text(day.theme),
+    return [{ day: typeof day.day === 'number' ? day.day : dayIndex + 1, date: text(day.date), theme: text(day.theme), estimatedTotal: costs?.days[dayIndex]?.amount ?? null, unpriced: costs?.days[dayIndex]?.unpriced,
       activities: day.activities.slice(0, 50).map((value, index) => {
         const activity = record(value), budgetOnly = isDailyBudgetEntry(activity), place = budgetOnly ? null : verifiedSavedActivityPlace(activity, anchor);
         if (place && signed) place.photo = exactPhoto(activity as unknown as GroundedPlace);
         return { activityId: activityIdentity(trip.id, text(day.date), index, activity as unknown as import('../../controllers/itinerary-controller.ts').DayActivity), status: ['planned','completed','skipped','rescheduled'].includes(text(activity.status)) ? text(activity.status) as MapActivity['status'] : 'planned', index, title: text(activity.title), time: text(activity.time), description: text(activity.description), place, budgetOnly,
           ...(typeof activity.durationMinutes === 'number' && Number.isFinite(activity.durationMinutes) && activity.durationMinutes > 0 ? { durationMinutes: activity.durationMinutes } : {}),
-          ...(typeof activity.estimatedCost === 'number' && Number.isFinite(activity.estimatedCost) && activity.estimatedCost >= 0 ? { estimatedCost: activity.estimatedCost } : {}),
+          ...(activityExpense(activity as unknown as ItineraryResponse['days'][number]['activities'][number], currency) !== null ? { estimatedCost: Number(activity.estimatedCost) } : {}),
           ...(typeof activity.category === 'string' ? { category: activity.category } : {}),
           locationStatus: place ? 'Verified saved place' : 'Choose an exact place' };
       }) }];

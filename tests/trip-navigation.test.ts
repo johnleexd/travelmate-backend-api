@@ -155,6 +155,7 @@ test('timeline mapping preserves saved durations, zero prices and currency; budg
   Object.assign(saved.itinerary.days[0].activities[0], { durationMinutes: 60, estimatedCost: 0 });
   saved.itinerary.days[0].activities.push({ title: 'Daily meals in Manila', time: 'Daily allowance', description: 'Meals allowance', category: 'food', estimatedCost: 375 } as never);
   saved.itinerary.days[0].activities.push({ title: 'Daily transport allowance', time: 'Daily allowance', description: '', category: 'transport', estimatedCost: 125 } as never);
+  for (const index of [0,2,3]) { const item = saved.itinerary.days[0].activities[index] as unknown as Record<string,unknown>; item.priceEvidence = {status:'estimate',source:'user-entered',basis:'Explicit party total',unit:'group',unitAmount:item.estimatedCost,quantity:1,participants:1,currency:'PHP',needsConfirmation:true,fetchedAt:'2026-10-16T00:00:00Z'}; }
   let calls = 0; const before = JSON.stringify(saved);
   const manifest = await loadTripMapManifest({ ...saved, currency: 'PHP' }, async () => { calls++; return { places: [], status: 'unavailable' }; });
   assert.equal(manifest.currency, 'PHP'); assert.equal(manifest.days[0].activities[0].durationMinutes, 60); assert.equal(manifest.days[0].activities[0].estimatedCost, 0);

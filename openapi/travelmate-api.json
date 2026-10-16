@@ -2086,6 +2086,54 @@
           }
         }
       }
+    },
+    "/api/platform/activity": {
+      "get": {
+        "summary": "Admin-only Activity Log with database actor relationships, safe labels and pagination",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Literal case-insensitive search across actor name, readable action or action code, event ID and target ID. Embedded action metadata is excluded.",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Activity page; current actor names/roles, with no credential fields or raw embedded audit metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityLogResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -9202,6 +9250,115 @@
           "name"
         ],
         "additionalProperties": false
+      },
+      "ActivityActor": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "role"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          }
+        }
+      },
+      "ActivityLogEntry": {
+        "type": "object",
+        "required": [
+          "id",
+          "createdAt",
+          "actor",
+          "actorUnavailableReason",
+          "actionLabel",
+          "targetType",
+          "targetId",
+          "tone"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActivityActor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "actorUnavailableReason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "account-unavailable",
+                  "not-recorded"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "actionLabel": {
+            "type": "string"
+          },
+          "targetType": {
+            "type": "string"
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "neutral",
+              "success",
+              "danger",
+              "info"
+            ]
+          }
+        }
+      },
+      "ActivityLogResponse": {
+        "type": "object",
+        "required": [
+          "entries",
+          "total",
+          "page",
+          "pageSize"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityLogEntry"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "pageSize": {
+            "type": "integer"
+          }
+        }
       }
     },
     "responses": {
