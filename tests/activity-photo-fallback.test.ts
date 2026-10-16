@@ -282,6 +282,17 @@ test('Wikipedia precedes Unsplash; any fallback is marked illustrative and compl
   assert.equal(await createItineraryActivityPhotoResolver(async () => null, async () => null)(subject), null);
 });
 
+test('activities reject city-wide covers and verified places require an exact place match', async () => {
+  const city = { imageUrl: 'https://images.unsplash.com/photo-city', imageAttribution: { creator: 'City author', license: 'Unsplash', sourceUrl: 'https://unsplash.com/photos/city', provider: 'unsplash' as const, photoId: 'city', illustrative: true, match: 'destination' as const } };
+  const resolve = createItineraryActivityPhotoResolver(async () => null, async () => city);
+  assert.equal(await resolve(subject), null);
+  assert.equal(await resolve({ ...subject, placeId: undefined, latitude: undefined, longitude: undefined, kind: 'generic' }), null);
+  const activity = { ...city, imageUrl: 'https://images.unsplash.com/photo-activity', imageAttribution: { ...city.imageAttribution, photoId: 'activity', sourceUrl: 'https://unsplash.com/photos/activity', match: 'activity' as const } };
+  const activityResolve = createItineraryActivityPhotoResolver(async () => null, async () => activity);
+  assert.equal(await activityResolve(subject), null);
+  assert.equal((await activityResolve({ ...subject, placeId: undefined, latitude: undefined, longitude: undefined, kind: 'generic' }))?.imageUrl, activity.imageUrl);
+});
+
 test('a supplied Wikidata ID cannot substitute for missing destination evidence', async () => {
   const p = provider({ article: article({ coordinates: undefined, extract: 'An attraction in an unrelated city.' }), files: [file({ title: 'File:Unrelated file.jpg' })] });
   assert.equal(await createActivityPhotoResolver(p.fetcher, { intervalMs: 0 })({ ...subject, latitude: undefined, longitude: undefined }), null);

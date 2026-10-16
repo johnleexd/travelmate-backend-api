@@ -245,6 +245,12 @@ export function createItineraryActivityPhotoResolver(wikipedia = findActivityPho
     if (exact) return exact;
     if (signal?.aborted) return null;
     const fallback = await unsplash(subject, signal);
+    // City-wide covers must not stand in for an activity. Provider-linked
+    // stops additionally require the place match that checks their recorded
+    // identity and/or coordinates. Unverified generic activities may still
+    // use an activity-specific illustration.
+    const verifiedPlace = Boolean(subject.placeId || Number.isFinite(subject.latitude) && Number.isFinite(subject.longitude));
+    if (fallback && (fallback.imageAttribution.match === 'destination' || verifiedPlace && fallback.imageAttribution.match !== 'place')) return null;
     return fallback ? { ...fallback, imageAttribution: { ...fallback.imageAttribution, illustrative: true, match: fallback.imageAttribution.match === 'place' ? 'activity' : fallback.imageAttribution.match } } : null;
   };
 }
@@ -253,6 +259,13 @@ const findGeneratedActivityPhoto = createItineraryActivityPhotoResolver(undefine
 export type FailedActivityPhoto = { index: number; imageUrl: string };
 export async function fillMissingDayPhotos(destination: string, day: DayPlan, resolver = findItineraryActivityPhoto, signal?: AbortSignal, selection?: string, failures: FailedActivityPhoto[] = []): Promise<DayPlan> {
   const activities = [...day.activities];
+  const photoOwners = new Map<string, string>();
+  for (const [index, activity] of day.activities.entries()) {
+    const saved = storedPhoto(activity);
+    const subject = activityPhotoSubject(mapStoredActivity(activity as unknown as Record<string, unknown>) as unknown as DayActivity, destination);
+    const failed = failures.some(photo => photo.index === index && photo.imageUrl === saved?.imageUrl);
+    if (saved && subject && !failed && !photoOwners.has(saved.imageUrl)) photoOwners.set(saved.imageUrl, subjectKey(subject));
+  }
   let next = 0;
   // Two bounded workers share the provider queue. A slow/empty first activity
   // must not consume the entire day's lookup deadline before the second starts.
@@ -271,10 +284,13 @@ export async function fillMissingDayPhotos(destination: string, day: DayPlan, re
       let result: PlacePhoto | null = null;
       try { result = subject ? await resolver(subject, signal) : null; } catch { /* A failed lookup never clears a saved activity or photo. */ }
       if (result && (!failed || result.imageUrl !== saved?.imageUrl)) {
+        const owner = subject ? subjectKey(subject) : undefined;
+        if (owner && photoOwners.has(result.imageUrl) && photoOwners.get(result.imageUrl) !== owner) continue;
         const selected = selection ? await selectUnsplashActivityPhoto(result, selection, signal) : result;
         const photo = { ...selected, imageAttribution: { ...selected.imageAttribution, photoType: selected.imageAttribution.illustrative ? 'illustrative' as const : 'place' as const } };
         activities[index] = { ...activity, ...photo };
         if (subject) {
+          photoOwners.set(photo.imageUrl, subjectKey(subject));
           if (selectedPhotos.size >= 500) selectedPhotos.delete(selectedPhotos.keys().next().value!);
           selectedPhotos.set(subjectKey(subject), { photo, until: Date.now() + 86400000 });
         }

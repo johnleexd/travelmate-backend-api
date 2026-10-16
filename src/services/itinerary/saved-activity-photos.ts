@@ -9,6 +9,23 @@ import { findGooglePlacePhoto } from './google-place-photos.ts';
 import { fillStoredDayPhoto, storedDestinationRepresentative } from './stored-destination-day-photos.ts';
 
 const identity = (activity: DayActivity) => JSON.stringify([activity.id, activity.title, activity.location, activity.place]);
+/** Replace old city covers and duplicated photos that were attached to named stops. */
+export function activityPhotoReplacementFailures(destination: string, day: DayPlan, requested: FailedActivityPhoto[] = []): FailedActivityPhoto[] {
+  const failures = new Map(requested.map(failure => [`${failure.index}:${failure.imageUrl}`, failure]));
+  const owners = new Map<string, string>();
+  day.activities.forEach((activity, index) => {
+    const photo = storedPhoto(activity);
+    const subject = activityPhotoSubject(activity, destination);
+    if (!photo || !subject) return;
+    const owner = JSON.stringify(subject);
+    const existingOwner = owners.get(photo.imageUrl);
+    const cityCover = activity.imageAttribution?.photoType === 'destination' || activity.imageAttribution?.match === 'destination';
+    const sharedByAnotherPlace = Boolean(existingOwner && existingOwner !== owner);
+    if (cityCover || sharedByAnotherPlace) failures.set(`${index}:${photo.imageUrl}`, { index, imageUrl: photo.imageUrl });
+    else owners.set(photo.imageUrl, owner);
+  });
+  return [...failures.values()];
+}
 /** Merge only photo fields into the latest record. Concurrent edits always win. */
 export function mergeActivityPhotos(latest: ItineraryResponse, before: DayPlan, enriched: DayPlan, failures: FailedActivityPhoto[] = []): ItineraryResponse {
   let changed = false;
@@ -96,8 +113,9 @@ export async function enrichSavedActivityPhotos(userId: string, tripId: string, 
   const initialPlan = initial.itinerary as unknown as ItineraryResponse;
   const before = Array.isArray(initialPlan?.days) ? initialPlan.days.find(day => day.day === dayNumber && Array.isArray(day.activities)) : undefined;
   if (!before) return null;
-  const display = withGoogle ? await fillDayDisplayPhotos(initial.destination, before, AbortSignal.timeout(45000), `trip:${userId}:${tripId}`, failures, undefined, undefined, googleFailedIndices) : { day: await enrich(initial.destination, before, undefined, AbortSignal.timeout(25000), `trip:${userId}:${tripId}`, failures), googlePhotos: {} };
-  const excludedUrls = failures.map(failure => failure.imageUrl);
+  const replacementFailures = activityPhotoReplacementFailures(initial.destination, before, failures);
+  const display = withGoogle ? await fillDayDisplayPhotos(initial.destination, before, AbortSignal.timeout(45000), `trip:${userId}:${tripId}`, replacementFailures, undefined, undefined, googleFailedIndices) : { day: await enrich(initial.destination, before, undefined, AbortSignal.timeout(25000), `trip:${userId}:${tripId}`, replacementFailures), googlePhotos: {} };
+  const excludedUrls = replacementFailures.map(failure => failure.imageUrl);
   const enriched = fillStoredDayPhoto(display.day, storedDestinationRepresentative(initialPlan, excludedUrls), excludedUrls);
   // A concurrent edit must also discard transient content for the old identity.
   const matchingPhotos = (day: DayPlan | undefined) => Object.fromEntries(Object.entries(display.googlePhotos).filter(([index]) => day?.activities[Number(index)] && identity(day.activities[Number(index)]) === identity(before.activities[Number(index)])));
@@ -106,7 +124,7 @@ export async function enrichSavedActivityPhotos(userId: string, tripId: string, 
     const latest = current.itinerary as unknown as ItineraryResponse;
     if (!Array.isArray(latest?.days)) return null;
     if (current.destination !== initial.destination) return { day: latest.days.find(day => day.day === dayNumber), googlePhotos: {}, persisted: false };
-    const updated = mergeActivityPhotos(latest, before, enriched, failures);
+    const updated = mergeActivityPhotos(latest, before, enriched, replacementFailures);
     if (updated === latest) { const day = latest.days.find(day => day.day === dayNumber); return { day, googlePhotos: matchingPhotos(day), persisted: false }; }
     const result = await prisma.trip.updateMany({ where: { id: tripId, userId, status: current.status, updatedAt: current.updatedAt, itinerary: { equals: current.itinerary as Prisma.InputJsonValue } }, data: { itinerary: updated as unknown as Prisma.InputJsonValue } });
     if (result.count === 1) { const day = updated.days.find(day => day.day === dayNumber); return { day, googlePhotos: matchingPhotos(day), persisted: true }; }

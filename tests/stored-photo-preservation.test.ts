@@ -3,7 +3,7 @@ import test, { after } from 'node:test';
 import { prisma } from '../src/lib/prisma.ts';
 import { canonicalStoredMedia, storedPhoto } from '../src/lib/stored-trip-media.ts';
 import { createItineraryActivityPhotoResolver, fillGeneratedTripPhotos, fillMissingDayPhotos } from '../src/services/itinerary/activity-photo-fallback.ts';
-import { enrichSavedActivityPhotos, mergeActivityPhotos, retainStoredActivityPhotos } from '../src/services/itinerary/saved-activity-photos.ts';
+import { activityPhotoReplacementFailures, enrichSavedActivityPhotos, mergeActivityPhotos, retainStoredActivityPhotos } from '../src/services/itinerary/saved-activity-photos.ts';
 import { applyManualItineraryChanges } from '../src/services/itinerary/itinerary-edit-service.ts';
 import type { DayPlan, ItineraryResponse } from '../src/controllers/itinerary-controller.ts';
 const source = 'https://upload.wikimedia.org/wikipedia/commons/a/ab/Original.jpg';
@@ -20,6 +20,20 @@ test('stored photos with older field names or incomplete current metadata surviv
     const plan = { destination: 'City, Country', days: [legacy] } as ItineraryResponse;
     assert.equal(mergeActivityPhotos(plan, legacy, day), plan);
   }
+});
+
+test('city covers and a photo shared by different places are scheduled for replacement', () => {
+  const place = (placeId: string, name: string, longitude: number) => ({ provider: 'wikidata', placeId, name, city: 'City', country: 'Country', countryCode: 'PH', latitude: 10, longitude, address: name, openingHours: 'Needs confirmation', sourceUrl: `https://www.wikidata.org/wiki/${placeId}`, fetchedAt: '2040-01-01T00:00:00Z' });
+  const sharedCredit = { ...credit, provider: 'unsplash' as const, license: 'Unsplash', sourceUrl: 'https://unsplash.com/photos/shared', photographerUrl: 'https://unsplash.com/@author', photoId: 'shared', illustrative: true, match: 'activity' as const };
+  const duplicateDay = { ...day, activities: [
+    { ...day.activities[0], id: 'one', place: place('Q1', 'First place', 123), imageUrl: 'https://images.unsplash.com/photo-shared', imageAttribution: sharedCredit },
+    { ...day.activities[0], id: 'two', title: 'Second place', place: place('Q2', 'Second place', 123.01), imageUrl: 'https://images.unsplash.com/photo-shared', imageAttribution: sharedCredit },
+    { ...day.activities[0], id: 'three', title: 'Third place', place: place('Q3', 'Third place', 123.02), imageUrl: 'https://images.unsplash.com/photo-city', imageAttribution: { ...sharedCredit, photoId: 'city', sourceUrl: 'https://unsplash.com/photos/city', match: 'destination' as const, photoType: 'destination' as const } },
+  ] } as DayPlan;
+  assert.deepEqual(activityPhotoReplacementFailures('City, Country', duplicateDay), [
+    { index: 1, imageUrl: 'https://images.unsplash.com/photo-shared' },
+    { index: 2, imageUrl: 'https://images.unsplash.com/photo-city' },
+  ]);
 });
 
 test('only a confirmed failure for the current URL permits replacing a photo; empty/error responses retain every field', async () => {
