@@ -540,7 +540,7 @@
             "$ref": "#/components/responses/BadRequest"
           },
           "429": {
-            "$ref": "#/components/responses/RateLimited"
+            "description": "Monthly AI allowance exhausted (MONTHLY_AI_LIMIT with usage/reset details) or request rate limit (RATE_LIMITED)"
           },
           "502": {
             "description": "AI provider or validation failure; incomplete plans are never returned as success",
@@ -553,7 +553,20 @@
             }
           }
         },
-        "description": " New and regenerated itineraries always use Balanced style and pacing. Legacy travelStyle and pace request fields are ignored; omission is valid. Other preferences and entered prices remain active. Missing prices remain explicitly unpriced."
+        "description": " New and regenerated itineraries always use Balanced style and pacing. Legacy travelStyle and pace request fields are ignored; omission is valid. Other preferences and entered prices remain active. Missing prices remain explicitly unpriced.",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 100
+            },
+            "description": "Persistent per-user operation key; reuse only for identical trip details."
+          }
+        ]
       }
     },
     "/api/itinerary/images": {
@@ -2029,6 +2042,50 @@
           }
         }
       }
+    },
+    "/api/plan": {
+      "get": {
+        "summary": "Read authenticated monthly plan usage",
+        "responses": {
+          "200": {
+            "description": "Private, uncached plan usage or operation result"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "No operation owned by this user"
+          }
+        }
+      }
+    },
+    "/api/plan/operations/{key}": {
+      "get": {
+        "summary": "Recover your own persistent generation operation",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Private, uncached plan usage or operation result"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "No operation owned by this user"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2067,7 +2124,10 @@
               "PROVIDER_UNAVAILABLE",
               "GENERATION_CONFLICT",
               "AI_PROVIDER_UNAVAILABLE",
-              "AI_GENERATION_FAILED"
+              "AI_GENERATION_FAILED",
+              "MONTHLY_AI_LIMIT",
+              "GENERATION_IN_PROGRESS",
+              "GENERATION_ENDED"
             ]
           },
           "retryable": {

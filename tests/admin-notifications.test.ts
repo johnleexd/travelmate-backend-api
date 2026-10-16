@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, test, type TestContext } from 'node:test';
+import { mockPlanTransaction } from './helpers/plan-transaction.ts';
 import { prisma } from '../src/lib/prisma.ts';
 import { notifyAdmins } from '../src/services/platform/admin-notification-service.ts';
 import { executePlatformAction } from '../src/services/platform/platform-service.ts';
@@ -42,6 +43,7 @@ test('reports and feedback persist categorized admin notifications in their own 
 });
 
 test('system alerts are generated only for a newly persisted failure, not a stale attempt', async t => {
+  mockPlanTransaction(t);
   let changed = 1; let alerts = 0;
   replace(t, prisma.itineraryGeneration, 'updateMany', async () => ({ count: changed }));
   replace(t, prisma.itineraryGeneration, 'findUnique', async () => ({ destination: 'Tokyo' }));

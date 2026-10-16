@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { mockPlanTransaction } from './helpers/plan-transaction.ts';
 import { test, after } from 'node:test';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { generationPreferencesSchema, travelStyles, preferenceInstructions } from '../src/services/itinerary/travel-preferences.ts';
@@ -97,6 +98,7 @@ test('actual affected Cordova records and international references replay all st
 });
 
 test('authenticated POST honors selected styles, merges interests and retains accommodation/cache isolation',async t=>{
+ mockPlanTransaction(t);
  clearProviderCache();t.after(clearProviderCache);
  const replace=(object:any,key:string,fn:any)=>{const previous=object[key];object[key]=fn;t.after(()=>object[key]=previous);};
  replace(prisma.user,'findFirst',async()=>({id:'preference-test',name:'Test',email:'test@example.test',role:'traveler',accountStatus:'active',emailVerified:true}));
@@ -113,7 +115,7 @@ test('authenticated POST honors selected styles, merges interests and retains ac
   return referenceFetcher(destinationReferences[0])(input,init);
  });
  const body={destination:anchor.city,destinationDetails:anchor,latitude:anchor.latitude,longitude:anchor.longitude,startDate:'2040-01-25',endDate:'2040-01-27',budget:10000,currency:'EUR',travelers:1,partyType:'solo',interests:['nature'],preferredActivities:['museum'],accommodationPreference:'resort',transportationPreference:'taxi',plannedAccommodation:{name:'Explicit selected hotel',address:anchor.city,source:'manual'}};
- const headers={cookie:`travelmate_session=${createSessionToken('preference-test','traveler')}`,'content-type':'application/json'};
+ const headers={cookie:`travelmate_session=${createSessionToken('preference-test','traveler')}`,'content-type':'application/json','idempotency-key':'preferences-fixture-key'};
  for(const travelStyle of [undefined,...travelStyles]){const response=await POST(new Request('http://localhost/api/itinerary',{method:'POST',headers,body:JSON.stringify({...body,travelStyle,pace:'active'})}));assert.equal(response.status,200,JSON.stringify(await response.clone().json()));const plan=await response.json();assert.deepEqual(plan.preferences,{pace:'balanced',travelStyle:travelStyle || 'balanced',accommodation:'resort',transportation:'taxi',activities:['museum'],interests:['nature','museum']});assert.equal(plan.plannedAccommodation.name,'Explicit selected hotel');assert.ok(prompts.at(-1)!.includes(`"travelStyle":"${travelStyle || 'balanced'}"`));assert.ok(plan.grounding.total<10000);}
  assert.equal(new Set(hashes).size,travelStyles.length,'Each selected style must have isolated generation behavior; omission defaults to Balanced');
  for (const empty of [undefined, [], '', null]) {
@@ -136,6 +138,6 @@ test('authenticated POST honors selected styles, merges interests and retains ac
  const changed={...body,travelStyle:'budget'};const started=await beginGeneration('preference-test',anchor.city,changed,'preferences-cache-test');assert.ok('recordId' in started);
  // Record the existing full-body hash, then change each relevant field under the same key.
  generation={id:'cache',status:'completed',response:plan,requestHash:capturedHash,updatedAt:new Date()};
- for(const delta of [{travelStyle:'luxury'},{accommodationPreference:'hostel'},{interests:['food']},{preferredActivities:['park']},{transportationPreference:'walking'},{travelers:2},{budget:9000},{endDate:'2040-01-28'},{plannedAccommodation:{...body.plannedAccommodation,name:'Different hotel'}}])assert.ok('conflict' in await beginGeneration('preference-test',anchor.city,{...changed,...delta},'preferences-cache-test'));
+ for(const delta of [{travelStyle:'luxury'},{accommodationPreference:'hostel'},{interests:['food']},{preferredActivities:['park']},{transportationPreference:'walking'},{travelers:2},{budget:9000},{endDate:'2040-01-28'},{plannedAccommodation:{...body.plannedAccommodation,name:'Different hotel'}}])await assert.rejects(()=>beginGeneration('preference-test',anchor.city,{...changed,...delta},'preferences-cache-test'),{code:'GENERATION_CONFLICT'});
  assert.ok('replay' in await beginGeneration('preference-test',anchor.city,changed,'preferences-cache-test'));
 });

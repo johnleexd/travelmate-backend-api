@@ -11,6 +11,9 @@ export const API_ERROR_CODES = [
   "GENERATION_CONFLICT",
   "AI_PROVIDER_UNAVAILABLE",
   "AI_GENERATION_FAILED",
+  "MONTHLY_AI_LIMIT",
+  "GENERATION_IN_PROGRESS",
+  "GENERATION_ENDED",
 ] as const;
 
 export type ApiErrorCode = typeof API_ERROR_CODES[number];

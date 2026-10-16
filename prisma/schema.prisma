@@ -60,6 +60,20 @@ enum GenerationStatus {
   failed
 }
 
+enum AllowanceState {
+  reserved
+  processing
+  succeeded
+  failed
+  reconciled
+}
+
+enum SubscriptionSource {
+  verified_payment
+  admin_demo
+  paymongo_test
+}
+
 enum ListingCategory {
   stay
   activity
@@ -163,6 +177,7 @@ model User {
   trips                Trip[]
   visitedPlaces        VisitedPlace[]
   itineraryGenerations ItineraryGeneration[]
+  subscription         PlanSubscription?
   auditEvents          AuditEvent[]
   accountTokens        AccountToken[]
   oauthAccounts        OAuthAccount[]
@@ -463,10 +478,70 @@ model ItineraryGeneration {
   createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
   user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  allowancePeriod DateTime?       @map("allowance_period") @db.Timestamptz(6)
+  allowanceState  AllowanceState? @map("allowance_state")
+  reservedUntil   DateTime?       @map("reserved_until") @db.Timestamptz(6)
+  charged         Boolean        @default(false)
+  operationKind   String         @default("itinerary") @map("operation_kind") @db.VarChar(30)
+  relatedTripId   String?        @map("related_trip_id")
 
   @@unique([userId, idempotencyKey])
   @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, allowancePeriod, allowanceState])
   @@map("itinerary_generations")
+}
+
+model PlanSubscription {
+  userId        String             @id @map("user_id")
+  source        SubscriptionSource
+  activationKey String             @unique @map("activation_key") @db.VarChar(100)
+  actorId       String?            @map("actor_id")
+  reason        String?
+  startsAt      DateTime           @default(now()) @map("starts_at") @db.Timestamptz(6)
+  expiresAt     DateTime           @map("expires_at") @db.Timestamptz(6)
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("plan_subscriptions")
+}
+
+model GenerationTracking {
+  id        String   @id
+  startedAt DateTime @default(now()) @map("started_at") @db.Timestamptz(6)
+
+  @@map("generation_tracking")
+}
+
+model PlanCheckoutOrder {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  idempotencyKey  String   @map("idempotency_key") @db.VarChar(100)
+  status          String   @default("creating") @db.VarChar(20)
+  amount          Int
+  currency        String   @default("PHP") @db.VarChar(3)
+  durationDays    Int      @map("duration_days")
+  sessionId       String?  @unique @map("session_id")
+  paymentIntentId String?  @unique @map("payment_intent_id")
+  paymentId       String?  @unique @map("payment_id")
+  checkoutUrl     String?  @map("checkout_url")
+  lastError       String?  @map("last_error") @db.VarChar(80)
+  fulfilledAt     DateTime? @map("fulfilled_at") @db.Timestamptz(6)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("plan_checkout_orders")
+}
+
+model PlanActivation {
+  key       String   @id @db.VarChar(100)
+  userId    String   @map("user_id")
+  actorId   String   @map("actor_id")
+  reason    String
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("plan_activations")
 }
 
 model AuditEvent {

@@ -92,7 +92,9 @@ test('AI preview never writes; cancel leaves the saved plan intact, and acceptan
   const input={revision:tripRevision(trip),dayIndex:0,fromTime:'13:00',toTime:'18:00',mode:'walking' as const};
   const preview=await previewManagedDay(user,trip.id,input,{provider,route:async()=>[],catalog:async()=>({places:[],status:'unavailable'})});
   assert.equal(store.updates(),0);assert.equal(canonical(trip.itinerary),before);assert.equal(preview.activities.find(item=>item.id===id)?.time,'14:00');assert.match(preview.warnings.join(' '),/Opening hours/);
-  await previewManagedDay(user,trip.id,input,{provider,route:async()=>[]});assert.equal(generations,1);assert.equal(store.updates(),0);
+  // Separate service invocations are separate intents; persistent HTTP operation
+  // keys now own replay/deduplication instead of a short-lived AI cache.
+  await previewManagedDay(user,trip.id,input,{provider,route:async()=>[]});assert.equal(generations,2);assert.equal(store.updates(),0);
   const saved=await acceptManagedDay(user,trip.id,{revision:input.revision,confirm:true,token:preview.token});
   assert.equal(store.updates(),1);assert.deepEqual((saved.trip.itinerary as ItineraryResponse).days[0].activities.find(item=>item.id===done.id),done);
   assert.equal((saved.trip.itinerary as ItineraryResponse).days[0].activities.find(item=>item.id===id)?.status,'rescheduled');assert.equal(store.snapshots.length,1);assert.equal(store.events.length,1);

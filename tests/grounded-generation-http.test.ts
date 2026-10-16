@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { mockPlanTransaction } from './helpers/plan-transaction.ts';
 import { test, after, type TestContext } from 'node:test';
 import { prisma } from '../src/lib/prisma.ts';
 import { createSessionToken } from '../src/middlewares/auth-middleware.ts';
@@ -14,6 +15,7 @@ function replace(t: TestContext, object: object, key: string, implementation: (.
   t.after(() => Reflect.set(object, key, previous));
 }
 test('authenticated generation validates inputs, unavailable sources, full response, photo refresh and insufficient budgets without a database', async t => {
+  mockPlanTransaction(t);
   replace(t, prisma.user, 'findFirst', async () => ({ id: 'grounded-http', name: 'Test', email: 'test@example.test', role: 'traveler', accountStatus: 'active', emailVerified: true, profileStatus: 'unverified', trustScore: 50 }));
   replace(t, prisma, '$queryRaw', async () => [{ count: 1 }]);
   replace(t, prisma.listing, 'findMany', async () => []);
@@ -34,7 +36,7 @@ test('authenticated generation validates inputs, unavailable sources, full respo
   });
   const paris = searchDestinationIndex('Paris, France').find(place => place.name === 'Paris')!;
   const body = { destination: paris.label, destinationDetails: { city: paris.name, country: paris.country, countryCode: paris.countryCode, latitude: paris.latitude, longitude: paris.longitude }, latitude: paris.latitude, longitude: paris.longitude, startingLocation: 'Toronto, Canada', startDate: '2040-01-25', endDate: '2040-02-24', budget: 100000, currency: 'EUR', travelers: 3, partyType: 'friends' };
-  const headers = { cookie: `travelmate_session=${createSessionToken('grounded-http', 'traveler')}`, 'content-type': 'application/json' };
+  const headers = { cookie: `travelmate_session=${createSessionToken('grounded-http', 'traveler')}`, 'content-type': 'application/json', 'idempotency-key': 'grounded-fixture-key' };
   const generate = (value: unknown) => POST(new Request('http://localhost/api/itinerary', { method: 'POST', headers, body: JSON.stringify(value) }));
   for (const missing of ['destinationDetails', 'latitude', 'longitude']) { const invalid = { ...body } as Record<string, unknown>; delete invalid[missing]; assert.equal((await generate(invalid)).status, 400); }
   const withoutOrigin = { ...body } as Record<string, unknown>; delete withoutOrigin.startingLocation;
@@ -64,6 +66,7 @@ test('authenticated generation validates inputs, unavailable sources, full respo
 });
 
 test('new generation preserves populated schedules and honestly falls back during missing AI credentials or provider outages', async t => {
+  mockPlanTransaction(t);
   clearProviderCache(); t.after(clearProviderCache);
   replace(t, prisma.user, 'findFirst', async () => ({ id: 'catalog-http', name: 'Test', email: 'test@example.test', role: 'traveler', accountStatus: 'active', emailVerified: true, profileStatus: 'unverified', trustScore: 50 }));
   replace(t, prisma, '$queryRaw', async () => [{ count: 1 }]);
@@ -101,7 +104,7 @@ test('new generation preserves populated schedules and honestly falls back durin
     return Response.json({}, { status: 503 });
   });
   const body = { destination: paris.label, destinationDetails: { city: paris.name, country: paris.country, countryCode: paris.countryCode, latitude: paris.latitude, longitude: paris.longitude }, latitude: paris.latitude, longitude: paris.longitude, startDate: '2040-01-25', endDate: '2040-01-27', budget: 10000, currency: 'EUR', travelers: 1, partyType: 'solo' };
-  const generate = (extra = {}) => POST(new Request('http://localhost/api/itinerary', { method: 'POST', headers: { cookie: `travelmate_session=${createSessionToken('catalog-http', 'traveler')}`, 'content-type': 'application/json' }, body: JSON.stringify({ ...body, ...extra }) }));
+  const generate = (extra = {}) => POST(new Request('http://localhost/api/itinerary', { method: 'POST', headers: { cookie: `travelmate_session=${createSessionToken('catalog-http', 'traveler')}`, 'content-type': 'application/json', 'idempotency-key': 'catalog-fixture-key' }, body: JSON.stringify({ ...body, ...extra }) }));
   const result = await generate(); assert.equal(result.status, 200); const populated = await result.json();
   assert.deepEqual(populated.days.map(day => day.activities.filter(a => a.category === 'activity').length), [3,3,3]);
   assert.ok(populated.days.every(day => day.planningStatus === 'suggested'));

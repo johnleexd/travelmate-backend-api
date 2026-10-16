@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { mockPlanTransaction } from './helpers/plan-transaction.ts';
 import { after, test, type TestContext } from 'node:test';
 import { prisma } from '../src/lib/prisma.ts';
 import { createSessionToken } from '../src/middlewares/auth-middleware.ts';
@@ -12,6 +13,7 @@ function replace(t: TestContext, object: object, key: string, implementation: un
   t.after(() => Reflect.set(object, key, previous));
 }
 test('authenticated generation rechecks the exact offer and retains its group total, occupancy and photo reference', async t => {
+  mockPlanTransaction(t);
   replace(t, prisma.user, 'findFirst', async () => ({ id: 'room-http', name: 'Test', email: 'guest@example.test', role: 'traveler', accountStatus: 'active', emailVerified: true, profileStatus: 'unverified', trustScore: 50 }));
   replace(t, prisma, '$queryRaw', async () => [{ count: 1 }]);
   replace(t, prisma.listing, 'findMany', async () => []);
@@ -37,7 +39,7 @@ test('authenticated generation rechecks the exact offer and retains its group to
     return Response.json({}, { status: 503 });
   });
   const body = { destination: tokyo.label, destinationDetails: { city: tokyo.name, country: tokyo.country, countryCode: tokyo.countryCode, latitude: tokyo.latitude, longitude: tokyo.longitude }, latitude: tokyo.latitude, longitude: tokyo.longitude, startDate: quote.checkInDate, endDate: quote.checkOutDate, budget: 100000, currency: 'JPY', travelers: 3, partyType: 'family', rooms: 1, selectedAccommodationQuote: sealQuote(ticket) };
-  const generate = (value: unknown) => POST(new Request('http://localhost/api/itinerary', { method: 'POST', headers: { 'content-type': 'application/json', cookie: 'travelmate_session='+createSessionToken('room-http','traveler') }, body: JSON.stringify(value) }));
+  const generate = (value: unknown) => POST(new Request('http://localhost/api/itinerary', { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': 'rapid-fixture-key', cookie: 'travelmate_session='+createSessionToken('room-http','traveler') }, body: JSON.stringify(value) }));
   const response = await generate(body); const itinerary = await response.json();
   assert.equal(response.status, 200, JSON.stringify(itinerary));
   assert.equal(itinerary.accommodation.total, 12345);

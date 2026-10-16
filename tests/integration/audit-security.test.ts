@@ -49,15 +49,15 @@ test('real generation claims prevent duplicate retries and late attempt completi
     const body = { destination: 'Tokyo', budget: 1000 };
     const started = await beginGeneration(user.id, 'Tokyo', body, 'fixture-generation-key');
     assert.ok('recordId' in started && started.recordId && started.attemptId);
-    await prisma.itineraryGeneration.update({ where: { id: started.recordId }, data: { status: 'failed' } });
-    const results = await Promise.all([beginGeneration(user.id, 'Tokyo', body, 'fixture-generation-key'), beginGeneration(user.id, 'Tokyo', body, 'fixture-generation-key')]);
-    const winners = results.filter(result => 'recordId' in result);
-    assert.equal(winners.length, 1);
-    const winner = winners[0];
+    const { releaseGeneration } = await import('../../src/services/plans/plan-service.ts');
+    await releaseGeneration(started.recordId, started.attemptId, 'CONFIRMED_FAILURE');
+    const results = await Promise.allSettled([beginGeneration(user.id, 'Tokyo', body, 'fixture-generation-key'), beginGeneration(user.id, 'Tokyo', body, 'fixture-generation-key')]);
+    assert.ok(results.every(result => result.status === 'rejected' && result.reason.code === 'GENERATION_ENDED'));
+    const winner = await beginGeneration(user.id, 'Tokyo', body, 'explicit-new-generation-key');
     assert.ok('recordId' in winner && winner.recordId && winner.attemptId);
     assert.equal(await completeGeneration(started.recordId, started.attemptId, { obsolete: true }), false);
     assert.equal(await completeGeneration(winner.recordId, winner.attemptId, { destination: 'Tokyo', verified: true }), true);
-    const replay = await beginGeneration(user.id, 'Tokyo', body, 'fixture-generation-key');
+    const replay = await beginGeneration(user.id, 'Tokyo', body, 'explicit-new-generation-key');
     assert.ok('replay' in replay);
     assert.deepEqual(replay.replay, { destination: 'Tokyo', verified: true });
   } finally { await prisma.user.delete({ where: { id: user.id } }); }

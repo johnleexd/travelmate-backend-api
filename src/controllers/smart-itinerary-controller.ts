@@ -1,3 +1,4 @@
+import { PlanError, reserveGeneration, processGeneration, persistGeneration, releaseGeneration } from '../services/plans/plan-service.ts';
 import { z } from 'zod';
 import { requireUser } from '../middlewares/auth-middleware.ts';
 import { allowRequest } from '../middlewares/rate-limit-middleware.ts';
@@ -12,6 +13,7 @@ async function context(request:Request,preview=false) {
   return {user,tripId,activityId};
 }
 function failure(error:unknown) {
+  if(error instanceof PlanError) return Response.json({error:error.message,code:error.code,retryable:error.code==='GENERATION_IN_PROGRESS',details:error.details},{status:error.status});
   if(isDatabaseConnectionError(error)) throw error;
   const status=error instanceof SmartItineraryError?error.status:error instanceof z.ZodError?400:error instanceof Error&&error.message==='UNAUTHORIZED'?401:400;
   const message=error instanceof SmartItineraryError?error.message:status===401?'Unauthorized.':error instanceof z.ZodError?'Review the activity fields and confirm your changes.': 'The itinerary change could not be validated. Your saved plan is unchanged.';
@@ -19,5 +21,21 @@ function failure(error:unknown) {
 }
 export async function GET_ACTIVITIES(request:Request) { try { const {user,tripId}=await context(request);return Response.json(await readManagedTrip(user,tripId),{headers:{'Cache-Control':'no-store'}}); } catch(error){return failure(error);} }
 export async function PATCH_ACTIVITY(request:Request) { try { const {user,tripId,activityId}=await context(request);if(!activityId)throw new SmartItineraryError('Choose a saved activity.');const input=activityMutationSchema.parse(await request.json());return Response.json(await mutateManagedActivity(user,tripId,activityId,input)); } catch(error){return failure(error);} }
-export async function POST_REPLAN(request:Request) { try { const {user,tripId}=await context(request,true),input=replanRequestSchema.parse(await request.json());return Response.json(await previewManagedDay(user,tripId,input),{headers:{'Cache-Control':'no-store'}}); } catch(error){return failure(error);} }
+export async function POST_REPLAN(request:Request) {
+  let operation: {recordId:string;attemptId:string}|undefined;
+  try {
+    const {user,tripId}=await context(request,true);
+    const input=replanRequestSchema.parse(await request.json());
+    const reserved=await reserveGeneration(user.id,'Saved day replan',{kind:'day-replan',tripId,...input},request.headers.get('idempotency-key'));
+    if('replay' in reserved) return Response.json(reserved.replay);
+    operation=reserved;
+    await processGeneration(operation.recordId,operation.attemptId);
+    const result=await previewManagedDay(user,tripId,input,{signal:AbortSignal.timeout(180000)});
+    if(!await persistGeneration(operation.recordId,operation.attemptId,result)) throw new PlanError('This operation has ended.',409,'GENERATION_ENDED');
+    return Response.json(result,{headers:{'Cache-Control':'no-store'}});
+  } catch(error) {
+    if(operation && !isDatabaseConnectionError(error)) await releaseGeneration(operation.recordId,operation.attemptId,'AI_GENERATION_FAILED');
+    return failure(error);
+  }
+}
 export async function POST_ACCEPT_DAY(request:Request) { try { const {user,tripId}=await context(request),input=acceptDaySchema.parse(await request.json());return Response.json(await acceptManagedDay(user,tripId,input)); } catch(error){return failure(error);} }

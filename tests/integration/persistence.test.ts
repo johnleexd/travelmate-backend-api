@@ -289,8 +289,7 @@ test("generation idempotency replays completed results and rejects key reuse", a
     assert.ok("replay" in replay);
     assert.deepEqual("replay" in replay ? replay.replay : null, { destination: "Tokyo", days: [] });
 
-    const conflict = await beginGeneration(traveler.id, "Osaka", { ...body, destination: "Osaka" }, key);
-    assert.ok("conflict" in conflict);
+    await assert.rejects(() => beginGeneration(traveler.id, "Osaka", { ...body, destination: "Osaka" }, key), { code: 'GENERATION_CONFLICT' });
   } finally {
     await prisma.itineraryGeneration.deleteMany({ where: { userId: traveler.id, idempotencyKey: key } });
   }

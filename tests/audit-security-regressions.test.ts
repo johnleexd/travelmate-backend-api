@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { mockPlanTransaction } from './helpers/plan-transaction.ts';
 import { createHash } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { after, before, test, type TestContext } from 'node:test';
@@ -101,7 +102,8 @@ test('one reset token has exactly one successful consumer during overlapping res
   assert.equal(writes, 1);
 });
 
-test('overlapping retries acquire a failed generation only once', async t => {
+test('overlapping reconnects never restart a terminal failed generation', async t => {
+  mockPlanTransaction(t);
   const body = { destination: 'Cebu', budget: 1000 };
   let current = { id: 'generation', attemptId: 'old-attempt', status: 'failed', response: null,
     requestHash: createHash('sha256').update('{"budget":1000,"destination":"Cebu"}').digest('hex'), updatedAt: new Date() };
@@ -119,9 +121,8 @@ test('overlapping retries acquire a failed generation only once', async t => {
     current = { ...current, ...query.data };
     return { count: 1 };
   });
-  const results = await Promise.all([beginGeneration(user.id, 'Cebu', body, 'same-retry-key'), beginGeneration(user.id, 'Cebu', body, 'same-retry-key')]);
-  assert.equal(results.filter(result => 'recordId' in result).length, 1);
-  assert.equal(results.filter(result => 'conflict' in result).length, 1);
+  const results = await Promise.allSettled([beginGeneration(user.id, 'Cebu', body, 'same-retry-key'), beginGeneration(user.id, 'Cebu', body, 'same-retry-key')]);
+  assert.ok(results.every(result => result.status === 'rejected' && result.reason.code === 'GENERATION_ENDED'));
 });
 
 test('Google recovery verifies email, discards unverified credentials and invalidates old sessions/codes', async t => {

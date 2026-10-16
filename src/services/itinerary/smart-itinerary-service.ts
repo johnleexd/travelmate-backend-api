@@ -123,7 +123,7 @@ export function applyDayProposal(trip:Trip,input:ReplanRequest,proposal:DayPropo
   });
   return validateSavedPlan(trip,edited);
 }
-export async function previewManagedDay(user:PublicUser,tripId:string,input:ReplanRequest,options:{provider?:AIItineraryProvider;route?: (activities:DayActivity[],mode:NavigationRequest['mode'])=>Promise<TravelLeg[]>;catalog?:typeof loadGroundedPlaces}={}) {
+export async function previewManagedDay(user:PublicUser,tripId:string,input:ReplanRequest,options:{signal?:AbortSignal;provider?:AIItineraryProvider;route?: (activities:DayActivity[],mode:NavigationRequest['mode'])=>Promise<TravelLeg[]>;catalog?:typeof loadGroundedPlaces}={}) {
   const stored=await prisma.trip.findFirst({where:{id:tripId,userId:user.id}});
   if(!stored) throw new SmartItineraryError('Saved trip not found.',404);
   if(stored.status!=='active') throw new SmartItineraryError('Reopen this trip before replanning.',409);
@@ -135,7 +135,7 @@ export async function previewManagedDay(user:PublicUser,tripId:string,input:Repl
   if(!providers.length) throw new SmartItineraryError('AI replanning is unavailable. Configure the existing OpenAI or Gemini integration on the server; you can still manage activities manually.',503);
   const anchor=tripNavigationAnchor(serializeWorkspaceTrip(stored));
   let references:Awaited<ReturnType<typeof loadGroundedPlaces>>['places']=[];
-  if(anchor) try { references=(await (options.catalog||loadGroundedPlaces)(anchor)).places; } catch { /* Hours remain explicitly unavailable. */ }
+  if(anchor) try { references=(await (options.catalog||loadGroundedPlaces)(anchor,options.signal)).places; } catch { /* Hours remain explicitly unavailable. */ }
   const route=options.route|| (async (activities,mode)=> {
     if(activities.length<2) return [];
     const places=activities.map(activity=>verifiedSavedActivityPlace(activity,anchor));if(places.some(place=>!place))return [];
@@ -145,11 +145,11 @@ export async function previewManagedDay(user:PublicUser,tripId:string,input:Repl
   });
   for(const configured of providers) if(configured.provider) {
     try {
-      const result=await withProviderCache('smart-day:'+canonical([user.id,tripId,input,configured.name]),{source:'activities',freshForMs:30000,staleForMs:30000},()=>generateDayProposal(configured.provider!,serializeWorkspaceTrip(stored),plan,input,{references,route}));
+      const result=await generateDayProposal(configured.provider!,serializeWorkspaceTrip(stored),plan,input,{references,route,signal:options.signal});
       const expiresAt=Date.now()+900000;
-      const signed:SignedProposal={version:1,owner:user.id,tripId,revision:input.revision,expiresAt,dayIndex:input.dayIndex,fromTime:input.fromTime,toTime:input.toTime,mode:input.mode,provider:configured.name,proposal:result.value.proposal,legs:result.value.legs};
-      const proposed=applyDayProposal(stored,input,result.value.proposal,result.value.legs);
-      return { token:sealDayProposal(signed),revision:input.revision,expiresAt:new Date(expiresAt).toISOString(),provider:configured.name,dayIndex:input.dayIndex,activities:proposed.days[input.dayIndex].activities,warnings:result.value.warnings,legs:result.value.legs };
+      const signed:SignedProposal={version:1,owner:user.id,tripId,revision:input.revision,expiresAt,dayIndex:input.dayIndex,fromTime:input.fromTime,toTime:input.toTime,mode:input.mode,provider:configured.name,proposal:result.proposal,legs:result.legs};
+      const proposed=applyDayProposal(stored,input,result.proposal,result.legs);
+      return { token:sealDayProposal(signed),revision:input.revision,expiresAt:new Date(expiresAt).toISOString(),provider:configured.name,dayIndex:input.dayIndex,activities:proposed.days[input.dayIndex].activities,warnings:result.warnings,legs:result.legs };
     } catch(error) { if(error instanceof SmartItineraryError) throw error; }
   }
   throw new SmartItineraryError('The configured AI providers are temporarily unavailable. Your itinerary is unchanged; retry or edit activities manually.',503);

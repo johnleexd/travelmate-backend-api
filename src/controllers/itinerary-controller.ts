@@ -4,7 +4,8 @@ import { publishReportChange } from '../services/platform/report-events.ts';
 // ─── Server-only Route Handler ────────────────────────────────────────────────
 // Keeps AI provider keys strictly on the server; never bundled to the client.
 
-import { createHash, randomUUID } from 'node:crypto';
+import { PlanError, reserveGeneration, processGeneration, persistGeneration, releaseGeneration } from '../services/plans/plan-service.ts';
+import { GENERATION_DEADLINE_MS, planConfiguration } from '../services/plans/plan-policy.ts';
 import { Prisma } from '../generated/prisma/client.ts';
 import { prisma } from '../lib/prisma.ts';
 import { isDatabaseConnectionError } from '../lib/database-retry.ts';
@@ -527,58 +528,14 @@ function validatedDateRange(startDate: unknown, endDate: unknown): { startDate: 
   return { startDate: start, endDate: end, tripDays };
 }
 
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    return `{${Object.entries(value as Record<string, unknown>).filter(([key]) => key !== 'idempotencyKey').sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`).join(',')}}`;
-  }
-  return JSON.stringify(value) ?? 'null';
-}
-
-export async function beginGeneration(userId: string, destination: string, body: Record<string, unknown>, headerKey: string | null) {
-  const suppliedKey = (headerKey || String(body.idempotencyKey || '')).trim();
-  if (suppliedKey && !/^[A-Za-z0-9._:-]{8,100}$/.test(suppliedKey)) throw new Error('INVALID_IDEMPOTENCY_KEY');
-  const idempotencyKey = suppliedKey || randomUUID();
-  const requestHash = createHash('sha256').update(stableJson(body)).digest('hex');
-  const existing = await prisma.itineraryGeneration.findUnique({ where: { userId_idempotencyKey: { userId, idempotencyKey } } });
-  if (existing) {
-    if (existing.requestHash !== requestHash) return { conflict: 'This generation key was already used for different trip details.' } as const;
-    if (existing.status === 'completed' && existing.response) return { replay: existing.response } as const;
-    if (existing.status === 'pending' && Date.now() - existing.updatedAt.getTime() < 10 * 60_000) return { conflict: 'This itinerary generation is already in progress.' } as const;
-    const attemptId = randomUUID();
-    const retried = await prisma.itineraryGeneration.updateMany({
-      where: { id: existing.id, attemptId: existing.attemptId, status: existing.status },
-      data: { attemptId, status: 'pending', errorCode: null, response: Prisma.DbNull },
-    });
-    if (retried.count !== 1) return { conflict: 'This itinerary generation is already in progress.' } as const;
-    return { recordId: existing.id, attemptId } as const;
-  }
-  try {
-    const created = await prisma.itineraryGeneration.create({ data: { userId, idempotencyKey, requestHash, destination } });
-    return { recordId: created.id, attemptId: created.attemptId } as const;
-  } catch (error) {
-    const raced = await prisma.itineraryGeneration.findUnique({ where: { userId_idempotencyKey: { userId, idempotencyKey } } });
-    if (!raced) throw error;
-    if (raced.requestHash !== requestHash) return { conflict: 'This generation key was already used for different trip details.' } as const;
-    if (raced.status === 'completed' && raced.response) return { replay: raced.response } as const;
-    return { conflict: 'This itinerary generation is already in progress.' } as const;
-  }
-}
-
-export async function completeGeneration(recordId: string, attemptId: string, response: Record<string, unknown>): Promise<boolean> {
-  const completed = await prisma.itineraryGeneration.updateMany({
-    where: { id: recordId, attemptId, status: 'pending' },
-    data: { status: 'completed', response: response as Prisma.InputJsonValue, errorCode: null },
-  });
-  return completed.count === 1;
-}
+// The existing operation ledger now enforces monthly allowance.
+export const beginGeneration = reserveGeneration;
+export const completeGeneration = persistGeneration;
 
 export async function failGeneration(recordId: string | undefined, attemptId: string | undefined, errorCode: string) {
   if (!recordId || !attemptId) return;
-  const updated = await prisma.itineraryGeneration.updateMany({
-    where: { id: recordId, attemptId, status: 'pending' },
-    data: { status: 'failed', errorCode, response: Prisma.DbNull },
-  }).catch(() => { console.warn('[TravelMate] Could not persist failed generation status.'); return undefined; });
+  const updated = await releaseGeneration(recordId, attemptId, errorCode)
+    .catch(() => { console.warn('[TravelMate] Could not persist failed generation status.'); return undefined; });
   if (updated?.count) {
     try {
       const generation = await prisma.itineraryGeneration.findUnique({ where: { id: recordId }, select: { destination: true } });
@@ -595,10 +552,12 @@ export async function POST(request: Request) {
   let generationAttemptId: string | undefined;
   try {
     const user = await requireUser(request, 'traveler');
-    if (!await allowRequest(`itinerary:${user.id}`, 6, 60_000)) {
+    if (!await allowRequest(`itinerary:${user.id}`, planConfiguration().rateLimit * 10, planConfiguration().rateWindowMs)) {
       return Response.json({ error: 'Planner limit reached. Try again in one minute.' }, { status: 429 });
     }
-    const body = await request.json().catch(() => null);
+    const rawBody = await request.text();
+    if (Buffer.byteLength(rawBody, 'utf8') > 64_000) return Response.json({ error: 'Trip input is too large.' }, { status: 413 });
+    const body = (() => { try { return JSON.parse(rawBody); } catch { return null; } })();
     if (!body || typeof body !== 'object' || Array.isArray(body)) return Response.json({ error: 'Request body must be valid JSON.' }, { status: 400 });
     const { destination, budget, currency: requestedCurrency, travelers: requestedTravelers = 1, partyType: requestedPartyType, latitude, longitude, startDate: requestedStartDate, endDate: requestedEndDate, interests = [], preferredActivities = [], accommodationPreference, transportationPreference, accommodationListingId, externalAccommodation, plannedAccommodation: requestedPlannedAccommodation, selectedFlight, selectedActivities = [], preTripCosts: requestedPreTripCosts } = body as { destination: string; budget: number; currency?: string; travelers?: number; partyType?: PartyType; latitude?: number; longitude?: number; startDate?: string; endDate?: string; interests?: string[]; preferredActivities?: string[]; travelStyle?: string; accommodationPreference?: string; transportationPreference?: string; accommodationListingId?: string; plannedAccommodation?: unknown; externalAccommodation?: { fetchedAt?: string; total?: number; hotelId?: string; offerId?: string; name?: string; address?: string; nightlyRate?: number; currency?: string; isLive?: boolean; selectionToken?: string }; selectedFlight?: { id?: string; name?: string; price?: number; currency?: string; fetchedAt?: string; selectionToken?: string }; selectedActivities?: Array<{ id?: string; name?: string; price?: number; currency?: string; fetchedAt?: string; selectionToken?: string }>; preTripCosts?: unknown };
 
@@ -771,15 +730,15 @@ export async function POST(request: Request) {
       if (error instanceof Error && error.message === 'INVALID_IDEMPOTENCY_KEY') return Response.json({ error: 'Idempotency-Key must be 8-100 letters, numbers, dots, colons, underscores, or hyphens.' }, { status: 400 });
       throw error;
     }
-    if ('conflict' in generation) return Response.json({ error: generation.conflict, code: 'GENERATION_CONFLICT', retryable: true }, { status: 409 });
     if ('replay' in generation) return Response.json({ ...(generation.replay as Record<string, unknown>), idempotentReplay: true });
     generationRecordId = generation.recordId;
     generationAttemptId = generation.attemptId;
+    await processGeneration(generationRecordId, generationAttemptId);
 
     const resolvedProviders = resolveAIProviders();
     const resolvedProvider = resolvedProviders[0] || { name: 'openai' as const };
 
-    const generationSignal = AbortSignal.timeout(540_000);
+    const generationSignal = AbortSignal.timeout(GENERATION_DEADLINE_MS);
     const catalog = await loadGroundedPlaces(anchor, generationSignal, true, { tripDays });
     const permittedPlaces = permittedPlaceCandidates(catalog.places);
     const activityAnchor = activityPlanningAnchor(anchor, plannedAccommodation || accommodation);
@@ -857,9 +816,10 @@ export async function POST(request: Request) {
     // optional missing-photo enrichment runs in the existing display/saved flow.
     const withPhotos = retainSelectedActivityPhotos(completed);
     const response = parseSavedItinerary({ ...withPhotos, groundingProof: signGroundedPlan(withPhotos), preferences, ...(plannedAccommodation ? { plannedAccommodation } : {}) }, { days: tripDays, currency, budget, travelers, partyType, startDate, destination: normalizedDestination }) as unknown as Record<string, unknown>;
-    if (!await completeGeneration(generationRecordId, generationAttemptId, response)) return Response.json({ error: 'Another request is handling this itinerary. Please try again.', code: 'GENERATION_CONFLICT', retryable: true }, { status: 409 });
+    if (!await completeGeneration(generationRecordId, generationAttemptId, response, (itinerary.source === 'gemini' || itinerary.source === 'openai') && itinerary.days.some(day => day.activities.some(activity => !!activity.place)))) return Response.json({ error: 'This operation has ended. Check My Plan before starting another generation.', code: 'GENERATION_ENDED', retryable: false }, { status: 409 });
     return Response.json(response);
   } catch (error) {
+    if (error instanceof PlanError) return Response.json({ error: error.message, code: error.code, retryable: error.code === 'GENERATION_IN_PROGRESS', details: error.details }, { status: error.status });
     if (error instanceof Error && error.message === 'UNAUTHORIZED') {
       return Response.json({ error: 'Unauthorized.' }, { status: 401 });
     }

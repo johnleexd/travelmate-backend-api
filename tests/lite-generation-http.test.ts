@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { mockPlanTransaction } from './helpers/plan-transaction.ts';
 import {after,test,type TestContext} from 'node:test';
 import {prisma} from '../src/lib/prisma.ts';
 import {createSessionToken} from '../src/middlewares/auth-middleware.ts';
@@ -11,6 +12,7 @@ import {verifyGroundedPlan} from '../src/services/itinerary/grounded-plan.ts';
 after(()=>prisma.$disconnect());
 function replace(t:TestContext,object:object,key:string,value:unknown){const prior=Reflect.get(object,key);Reflect.set(object,key,value);t.after(()=>Reflect.set(object,key,prior));}
 test('authenticated search → rate refresh → generation → save validation keeps exact LiteAPI selection',async t=>{
+ mockPlanTransaction(t);
  const user={id:'lite-http',name:'Test',email:'guest@example.test',role:'traveler',accountStatus:'active',emailVerified:true,profileStatus:'unverified',trustScore:50};
  replace(t,prisma.user,'findFirst',async()=>user);replace(t,prisma,'$queryRaw',async()=>[{count:1}]);replace(t,prisma.listing,'findMany',async()=>[]);
  replace(t,prisma.itineraryGeneration,'findUnique',async()=>null);replace(t,prisma.itineraryGeneration,'create',async()=>({id:'generation',attemptId:'attempt'}));replace(t,prisma.itineraryGeneration,'updateMany',async()=>({count:1}));replace(t,Math,'random',()=>0.5);
@@ -36,7 +38,7 @@ test('authenticated search → rate refresh → generation → save validation k
   }
   return Response.json({},{status:503});
  });
- const headers={cookie:'travelmate_session='+createSessionToken(user.id,'traveler')};
+ const headers={cookie:'travelmate_session='+createSessionToken(user.id,'traveler'),'idempotency-key':'lite-fixture-key'};
  const params=new URLSearchParams({destination:place.label,latitude:String(place.latitude),longitude:String(place.longitude),countryCode:'JP',placeType:'City',checkInDate:'2040-01-01',checkOutDate:'2040-01-03',currency:'JPY',guestNationality:'PH',occupancy:JSON.stringify([{adults:2,childAges:[5]}])});
  const found=await search(new Request('http://localhost/api/accommodations?'+params,{headers}));assert.equal(found.status,200);
  const result=await found.json();assert.equal(result.providerEnvironment,'sandbox');assert.equal(result.providerAccommodations.length,1);
