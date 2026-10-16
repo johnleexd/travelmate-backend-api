@@ -8,6 +8,7 @@ import { searchCatalogue, catalogueLocation } from './global-catalogue.ts';
 import { searchDestinationAreas } from './destination-areas.ts';
 
 export interface LocationSearchPage { locations: LocationCandidate[]; total: number; nextOffset: number | null; coverage: string; message: string; countryScope?: LocationCandidate }
+interface LegacySearchOptions { includeLegacyDuplicates?: boolean; preferBundledExact?: boolean }
 export async function searchGlobalLocationsPage(query: string, offset = 0, fetcher: typeof fetch = fetch, countryCode?: string): Promise<LocationSearchPage> {
   const code = countryForQuery(query), exactCountry = code ? availableCountry(code) : undefined;
   const country = exactCountry || (countryCode ? availableCountry(countryCode) : undefined);
@@ -34,11 +35,11 @@ export async function searchGlobalLocationsPage(query: string, offset = 0, fetch
 const providerCaches = new WeakMap<typeof fetch, ReturnType<typeof createAreaCache<GeocodingPlace[]>>>();
 function providerCache(fetcher: typeof fetch) { let cache = providerCaches.get(fetcher); if (!cache) { cache = createAreaCache<GeocodingPlace[]>(300); providerCaches.set(fetcher, cache); } return cache; }
 
-export async function searchGlobalLocations(query: string, fetchImplementation: typeof fetch = fetch, options: { includeLegacyDuplicates?: boolean } = {}): Promise<LocationCandidate[]> {
+export async function searchGlobalLocations(query: string, fetchImplementation: typeof fetch = fetch, options: LegacySearchOptions = {}): Promise<LocationCandidate[]> {
   // Compatibility adapter for photo/legacy resolver callers. Interactive search uses the paged full-catalogue API above.
   return searchLegacyLocations(query, fetchImplementation, options);
 }
-async function searchLegacyLocations(query: string, fetchImplementation: typeof fetch = fetch, options: { includeLegacyDuplicates?: boolean } = {}): Promise<LocationCandidate[]> {
+async function searchLegacyLocations(query: string, fetchImplementation: typeof fetch = fetch, options: LegacySearchOptions = {}): Promise<LocationCandidate[]> {
   const wholeCountry = countryForQuery(query.trim());
   if (wholeCountry) return wholeCountry === 'PH' ? [...countryDestinations('PH').filter(place => !/capital|locality|region/i.test(place.placeType)), ...philippineAdministrativeRecords.filter(record => ['Province','Region','City'].includes(record.level)).map(administrativeCandidate)] : countryDestinations(wholeCountry);
   const parsed = parseDestinationQuery(query);
@@ -66,9 +67,19 @@ async function searchLegacyLocations(query: string, fetchImplementation: typeof 
     const ranked = rankLocationSuggestions(term, places, 50);
     const providerCountry = ranked.find(place => place.placeType === 'Country' && place.name.toLowerCase() === query.toLowerCase());
     if (providerCountry) return deduplicateDestinations([...ranked.filter(place => place.countryCode === providerCountry.countryCode), ...countryDestinations(providerCountry.countryCode)]).slice(0, 50);
-    return deduplicateDestinations([...indexed, ...ranked]).slice(0, 50);
+    // Identity-sensitive callers can use the bundled GeoNames snapshot for
+    // exact-name matches while retaining live results for names absent there.
+    // This prevents a provider's distant same-name row from making a known
+    // destination ambiguous when its verified bundled record is available.
+    const exactIndexed = indexed.filter(place => normalizePlaceName(place.name) === normalizePlaceName(term));
+    const live = options.preferBundledExact && exactIndexed.length
+      ? ranked.filter(place => normalizePlaceName(place.name) !== normalizePlaceName(term))
+      : ranked;
+    return deduplicateDestinations([...indexed, ...live]).slice(0, 50);
   } catch {
     if (indexed.length) return indexed;
     throw new Error('Location search is temporarily unavailable.');
   }
 }
+
+const normalizePlaceName = (value: string) => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();

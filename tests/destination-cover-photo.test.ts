@@ -31,9 +31,10 @@ test('ambiguous cities do not pick an arbitrary match; coordinates narrow duplic
   assert.equal(await resolveDestinationCoverPhoto({ city: 'Manila', countryCode: 'PH' }, search, noPlaces), null);
   assert.equal((await resolveDestinationCoverPhoto({ city: 'Manila', countryCode: 'PH', latitude: match.latitude, longitude: match.longitude }, search, noPlaces))?.scope, 'destination');
 });
-test('nearby provider rows for one city resolve as one destination identity', async () => {
-  const match = (await searchGlobalLocations('Fukuoka, JP'))[0];
-  const search = async () => [match, { ...match, id: match.id + 1, latitude: match.latitude + 0.01, longitude: match.longitude + 0.01 }];
+test('a distant live provider duplicate does not override the bundled exact destination identity', async () => {
+  const liveDuplicate = { id: 999999, name: 'Fukuoka', latitude: 35, longitude: 140, country_code: 'JP', country: 'Japan', admin1: 'Other region', feature_code: 'PPL' };
+  const fetcher: typeof fetch = async () => Response.json({ results: [liveDuplicate] });
+  const search: Parameters<typeof resolveCover>[1] = (query, _fetch, options) => searchGlobalLocations(query, fetcher, options);
   const photo = await resolveDestinationCoverPhoto({ city: 'Fukuoka', countryCode: 'JP' }, search, noPlaces);
   assert.equal(photo?.city, 'Fukuoka');
   assert.ok(photo?.src.includes('Fukuoka_City_from_Fukuoka_Tower'));
