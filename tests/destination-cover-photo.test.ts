@@ -31,6 +31,13 @@ test('ambiguous cities do not pick an arbitrary match; coordinates narrow duplic
   assert.equal(await resolveDestinationCoverPhoto({ city: 'Manila', countryCode: 'PH' }, search, noPlaces), null);
   assert.equal((await resolveDestinationCoverPhoto({ city: 'Manila', countryCode: 'PH', latitude: match.latitude, longitude: match.longitude }, search, noPlaces))?.scope, 'destination');
 });
+test('nearby provider rows for one city resolve as one destination identity', async () => {
+  const match = (await searchGlobalLocations('Fukuoka, JP'))[0];
+  const search = async () => [match, { ...match, id: match.id + 1, latitude: match.latitude + 0.01, longitude: match.longitude + 0.01 }];
+  const photo = await resolveDestinationCoverPhoto({ city: 'Fukuoka', countryCode: 'JP' }, search, noPlaces);
+  assert.equal(photo?.city, 'Fukuoka');
+  assert.ok(photo?.src.includes('Fukuoka_City_from_Fukuoka_Tower'));
+});
 test('other destinations reuse only matched licensed photographs from the existing grounded-place provider', async () => {
   const match = (await searchGlobalLocations('Paris, FR'))[0];
   const place: GroundedPlace = { provider: 'wikidata', placeId: 'Q100', name: 'Paris museum', city: match.name, country: match.country, countryCode: 'FR',

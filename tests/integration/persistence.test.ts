@@ -111,7 +111,13 @@ test("registration requires verification before login", async t => {
     }));
     assert.equal(newPasswordLogin.status, 200);
   } finally {
-    await prisma.user.deleteMany({ where: { email } });
+    const registeredUser = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+    if (registeredUser) {
+      await prisma.$transaction([
+        prisma.auditEvent.deleteMany({ where: { actorId: registeredUser.id } }),
+        prisma.user.delete({ where: { id: registeredUser.id } }),
+      ]);
+    }
   }
 });
 
