@@ -33,6 +33,7 @@ export interface PlaceCoverage {
 export interface PlaceSearchOptions {
   tripDays?: number;
   forceRefresh?: boolean;
+  requestTimeoutMs?: number;
   diagnostics?: (coverage: PlaceCoverage) => void;
 }
 export const permittedPlaceCandidates = (places: GroundedPlace[], includeNearby = false) => places.filter(place => includeNearby || place.locationScope !== 'nearby');
@@ -211,14 +212,25 @@ export async function retrieveGroundedPlaces(anchor: DestinationAnchor, fetcher:
   const requested = Math.max(MIN_LOCAL_PLACE_COVERAGE, Math.min(31, Math.max(1, options.tripDays ?? 1)) * 3);
   let discoveryRequests = 0, rawArticles = 0, providerFailures = 0, truncated = false;
   const throttledHosts = new Set<string>();
+  const unavailableHosts = new Set<string>();
   const json = async (host: string, parameters: Record<string, string>, photoSignal?: AbortSignal) => {
     if (throttledHosts.has(host)) throw new Error('Provider rate limit: retry on a later lookup.');
+    if (unavailableHosts.has(host)) throw new Error('Provider unavailable during this lookup.');
     const started = Date.now();
-    const response = await fetcher(`${host}/w/api.php?${new URLSearchParams({ format: 'json', ...parameters })}`, {
-      headers: { 'User-Agent': 'TravelMate/1.0 (destination reference lookup)', 'Api-User-Agent': 'TravelMate/1.0' }, signal: photoSignal || requestSignal,
-    });
+    let response: Response;
+    try {
+      response = await fetcher(`${host}/w/api.php?${new URLSearchParams({ format: 'json', ...parameters })}`, {
+        headers: { 'User-Agent': 'TravelMate/1.0 (destination reference lookup)', 'Api-User-Agent': 'TravelMate/1.0' },
+        signal: AbortSignal.any([photoSignal || requestSignal, AbortSignal.timeout(options.requestTimeoutMs ?? 12_000)]),
+      });
+    } catch (error) {
+      unavailableHosts.add(host);
+      console.warn(JSON.stringify({ event: 'place_reference_failure', provider: host, durationMs: Date.now() - started, error: error instanceof Error ? error.name : 'RequestError' }));
+      throw error;
+    }
     console.info(JSON.stringify({ event: 'place_reference_request', provider: host, action: parameters.action, generator: parameters.generator, status: response.status, durationMs: Date.now() - started }));
     if (response.status === 429) throttledHosts.add(host);
+    if (response.status >= 500) unavailableHosts.add(host);
     if (!response.ok) throw new Error(`Destination reference provider unavailable (HTTP ${response.status}).`);
     const result = await response.json() as any;
     if (result.error) throw new Error(`Destination reference provider rejected the lookup (${String(result.error.code).slice(0, 80)}).`);

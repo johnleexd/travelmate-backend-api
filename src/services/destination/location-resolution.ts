@@ -7,8 +7,9 @@ import { hasResolvedCoordinates, type LocationSuggestion } from './location-sear
 import { searchPhilippineCatalogue, administrativeRecord, resolveAdministrativeLocation } from './philippine-catalogue.ts';
 import { fetchGeocoderSearch } from './geocoder-client.ts';
 import { catalogueCountry } from './global-catalogue.ts';
+import { needsDestinationArea } from '../../lib/location-scope.ts';
 
-export const needsAccommodationArea = (location: Pick<LocationSuggestion, 'placeType' | 'scopeType'>) => location.scopeType === 'country' || location.scopeType === 'area' || ['Country', 'Region', 'Province', 'Island', 'Administrative area'].includes(location.placeType);
+export const needsAccommodationArea = needsDestinationArea;
 export function destinationAreas(location: LocationSuggestion) {
   if (!needsAccommodationArea(location)) return [];
   return countryDestinations(location.countryCode, 300).filter(place => {

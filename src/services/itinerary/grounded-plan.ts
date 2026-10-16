@@ -1,5 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto';
-import { allocateEqualShares, allocateNightlyCosts, currencyFractionDigits, type CurrencyCode, type PartyType } from '../../schemas/domain.ts';
+import { travelersForParty, allocateEqualShares, allocateNightlyCosts, currencyFractionDigits, type CurrencyCode, type PartyType } from '../../schemas/domain.ts';
 import { constantTimeEqual } from '../../utils/constant-time-equal.ts';
 import type { AccommodationPlan, DayActivity, ItineraryResponse, SelectedTravelCosts } from '../../controllers/itinerary-controller.ts';
 import type { GroundedScheduleDay } from '../ai/grounded-schedule.ts';
@@ -8,7 +8,8 @@ import { distanceKm } from './grounded-places.ts';
 import { groundingSchema, type DestinationAnchor, type PlanGrounding, type PriceEvidence } from './grounding-schema.ts';
 import { stylePolicy, transportPlanning, referencedAdmission, premiumOpportunity, type GenerationPreferences } from './travel-preferences.ts';
 import { buildBudgetOptimization } from '../budget/budget-optimization-service.ts';
-import { expenseLedger } from '../../lib/expense-ledger.ts';
+import { calculateExpense, expenseLedger } from '../../lib/expense-ledger.ts';
+export { calculateExpense } from '../../lib/expense-ledger.ts';
 import { planningAllowance } from './planning-estimates.ts';
 import { preferenceLimitations } from './preference-evidence.ts';
 import type { GenerationConstraints } from './generated-day-scheduler.ts';
@@ -30,13 +31,9 @@ export interface GroundedPlanInput {
 }
 
 const moneyRound = (amount: number, currency: CurrencyCode) => Math.round(amount * 10 ** currencyFractionDigits(currency)) / 10 ** currencyFractionDigits(currency);
-export function calculateExpense(unitAmount: number, quantity: number, participants: number, unit: PriceEvidence['unit'], currency: CurrencyCode) {
-  if (![unitAmount, quantity, participants].every(Number.isFinite) || unitAmount < 0 || !Number.isInteger(quantity) || quantity < 0 || !Number.isInteger(participants) || participants < 1) throw new Error('Expense quantities are invalid.');
-  return moneyRound(unitAmount * quantity * (unit === 'per-person' || unit === 'daily-per-person' || unit === 'meal' ? participants : 1), currency);
-}
-
 export function buildGroundedPlan(input: GroundedPlanInput): ItineraryResponse {
   const { currency, travelers, budget, rooms } = input;
+  if (travelersForParty(input.partyType, travelers) !== travelers) throw new Error('Traveler count does not match the selected traveling mode.');
   const fetchedAt = new Date().toISOString();
   const count = input.schedule.length;
   const quoteDates = input.accommodation?.providerQuote;
@@ -77,13 +74,13 @@ export function buildGroundedPlan(input: GroundedPlanInput): ItineraryResponse {
       previous = place;
       const commitment = input.selectedTravelCosts?.activities.find(item => item.name.normalize('NFKC').trim().toLowerCase() === place.name.normalize('NFKC').trim().toLowerCase());
       const fee = referencedAdmission(place, currency);
-      const priceEvidence: PriceEvidence = commitment ? { ...makeEvidence(commitment.unitCost, 0, 'per-person', 'Exact-name activity commitment is included once under selected travel costs, for the selected party. No second admission allowance is charged here; confirm the offer coverage and visit time.', 'selected-activity', visit.participants), status: commitment.isLive && !commitment.priceBasis ? 'provider-quote' : 'estimate', fetchedAt: commitment.fetchedAt }
-        : fee ? { ...makeEvidence(fee.amount, 1, 'per-person', 'Published Wikidata admission reference; date, eligibility and current price need confirmation. Not a live quote.', fee.sourceUrl, visit.participants), fetchedAt: fee.fetchedAt, sourceUrl: fee.sourceUrl } : { ...allowance('visit'), participants: visit.participants };
+      const priceEvidence: PriceEvidence = commitment ? { ...makeEvidence(commitment.unitCost, 0, 'per-person', 'Exact-name activity commitment is included once under selected travel costs, for the selected party. No second admission allowance is charged here; confirm the offer coverage and visit time.', 'selected-activity', travelers), status: commitment.isLive && !commitment.priceBasis ? 'provider-quote' : 'estimate', fetchedAt: commitment.fetchedAt }
+        : fee ? { ...makeEvidence(fee.amount, 1, 'per-person', 'Published Wikidata admission reference; date, eligibility and current price need confirmation. Not a live quote.', fee.sourceUrl, travelers), fetchedAt: fee.fetchedAt, sourceUrl: fee.sourceUrl } : { ...allowance('visit'), participants: travelers };
       const weekday = new Date(`${day.date}T00:00:00Z`).getUTCDay();
       const hoursNeedConfirmation = !place.openingWindows?.some(window => window.weekdays.includes(weekday));
       return { id: randomUUID(), status: 'planned', scheduleLabel: 'Suggested', durationMinutes: visit.durationMinutes, travelMinutes: transfer, time: 'Flexible', title: `Visit ${place.name}`.slice(0, 160),
         description: `${place.locationScope === 'nearby' ? `Nearby attraction: ${place.city === 'Locality unconfirmed' ? 'Municipality unconfirmed; ' : place.city + ', '}outside ${input.anchor.city}. Travel to and from this attraction needs route confirmation. Return time is reserved. ` : ''}${hoursNeedConfirmation ? 'Opening hours need confirmation. ' : ''}${place.description}. Suggested ${visit.durationMinutes}-minute visit. ${place.openingHours === 'Opening hours need confirmation' ? '' : `Opening hours: ${place.openingHours}. `}Address: ${place.address}.`.slice(0, 1000),
-        category: 'activity', icon: 'map', estimatedCost: calculateExpense(priceEvidence.unitAmount, priceEvidence.quantity, visit.participants, 'per-person', currency), unitCost: priceEvidence.unitAmount,
+        category: 'activity', icon: 'map', estimatedCost: calculateExpense(priceEvidence.unitAmount, priceEvidence.quantity, travelers, priceEvidence.unit, currency), unitCost: priceEvidence.unitAmount,
         imageUrl: place.imageUrl, imageAttribution: place.imageAttribution ? { ...place.imageAttribution, photoType: 'place' } : undefined, placeVerification: 'supporting-source-found',
         place: { provider: place.provider, placeId: place.placeId, name: place.name, city: place.city, country: place.country, countryCode: place.countryCode, latitude: place.latitude, longitude: place.longitude, sourceUrl: place.sourceUrl, fetchedAt: place.fetchedAt, openingHours: place.openingHours, address: place.address,
           ...(place.locationScope ? { locationScope: place.locationScope, selectedCity: place.selectedCity, distanceFromDestinationKm: place.distanceFromDestinationKm, membershipSourceUrl: place.membershipSourceUrl } : {}), ...(place.coordinateSourceUrl ? { coordinateSourceUrl: place.coordinateSourceUrl } : {}) }, priceEvidence };
@@ -91,7 +88,7 @@ export function buildGroundedPlan(input: GroundedPlanInput): ItineraryResponse {
     const foodEvidence = input.foodDailyPerPerson === undefined ? allowance('food') : { ...makeEvidence(foodDaily, 1, 'daily-per-person', input.foodDailyPerPerson !== undefined ? 'User-entered daily food estimate per person × travelers × days.' : 'Restaurant/menu prices are unavailable; not included in known subtotal. Confirm locally.', input.foodDailyPerPerson !== undefined ? 'user-entered' : 'unavailable'), coverage: 'daily-food' as const };
     const food: DayActivity = { time: 'Daily allowance', title: `Daily meals in ${input.anchor.city}`.slice(0, 160), description: `${policy.meal} Food interests: ${[...(input.preferences?.interests || []), ...(input.preferences?.activities || [])].filter(value => /food|meal|dining|cuisine|vegetarian|vegan/i.test(value)).join(', ') || 'none specified'}. Venues, dietary suitability and menu prices need confirmation; no restaurant was invented.`.slice(0, 1000), category: 'food', icon: 'food', estimatedCost: calculateExpense(foodDaily, 1, travelers, 'daily-per-person', currency), unitCost: foodDaily, priceEvidence: foodEvidence };
     const transportEvidence = input.transportFare === undefined ? allowance('transport') : { ...makeEvidence(fare, 1, fareType, input.transportFare !== undefined ? 'User-entered daily fare estimate. Confirm fare coverage, route, vehicle capacity, tolls, and fees.' : 'No verified route fare is available. Excluded from known subtotal; confirm fares, tolls and transfers.', input.transportFare !== undefined ? 'user-entered' : 'unavailable'), coverage: 'daily-transport' as const };
-    const transport: DayActivity = { time: 'Daily allowance', title: `Daily transport in ${input.anchor.city}`.slice(0, 160), description: `${input.transportation || 'Mode: Not available'}. ${fareType === 'shared-fare' ? 'One shared daily fare for the party; not multiplied by travelers.' : 'Daily fare per traveler, multiplied by the party size.'} Route, timetable and capacity require confirmation.`, category: 'transport', icon: 'bus', estimatedCost: calculateExpense(fare, 1, travelers, fareType, currency), unitCost: fare, priceEvidence: transportEvidence };
+    const transport: DayActivity = { time: 'Daily allowance', title: `Daily transport in ${input.anchor.city}`.slice(0, 160), description: `${input.transportation || 'Mode: Not available'}. ${['per-person', 'daily-per-person'].includes(transportEvidence.unit) ? 'Daily fare per traveler, multiplied by the party size.' : 'One shared daily allowance for the party; not multiplied by travelers.'} Route, timetable and capacity require confirmation.`, category: 'transport', icon: 'bus', estimatedCost: calculateExpense(transportEvidence.unitAmount, transportEvidence.quantity, transportEvidence.participants, transportEvidence.unit, currency), unitCost: fare, priceEvidence: transportEvidence };
     const activities = [...visits, { ...food, id: randomUUID() }, { ...transport, id: randomUUID() }];
     const planningStatus = day.planningStatus ?? (visits.length ? 'suggested' : 'incomplete');
     const themeCity = input.anchor.city.length > 80 ? input.anchor.city.slice(0, 77).replace(/[\uD800-\uDBFF]$/, '') + '…' : input.anchor.city;

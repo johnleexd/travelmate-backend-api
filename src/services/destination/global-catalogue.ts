@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { LocationSuggestion } from './location-search-service.ts';
 import { getCountryDataList } from 'countries-list';
+import { isDestinationLocality } from '../../lib/location-scope.ts';
 
 type Row = { id: number; name: string; feature: string; country: string; a1: string; a2: string; a3: string; a4: string; latitude: number; longitude: number; parent_id: number | null };
 export type LocationPathPart = { id: number; name: string; type: string; countryCode: string; providerId: string; level?: number };
@@ -42,6 +43,15 @@ function type(r: Row): string {
   if (r.feature === 'PPLX') return 'District / settlement section';
   if (/^PPL/.test(r.feature)) return /^(PPLC|PPLA)/.test(r.feature) ? 'Administrative seat (populated place)' : 'Populated place (type not supplied)';
   const n = Number(r.feature.slice(3));
+  // China records towns/townships as ADM4, not necessarily PPL. Keep the
+  // recorded local term rather than assuming every ADM4 is a town.
+  // https://www.stats.gov.cn/sj/tjbz/gjtjbz/202302/t20230213_1902741.html
+  if (r.country === 'CN' && /^ADM[2-4]$/.test(r.feature)) {
+    if (n === 4 && /(?:\bZhen|镇|鎮)$/i.test(r.name)) return 'Town (Zhen)';
+    if (n === 4 && /(?:\bXiang|乡|鄉)$/i.test(r.name)) return 'Township (Xiang)';
+    if (n === 4 && /(?:\bJiedao|街道)$/i.test(r.name)) return 'Neighbourhood (Jiedao)';
+    if (n < 4 && /(?:\bShi|市)$/i.test(r.name)) return 'City (Shi)';
+  }
   if (r.country === 'KR' && n > 1) return /-gun\b/i.test(r.name) ? 'County (Gun)' : /-si\b/i.test(r.name) ? 'City (Si)' : /-gu\b/i.test(r.name) ? 'District (Gu)' : /-eup\b/i.test(r.name) ? 'Town (Eup)' : /-myeon\b/i.test(r.name) ? 'Township (Myeon)' : /-dong\b/i.test(r.name) ? 'Neighbourhood (Dong)' : `Administrative division (level ${n}; local type not supplied)`;
   if (r.country === 'ID' && n === 2) return /^Kota\b/i.test(r.name) ? 'City (Kota)' : /^Kabupaten\b/i.test(r.name) ? 'Regency (Kabupaten)' : 'Regency / city (local type not supplied)';
   if (r.country === 'ID' && n === 4) return /^Kelurahan\b/i.test(r.name) ? 'Urban village (Kelurahan)' : /^Desa\b/i.test(r.name) ? 'Village (Desa)' : 'Village (local type not supplied)';
@@ -62,7 +72,7 @@ export function catalogueLocation(id: number, countryCode?: string): LocationSug
   const areaParents = parents.filter(p => !isCountry(p));
   const fullNames = [...new Set([name, ...areaParents.reverse().map(p => p.name), c?.name || r.country])];
   const canBrowse = !!db()!.prepare('SELECT 1 FROM places WHERE parent_id=? LIMIT 1').get(r.id);
-  const scopeType = isCountry(r) ? 'country' : /^PPL/.test(r.feature) || /^(Municipality|City|Town|Village|Urban village|Commune|Ward|Neighbourhood|Barangay|Township)\b/.test(type(r)) || /^(District \((Kecamatan|Gu)\))/.test(type(r)) ? 'locality' : 'area';
+  const scopeType = isCountry(r) ? 'country' : /^PPL/.test(r.feature) || isDestinationLocality({ placeType: type(r) }) || /^(Urban village|Ward|Neighbourhood|Barangay)\b/.test(type(r)) || /^(District \((Kecamatan|Gu)\))/.test(type(r)) ? 'locality' : 'area';
   return { id: r.id, name, region: areaParents.map(p => p.name).join(', '), country: c?.name || r.country, countryCode: r.country, latitude: r.latitude, longitude: r.longitude, label: fullNames.join(', '), placeType: type(r), contextLabel: `${fullNames.join(', ')} — ${type(r)}`, provider: 'geonames', providerId: String(r.id), sourceFeatureCode: r.feature, locationPath: path, parentId: r.parent_id || undefined, canBrowse, scopeType, coordinateSource: `https://www.geonames.org/${r.id}/` };
 }
 function scope(parent: Row): { clause: string; values: SQLInputValue[] } {

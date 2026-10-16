@@ -1,7 +1,57 @@
 # TravelMate Express API
 
+Location selection scope is shared with the frontend through
+`src/lib/location-scope.ts`. A verified locality is selectable independently of
+its child count. Imported administrative records retain their source level;
+explicit Chinese local terms such as ADM4 Zhen/Xiang identify towns/townships,
+while unclassified administrative divisions remain areas. Caohai Zhen (GeoNames
+10260117) uses its recorded Yunnan parent and coordinates without requiring a
+lower settlement. No catalogue data rewrite or external geocoding is needed.
+
+Expense unit extension lives in `src/lib/expense-ledger.ts` and is synchronized to
+the frontend. Stored activity amounts are extended totals, with price evidence
+recording the unit, quantity and participants. AI route output must include the
+full selected party; backend pricing never uses a smaller AI subgroup. Solo and
+couple counts are enforced during generation and saved-plan validation.
+
+No database migration or historical rewrite is required: existing itinerary JSON
+already stores party details and price evidence. Reads preserve historical
+activities and edits. Missing cost bases, inconsistent coverage and unitemized
+legacy balances require refresh/clarification, rather than inferred per-person
+prices. Shared quotes retain their recorded total; room quantities include nights,
+and provider occupancy/child pricing is preserved. Trip budgets cover the whole
+party. Equal shares use minor currency units and reconcile with the total.
+
 This is the TravelMate backend: Express 5 with strict TypeScript, Prisma ORM,
 and Neon PostgreSQL.
+
+System Health's Activity Log reads `GET /api/platform/activity?page=1&q=...`.
+It requires an active authenticated admin and returns 10 records per page, ordered
+by creation time and ID. Search covers all stored events by current actor name,
+readable action label/action code, target ID, or event ID; percent and underscore
+are literal search characters. The query joins `audit_events.actor_id` to `users.id`.
+It never infers the actor from the polymorphic target ID. Names and roles are current
+account metadata, not historical snapshots. Missing identities have explicit
+unavailable/not-recorded fallbacks. Existing writers already record an actor ID,
+so this change needs no migration, identity backfill, or changes to stored events.
+
+Action presentation is maintained in `activity-presentation.ts`. Generic account
+status events stay generic; the reader does not invent a specific old decision.
+Unrecognized values show Other activity. Embedded plan activation/payment metadata
+is excluded from responses and search; the legacy platform snapshot also exposes
+only safe action codes. Neither response includes credentials or authentication
+tokens. Stored raw audit values remain unchanged. Verify with
+`node --test --experimental-strip-types tests/activity-log.test.ts` and the isolated
+database suite `tests/integration/activity-log.test.ts`.
+
+Itinerary generation starts place-reference discovery and advisory weather in
+parallel. Each Wikipedia/Wikidata reference request has a 12-second timeout within
+the existing overall discovery budget. A host that times out, fails to connect,
+or returns a server error is skipped for the remainder of that lookup, allowing
+healthy language/reference sources to continue. Missing evidence still produces
+an explicitly incomplete plan; timeouts never justify invented attractions.
+AI calls and bounded validation/repair can add further time, especially for long
+trips. A successful controlled test is not a promise of live provider latency.
 
 Saved-trip visit recording uses the existing `visited_places` database table and
 `POST /api/platform` action infrastructure. `GET /api/platform/trips/:id/visit-candidates`
@@ -447,7 +497,16 @@ limits. SMTP raw responses and credentials are never written to application logs
 The API and smoke script load backend `.env` by file location; injected process
 environment variables take precedence. No provider switches automatically.
 
-`npm run dev` watches backend `src/` and `.env` and restarts the API when they change.
+`npm run dev` generates the Prisma client before loading the API, and regenerates
+it when `prisma/schema.prisma` changes. This prevents a Git pull from leaving the
+ignored local client behind the current plan/itinerary schema. Generation failure
+keeps the API stopped with a setup message. Source-only restarts reuse the client;
+generated files do not cause restart loops. Database migrations remain explicit:
+run `npm run db:setup` after pulling schema migrations. For an already running API
+with a stale client, run `npm run db:generate` and restart the backend.
+
+The dev runner watches backend `src/`, `.env`, and `prisma/schema.prisma` and
+restarts the API when their contents change.
 Dependency changes in `node_modules/` do not trigger restarts during sign-in.
 This also works when launched by the frontend development script. Development startup
 logs `email_configuration` with the provider, invalid/missing variable names,

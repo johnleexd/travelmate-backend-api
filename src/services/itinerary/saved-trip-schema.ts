@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { validateActivitySchedule } from './activity-schedule.ts';
-import { SUPPORTED_CURRENCIES, allocateEqualShares, allocateNightlyCosts, currencyFractionDigits, currencyStep, roundMoney, sumMoney, hasValidCurrencyPrecision, type CurrencyCode, type PartyType } from "../../schemas/domain.ts";
+import { SUPPORTED_CURRENCIES, travelersForParty, allocateEqualShares, allocateNightlyCosts, currencyFractionDigits, currencyStep, roundMoney, sumMoney, hasValidCurrencyPrecision, type CurrencyCode, type PartyType } from "../../schemas/domain.ts";
 import { accommodationQuoteSchema, propertyPhotoSchema } from '../travel/hotel-quote.ts';
 import { plannedAccommodationSchema } from '../destination/planned-accommodation.ts';
 import { buildBudgetOptimization } from '../budget/budget-optimization-service.ts';
@@ -163,6 +163,7 @@ export function parseSavedItinerary(value: unknown, context: { days: number; cur
   if (itinerary.days.length !== context.days) throw new Error(`Itinerary must contain exactly ${context.days} days.`);
   if (itinerary.currency !== context.currency) throw new Error("Itinerary currency must match the trip currency.");
   const tolerance = currencyStep(context.currency)/2;
+  if (travelersForParty(context.partyType, context.travelers) !== context.travelers) throw new Error('Traveler count does not match the selected traveling mode.');
   if (!hasValidCurrencyPrecision(context.budget, context.currency)) throw new Error('Trip budget has invalid currency precision.');
   if (!hasValidCurrencyPrecision(itinerary.totalBudget,context.currency) || itinerary.totalBudget !== context.budget) throw new Error("Itinerary budget must match the trip budget.");
   const stay = itinerary.accommodation;
@@ -187,7 +188,7 @@ export function parseSavedItinerary(value: unknown, context: { days: number; cur
   }
   if (stay && stay.currency !== context.currency) throw new Error('Accommodation currency must match the trip currency.');
   if (stay && stay.nights !== Math.max(1, context.days - 1)) throw new Error('Accommodation nights must match the trip dates.');
-  const lodgingByNight = itinerary.accommodationEstimate && context.days > 1 ? allocateNightlyCosts(itinerary.accommodationEstimate.unitAmount * itinerary.accommodationEstimate.quantity, context.days - 1, context.currency) : itinerary.grounding?.estimationVersion && itinerary.grounding.nights ? allocateNightlyCosts(itinerary.grounding.categories.accommodation, itinerary.grounding.nights, context.currency) : stay ? allocateNightlyCosts(stay.quotedTotal ?? roundMoney(stay.nightlyRate * stay.nights * (stay.rooms ?? 1),context.currency), stay.nights, context.currency)
+  const lodgingByNight = itinerary.accommodationEstimate && context.days > 1 ? allocateNightlyCosts(itinerary.accommodationEstimate.unitAmount * itinerary.accommodationEstimate.quantity, context.days - 1, context.currency) : itinerary.grounding?.estimationVersion && itinerary.grounding.nights ? allocateNightlyCosts(itinerary.grounding.categories.accommodation, itinerary.grounding.nights, context.currency) : stay ? allocateNightlyCosts(stay.quotedTotal ?? stay.total ?? roundMoney(stay.nightlyRate * stay.nights * (stay.rooms ?? 1),context.currency), stay.nights, context.currency)
     : itinerary.grounding?.nights ? allocateNightlyCosts(itinerary.grounding.categories.accommodation, itinerary.grounding.nights, context.currency) : [];
   if (stay && !itinerary.accommodationEstimate && !itinerary.grounding?.estimationVersion && Math.abs(stay.total - lodgingByNight.reduce((a,b) => a+b,0)) > tolerance) throw new Error('Accommodation total does not match its quoted cost.');
   itinerary.days.forEach((day, index) => {
@@ -203,7 +204,7 @@ export function parseSavedItinerary(value: unknown, context: { days: number; cur
     if (!hasValidCurrencyPrecision(day.totalCost, context.currency)) throw new Error('Day costs have invalid currency precision.');
     const effective = dayExpenseRows(itinerary as ItineraryResponse,index).reduce((sum,row)=>sum+(row.amount ?? 0),0) + accommodation;
     if (Math.abs(day.totalCost - (itinerary.grounding?.estimationVersion ? expenseLedger(itinerary as ItineraryResponse).days[index].amount ?? 0 : activityTotal + accommodation)) > tolerance
-      && !(itinerary.manuallyEdited && !itinerary.grounding && Math.abs(day.totalCost-effective)<tolerance)) throw new Error(`Itinerary day ${index + 1} total does not match its item costs.`);
+      && !(!itinerary.grounding && Math.abs(day.totalCost-effective)<tolerance)) throw new Error(`Itinerary day ${index + 1} total does not match its item costs.`);
   });
   if (itinerary.partyType && itinerary.partyType !== context.partyType) throw new Error("Itinerary party type must match the trip party type.");
   if (itinerary.travelers && itinerary.travelers !== context.travelers) throw new Error("Itinerary traveler count must match the trip traveler count.");
@@ -264,7 +265,9 @@ export function parseSavedItinerary(value: unknown, context: { days: number; cur
   const accommodationActual = round(lodgingByNight.reduce((sum, amount) => sum + amount, 0));
   const travelOptionsActual = itinerary.selectedTravelCosts?.total ?? 0;
   if (!hasValidCurrencyPrecision(travelOptionsActual, context.currency)) throw new Error('Selected travel costs have invalid currency precision.');
-  const plannedSpend = round(itinerary.days.reduce((sum, day) => sum + day.totalCost, 0) + travelOptionsActual);
+  const canonicalCosts = expenseLedger({ ...itinerary, partyType: context.partyType, travelers: context.travelers } as ItineraryResponse);
+  const plannedSpend = canonicalCosts.total ?? 0;
+  itinerary.days = itinerary.days.map((day,index) => ({ ...day, totalCost: canonicalCosts.days[index].amount ?? 0 }));
   if (plannedSpend > 1_000_000_000) throw new Error('Planned spending exceeds the supported limit.');
   const remainingBudget = round(Math.max(0, context.budget - plannedSpend));
   const shortfall = round(Math.max(0, plannedSpend - context.budget));

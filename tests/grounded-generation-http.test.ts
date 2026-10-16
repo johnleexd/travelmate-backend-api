@@ -14,6 +14,36 @@ function replace(t: TestContext, object: object, key: string, implementation: (.
   const previous = Reflect.get(object, key); Reflect.set(object, key, implementation);
   t.after(() => Reflect.set(object, key, previous));
 }
+
+test('generation starts weather and place discovery together instead of waiting for either provider first', { timeout: 5000 }, async t => {
+  clearProviderCache(); t.after(clearProviderCache);
+  mockPlanTransaction(t);
+  replace(t, prisma.user, 'findFirst', async () => ({ id: 'parallel-http', role: 'traveler', accountStatus: 'active', emailVerified: true }));
+  replace(t, prisma, '$queryRaw', async () => [{ count: 1 }]);
+  replace(t, prisma.listing, 'findMany', async () => []);
+  replace(t, prisma.itineraryGeneration, 'findUnique', async () => null);
+  replace(t, prisma.itineraryGeneration, 'create', async () => ({ id: 'parallel-generation', attemptId: 'attempt' }));
+  replace(t, prisma.itineraryGeneration, 'updateMany', async () => ({ count: 1 }));
+  let weatherStarted = false, placesStarted = false;
+  let release!: () => void;
+  const bothStarted = new Promise<void>(resolve => { release = resolve; });
+  t.mock.method(globalThis, 'fetch', async input => {
+    const url = String(input);
+    if (/^https:\/\/api\.(open-meteo\.com|openweathermap\.org)/.test(url)) weatherStarted = true;
+    else if (/wikipedia\.org/.test(url)) placesStarted = true;
+    else return Response.json({}, { status: 503 });
+    if (weatherStarted && placesStarted) release();
+    await bothStarted;
+    return Response.json({}, { status: 503 });
+  });
+  const paris = searchDestinationIndex('Paris, France').find(place => place.name === 'Paris')!;
+  const response = await POST(new Request('http://localhost/api/itinerary', {
+    method: 'POST', headers: { cookie: `travelmate_session=${createSessionToken('parallel-http', 'traveler')}`, 'content-type': 'application/json', 'idempotency-key': 'parallel-fixture-key' },
+    body: JSON.stringify({ destination: paris.label, destinationDetails: { id: paris.id, city: paris.name, country: paris.country, countryCode: paris.countryCode, latitude: paris.latitude, longitude: paris.longitude }, latitude: paris.latitude, longitude: paris.longitude, startDate: '2040-01-25', endDate: '2040-01-25', budget: 1000, currency: 'EUR', travelers: 1, partyType: 'solo' }),
+  }));
+  assert.equal(response.status, 200);
+  assert.ok(weatherStarted && placesStarted);
+});
 test('authenticated generation validates inputs, unavailable sources, full response, photo refresh and insufficient budgets without a database', async t => {
   mockPlanTransaction(t);
   replace(t, prisma.user, 'findFirst', async () => ({ id: 'grounded-http', name: 'Test', email: 'test@example.test', role: 'traveler', accountStatus: 'active', emailVerified: true, profileStatus: 'unverified', trustScore: 50 }));

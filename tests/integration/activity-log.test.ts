@@ -1,0 +1,61 @@
+import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import test from 'node:test';
+import { isolatedPlanDatabase } from '../helpers/isolated-plan-db.ts';
+
+test('admin activity reads use real relationships, global search and stable pagination without changing stored logs', async t => {
+  const db = await isolatedPlanDatabase();
+  t.after(() => db.close());
+  const { client } = db;
+  const { createSessionToken } = await import('../../src/middlewares/auth-middleware.ts');
+  const { recordAuthAudit } = await import('../../src/services/auth/auth-service.ts');
+  const { default: app } = await import('../../src/app.ts');
+  const admin = await client.user.create({ data: { name: 'Actual Administrator', email: 'activity-admin@example.test', role: 'admin', emailVerified: true } });
+  const affected = await client.user.create({ data: { name: 'Affected Traveler', email: 'activity-affected@example.test', role: 'traveler', emailVerified: true } });
+  const traveler = await client.user.create({ data: { name: "Jordan %_Diaz O'Neil", email: 'activity-actor@example.test', role: 'traveler', emailVerified: true } });
+  const server = app.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address(); if (!address || typeof address === 'string') throw new Error('No test port.');
+  const base = `http://127.0.0.1:${address.port}/api/platform/activity`;
+  const get = async (query = '', user: typeof admin | null = admin) => {
+    const response = await fetch(base + query, { headers: { ...(user ? { cookie: `travelmate_session=${createSessionToken(user.id, user.role, user.sessionVersion)}` } : {}), 'x-forwarded-proto': 'https' } });
+    return { status: response.status, data: await response.json() };
+  };
+  try {
+    const date = new Date('2040-01-01T00:00:00Z');
+    await client.auditEvent.createMany({ data: Array.from({ length: 23 }, (_, index) => ({ id: `activity-${String(index).padStart(3, '0')}`, actorId: traveler.id, targetId: `trip-record-${index}`, action: 'save-trip', createdAt: date })) });
+    await client.auditEvent.create({ data: { actorId: admin.id, targetId: affected.id, action: 'appeal-approved', createdAt: new Date('2040-01-02') } });
+    await client.auditEvent.create({ data: { actorId: admin.id, targetId: affected.id, action: 'plan:demo-plus:private-activation-key:private-grant-reason', createdAt: new Date('2040-01-03') } });
+    await recordAuthAudit(traveler.id, 'google-login');
+    await client.auditEvent.create({ data: { actorId: admin.id, targetId: 'legacy-record', action: 'new-server-action:do-not-expose' } });
+    const before = await client.auditEvent.count();
+    const page1 = await get(); assert.equal(page1.status, 200); assert.equal(page1.data.total, before);
+    assert.equal(page1.data.entries.length, 10); assert.equal(page1.data.entries[0].actionLabel, 'Demo Plus granted');
+    assert.equal(page1.data.entries[1].actor.name, admin.name); assert.equal(page1.data.entries[1].actor.role, 'admin');
+    assert.equal(page1.data.entries[1].targetId, affected.id);
+    assert.equal(JSON.stringify(page1.data).includes('private-'), false);
+    assert.equal(JSON.stringify(page1.data).includes('password'), false);
+    const page2 = await get('?page=2'); assert.equal(page2.data.page, 2);
+    assert.equal(page1.data.entries.some((entry: { id: string }) => page2.data.entries.some((other: { id: string }) => entry.id === other.id)), false);
+    const byActor = await get('?q=' + encodeURIComponent(traveler.name)); assert.equal(byActor.data.total, 24);
+    assert.ok(byActor.data.entries.every((entry: { actor: { id: string } }) => entry.actor.id === traveler.id));
+    assert.equal((await get('?q=' + encodeURIComponent(affected.name))).data.total, 0, 'Do not confuse the affected user with the actor.');
+    assert.equal((await get('?q=Trip%20saved')).data.total, 23);
+    assert.equal((await get('?q=save-trip')).data.total, 23);
+    assert.equal((await get('?q=trip-record-22')).data.total, 1);
+    assert.equal((await get('?q=GOOGLE%20LOGIN')).data.total, 1);
+    assert.equal((await get('?q=Other%20activity')).data.total, 1);
+    assert.equal((await get('?q=new-server-action')).data.total, 1);
+    assert.equal((await get('?q=private-activation-key')).data.total, 0, 'Embedded keys must not be searchable.');
+    assert.equal((await get('?q=%25')).data.total, 24, 'Percent is a literal name character, not a wildcard.');
+    assert.equal((await get('?q=no-such-record')).data.total, 0);
+    assert.equal((await get('?page=999999')).data.page, 3);
+    assert.equal((await get('?page=0')).status, 400);
+    assert.equal((await get('', traveler)).status, 401);
+    assert.equal((await get('', null)).status, 401);
+    await client.user.update({ where: { id: admin.id }, data: { accountStatus: 'suspended' } });
+    assert.equal((await get()).status, 401);
+    assert.equal(await client.auditEvent.count(), before);
+    assert.equal((await client.auditEvent.findFirstOrThrow({ where: { action: { startsWith: 'plan:demo-plus:' } } })).action, 'plan:demo-plus:private-activation-key:private-grant-reason');
+  } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+});

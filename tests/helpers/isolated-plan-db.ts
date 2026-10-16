@@ -29,7 +29,9 @@ export async function isolatedPlanDatabase() {
       await admin.query(await readFile(new URL(`../../prisma/migrations/${migration}/migration.sql`, import.meta.url), 'utf8'));
     }
     const url = new URL(direct); url.searchParams.set('options', `-c search_path=${schema}`);
-    const client = new PrismaClient({ adapter: new PrismaPg({ connectionString: url.toString(), max: 12, connectionTimeoutMillis: 10000 }, { schema }) });
+    // Integration files run in parallel in CI. Keep each isolated schema's pool
+    // small enough that the combined workers cannot exhaust PostgreSQL.
+    const client = new PrismaClient({ adapter: new PrismaPg({ connectionString: url.toString(), max: 4, connectionTimeoutMillis: 10000 }, { schema }) });
     globalThis.travelmatePrisma = client;
     return { client, schema, close: async () => { await client.$disconnect(); await cleanup(); } };
   } catch (error) { await cleanup(); throw error; }

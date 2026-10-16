@@ -56,10 +56,15 @@ async function resolvePhotoDestination(input: PhotoQuery, search = searchGlobalL
   const code = input.countryCode || namedCode;
   if (!code || (namedCode && namedCode !== code)) return null;
   const cityName = (value: string) => normalized(value).replace(/^city of /, '').replace(/ city$/, '');
-  let matches = (await search(input.city + ', ' + code, fetch, { includeLegacyDuplicates: true })).filter(hasResolvedCoordinates).filter(place =>
+  let matches = (await search(input.city + ', ' + code, fetch, { includeLegacyDuplicates: true, preferBundledExact: true })).filter(hasResolvedCoordinates).filter(place =>
     cityName(place.name) === cityName(input.city) && place.countryCode === code && !['Country','Province','Region','Island','Barangay'].includes(place.placeType)
     && (!input.region || normalized(place.region).replace(/\b(province|prefecture|state|region)\b/g, '').trim() === normalized(input.region).replace(/\b(province|prefecture|state|region)\b/g, '').trim())
     && (input.latitude === undefined || distanceKm(place, { latitude: input.latitude, longitude: input.longitude! }) <= 15));
+  // GeoNames' bundled snapshot and its live geocoder can return separate rows
+  // for the same city centre. Treat nearby exact-name rows as one identity so
+  // provider ordering or availability cannot make a reviewed cover disappear.
+  matches = matches.filter((place, index, all) => !all.slice(0, index).some(existing =>
+    distanceKm(place, existing) <= 15));
   // A country and nearby point narrow duplicate city names; ambiguity never picks an arbitrary city.
   const official = matches.filter(place => place.provider === 'psgc');
   if (official.length) matches = official;

@@ -111,7 +111,13 @@ test("registration requires verification before login", async t => {
     }));
     assert.equal(newPasswordLogin.status, 200);
   } finally {
-    await prisma.user.deleteMany({ where: { email } });
+    const registeredUser = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+    if (registeredUser) {
+      await prisma.$transaction([
+        prisma.auditEvent.deleteMany({ where: { actorId: registeredUser.id } }),
+        prisma.user.delete({ where: { id: registeredUser.id } }),
+      ]);
+    }
   }
 });
 
@@ -130,6 +136,7 @@ test("a trip write only changes the intended trip and audit rows", async () => {
       startDate: "2026-10-01",
       endDate: "2026-10-01",
       travelers: 1,
+      partyType: "solo",
       interests: ["testing"],
       itinerary: { destination: "Integration Test Destination", totalBudget: 10000, currency: "USD", days: [{ day: 1, date: "2026-10-01", activities: [{ title: "Integration activity", estimatedCost: 100 }] }] },
       weather: {
@@ -191,6 +198,7 @@ test("saved-trip CRUD enforces traveler ownership", async () => {
       startDate: "2026-10-10",
       endDate: "2026-10-11",
       travelers: 1,
+      partyType: "solo",
       interests: ["security"],
       itinerary: { destination: "Ownership Test Destination", totalBudget: 12000, currency: "PHP", days: [{ day: 1, activities: [{ title: "Day one", estimatedCost: 100 }] }, { day: 2, activities: [{ title: "Day two", estimatedCost: 100 }] }] },
       weather: null,
@@ -211,6 +219,7 @@ test("saved-trip CRUD enforces traveler ownership", async () => {
       startDate: "2026-10-10",
       endDate: "2026-10-11",
       travelers: 1,
+      partyType: "solo",
       interests: ["security", "crud"],
       itinerary: { destination: "Updated Ownership Destination", totalBudget: 13000, currency: "EUR", days: [{ day: 1, activities: [{ title: "Day one", estimatedCost: 100 }] }, { day: 2, activities: [{ title: "Day two", estimatedCost: 100 }] }] },
       weather: null,

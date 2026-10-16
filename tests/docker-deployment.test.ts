@@ -40,7 +40,9 @@ esac
   });
   const result = spawnSync(shell, ['-c', 'export PATH="$FAKE_DOCKER_DIR:$PATH"; exec sh "$DEPLOY_SCRIPT"'], {
     encoding: 'utf8',
-    timeout: 10_000,
+    // The full test suite runs files in parallel, so shell startup can be
+    // delayed on busy CI and Windows hosts even though the script is healthy.
+    timeout: 30_000,
     env: {
       ...process.env,
       FAKE_DOCKER_DIR: shellPath(bin),

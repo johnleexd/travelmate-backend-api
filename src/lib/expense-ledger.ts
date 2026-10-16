@@ -1,5 +1,5 @@
 import type { ItineraryResponse, DayActivity } from '../controllers/itinerary-controller.ts';
-import { allocateNightlyCosts, currencyFractionDigits, type CurrencyCode } from '../schemas/domain.ts';
+import { allocateEqualShares, allocateNightlyCosts, currencyFractionDigits, travelersForParty, type CurrencyCode, type PartyType } from '../schemas/domain.ts';
 
 type CategoryKey = 'accommodation' | 'food' | 'transportation' | 'activities' | 'other' | 'contingency';
 export type BudgetCategory = {
@@ -7,7 +7,32 @@ export type BudgetCategory = {
   status: 'estimated' | 'partial' | 'unavailable' | 'excluded'; allowance: number;
 };
 export type AccommodationPreview = { selected: boolean; name?: string; amount?: number; currency?: CurrencyCode };
-export type BudgetReviewOptions = { budget?: number; accommodation?: AccommodationPreview };
+export type BudgetReviewOptions = { budget?: number; accommodation?: AccommodationPreview; party?: { partyType: PartyType; travelers: number } };
+type ExpenseUnit = NonNullable<DayActivity['priceEvidence']>['unit'];
+export const isPerPersonUnit = (unit: ExpenseUnit) => ['per-person', 'daily-per-person', 'meal'].includes(unit);
+/** Unit rates are extended here only. Saved estimatedCost is already extended. */
+export function calculateExpense(unitAmount: number, quantity: number, participants: number, unit: ExpenseUnit, currency: CurrencyCode) {
+  if (!['per-person','daily-per-person','meal','shared-fare','per-room-night','group','day','night','room','transport-leg'].includes(unit)) throw new Error('Expense basis is unavailable.');
+  if (![unitAmount, quantity, participants].every(Number.isFinite) || unitAmount < 0 || !Number.isInteger(quantity) || quantity < 0 || !Number.isInteger(participants) || participants < 1 || participants > 20) throw new Error('Expense quantities are invalid.');
+  const scale = 10 ** currencyFractionDigits(currency);
+  return Math.round(unitAmount * quantity * (isPerPersonUnit(unit) ? participants : 1) * scale) / scale;
+}
+/** Recorded metadata only: never infer a party mode from its size. */
+export function itineraryParty(plan: ItineraryResponse) {
+  const partyType = plan.partyType ?? plan.costSharing?.partyType;
+  const travelers = plan.travelers ?? plan.costSharing?.travelers;
+  if (!partyType || travelers === undefined || !['solo','couple','family','friends'].includes(partyType)) return null;
+  try { if (travelersForParty(partyType, travelers) !== travelers) return null; } catch { return null; }
+  if (plan.costSharing && (plan.costSharing.partyType !== partyType || plan.costSharing.travelers !== travelers)) return null;
+  return { partyType, travelers };
+}
+/** Shares describe planning allocations, never an invented adult/child tariff. */
+export function expenseCoverage(item: DayActivity, currency: CurrencyCode) {
+  const amount = activityExpense(item, currency), price = item.priceEvidence;
+  if (amount === null || !price) return null;
+  return { total: amount, travelers: price.participants, shares: allocateEqualShares(amount, price.participants, currency),
+    equalShare: !isPerPersonUnit(price.unit) || isPlanningAllowance(item), includedElsewhere: price.quantity === 0 };
+}
 const validAmount = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 const labels: Record<CategoryKey, string> = { accommodation: 'Accommodation', food: 'Food', transportation: 'Transportation', activities: 'Activities', other: 'Other estimates & fees', contingency: 'Contingency' };
 export function accommodationNights(plan: ItineraryResponse): number {
@@ -24,8 +49,12 @@ export function isPlanningAllowance(item: DayActivity) {
   return item.priceEvidence?.status === 'allowance' || item.priceEvidence?.source === 'budget-allowance';
 }
 export function activityExpense(item: DayActivity, currency: CurrencyCode): number | null {
-  return item.priceEvidence?.currency && item.priceEvidence.currency !== currency || item.priceEvidence?.status === 'unavailable'
-    || !validAmount(item.estimatedCost) || item.estimatedCost === 0 && !item.priceEvidence ? null : item.estimatedCost;
+  const price = item.priceEvidence;
+  if (!price || price.currency !== currency || price.status === 'unavailable' || !validAmount(item.estimatedCost)) return null;
+  try {
+    const expected = calculateExpense(price.unitAmount, price.quantity, price.participants, price.unit, currency);
+    return Math.abs(expected - item.estimatedCost) < 1 / 10 ** currencyFractionDigits(currency) ? item.estimatedCost : null;
+  } catch { return null; }
 }
 export function isDailyExpenseAllowance(item: DayActivity) {
   return Boolean(item.priceEvidence?.coverage || !item.place && !item.location?.trim()
@@ -54,6 +83,14 @@ export function dayExpenseRows(plan: ItineraryResponse, dayIndex: number) {
 
 /** Read group expense amounts, never the budget-allocation targets in budgetSummary. */
 export function expenseLedger(plan: ItineraryResponse, options: BudgetReviewOptions = {}) {
+  const party = itineraryParty(plan);
+  const partyDraft = Boolean(options.party && (!party || options.party.partyType !== party.partyType || options.party.travelers !== party.travelers));
+  let needsBudgetRefresh = !party || plan.days.some(day => day.activities.some(item => !item.priceEvidence || item.priceEvidence.participants !== party.travelers
+    || item.priceEvidence.status !== 'unavailable' && item.priceEvidence.currency === plan.currency && activityExpense(item, plan.currency) === null));
+  const stayBasis = plan.accommodationEstimate ?? plan.grounding?.accommodation;
+  if (party && stayBasis && stayBasis.participants !== party.travelers) needsBudgetRefresh = true;
+  const occupancy = plan.accommodation?.providerQuote?.occupancy;
+  if (party && occupancy && occupancy.reduce((sum, room) => sum + room.adults + room.childAges.length, 0) !== party.travelers) needsBudgetRefresh = true;
   const scale = 10 ** currencyFractionDigits(plan.currency);
   const round = (value: number) => Math.round(value * scale) / scale;
   const buckets = Object.fromEntries(Object.keys(labels).map(key => [key, { units: 0, priced: 0, missing: 0, allowance: 0 }])) as Record<CategoryKey, { units: number; priced: number; missing: number; allowance: number }>;
@@ -126,8 +163,10 @@ export function expenseLedger(plan: ItineraryResponse, options: BudgetReviewOpti
       const rawRemainder = round(day.totalCost - items - (lodging[index] ?? 0));
       const remainder = rawRemainder < 0 && Math.abs(rawRemainder + removedOverlap) < 1 / scale ? 0 : rawRemainder;
       legacyExtras[index] = remainder;
-      if (remainder > 0) add('other', remainder);
-      if (remainder < 0) inconsistent = true;
+      // A historical remainder has no unit/party basis. Retain the record, but
+      // do not reinterpret it as a known party expense.
+      if (remainder > 0) { legacyExtras[index] = 0; buckets.other.missing++; needsBudgetRefresh = true; }
+      if (remainder < 0) { inconsistent = true; legacyExtras[index] = 0; }
     });
   }
   for (const key of ['food', 'transportation', 'activities'] as const) if (!buckets[key].priced && !buckets[key].missing) buckets[key].missing++;
@@ -142,7 +181,7 @@ export function expenseLedger(plan: ItineraryResponse, options: BudgetReviewOpti
   const incomplete = Object.values(buckets).some(bucket => bucket.missing > 0)
     || Boolean(grounding && !grounding.estimationVersion && grounding.unpricedExpenseCount)
     || Boolean(grounding && (!grounding.estimationVersion || grounding.startingLocation?.trim()) && !selected?.flight && !selected?.preTrip)
-    || !selectedAccommodation && nights > 0 || mixedCurrency || inconsistent || !hasPrices;
+    || !selectedAccommodation && nights > 0 || mixedCurrency || inconsistent || !hasPrices || needsBudgetRefresh || partyDraft;
   const remaining = budget !== null && total !== null ? round(budget - total) : null;
   const categories = (Object.keys(labels) as CategoryKey[]).filter(key => !['other', 'contingency'].includes(key) || buckets[key].units > 0 || buckets[key].missing > 0).map((key): BudgetCategory => {
     const bucket = buckets[key], excluded = key === 'accommodation' && !selectedAccommodation;
@@ -162,6 +201,7 @@ export function expenseLedger(plan: ItineraryResponse, options: BudgetReviewOpti
   const allowanceTotal = round(categories.reduce((sum, item) => sum + item.allowance, 0));
   const unpriced = Object.values(buckets).reduce((sum, bucket) => sum + bucket.missing, 0) + (grounding && (!grounding.estimationVersion || grounding.startingLocation?.trim()) && !selected?.flight && !selected?.preTrip ? 1 : 0);
   return { currency: plan.currency, budget, total, remaining, categories, incomplete, mixedCurrency, inconsistent,
+    party, partyDraft, needsBudgetRefresh, shares: total !== null && party && !needsBudgetRefresh && !partyDraft ? allocateEqualShares(total, party.travelers, plan.currency) : null,
     days, allowanceTotal, unpriced,
     selectedAccommodation, accommodationName, nights,
     budgetDraft: budget !== null && budget !== plan.totalBudget,

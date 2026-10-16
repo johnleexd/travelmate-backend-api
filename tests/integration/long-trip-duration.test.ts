@@ -35,7 +35,11 @@ test('authenticated generation, saving, reloading and editing preserve every dat
     for (const count of [1, 14, 21, 28, 31]) {
       const paris = searchDestinationIndex('Paris, France').find(place => place.name === 'Paris')!;
       const body = { destination: 'Paris, France', startingLocation: 'Toronto, Canada', latitude: paris.latitude, longitude: paris.longitude, destinationDetails: { city: paris.name, country: paris.country, countryCode: paris.countryCode, latitude: paris.latitude, longitude: paris.longitude }, startDate, endDate: dateAt(count - 1), budget: 100000, currency: 'EUR', partyType: 'friends', travelers: 3 };
-      const result = await POST(new Request('http://localhost/api/itinerary', { method: 'POST', headers, body: JSON.stringify(body) }));
+      const result = await POST(new Request('http://localhost/api/itinerary', {
+        method: 'POST',
+        headers: { ...headers, 'Idempotency-Key': `long-trip-${row.id}-${count}` },
+        body: JSON.stringify(body),
+      }));
       assert.equal(result.status, 200);
       const itinerary = await result.json();
       assert.equal(itinerary.days.length, count); assert.equal(itinerary.days.at(-1).date, body.endDate);

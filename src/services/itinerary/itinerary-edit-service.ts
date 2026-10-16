@@ -44,7 +44,7 @@ function activityInput(value: unknown, travelers: number, currency: CurrencyCode
   if (managementSource?.status === 'completed') return structuredClone(managementSource);
   const management = managementSource ? { id: managementSource.id, status: managementSource.status, statusChangedAt: managementSource.statusChangedAt, managementHistory: managementSource.managementHistory } : {};
   const identity = (managementSource ? [managementSource] : stored).find(candidate => candidate.title === activity.title && (candidate.location || '') === (activity.location || '') && JSON.stringify(candidate.place) === JSON.stringify(activity.place));
-  const original = identity && identity.estimatedCost === activity.estimatedCost && identity.category === activity.category ? identity : undefined;
+  const original = identity && (identity.priceEvidence || !activity.priceEvidence) && identity.estimatedCost === activity.estimatedCost && identity.category === activity.category ? identity : undefined;
   const timing = { ...(activity.durationMinutes !== undefined || identity?.durationMinutes !== undefined ? { durationMinutes: Number(activity.durationMinutes ?? identity?.durationMinutes) } : {}), ...(activity.travelMinutes !== undefined ? { travelMinutes: Number(activity.travelMinutes) } : {}), ...(activity.location !== undefined ? { location: text(activity.location, 'Activity location', 200) } : {}) };
   if (grounded) {
     const result = {
@@ -121,7 +121,7 @@ export function applyManualItineraryChanges(
   const nightlyRate = safeNumber(accommodation?.nightlyRate);
   const nights = Math.min(expectedDays, Math.floor(safeNumber(accommodation?.nights)));
   const grounding = existing.grounding as ItineraryResponse['grounding'];
-  const accommodationTotal = accommodation ? safeNumber(accommodation.quotedTotal ?? roundMoney(nightlyRate * nights,currency)) : grounding?.categories.accommodation ?? 0;
+  const accommodationTotal = expenseLedger(existing as unknown as ItineraryResponse).categories.find(row => row.key === 'accommodation')?.amount ?? 0;
   const lodgingNights = nights || grounding?.nights || 0;
   const lodgingByNight = lodgingNights ? allocateNightlyCosts(accommodationTotal, lodgingNights, currency) : [];
 

@@ -1,3 +1,4 @@
+import { safeActivityCode } from '../services/platform/activity-presentation.ts';
 import { scryptSync } from "node:crypto";
 import type { Prisma } from "../generated/prisma/client.ts";
 import { normalizeCurrency, type AuditEvent, type Booking, type Database, type ItineraryGenerationSummary, type ItineraryVersion, type Listing, type ListingBlockedDate, type ModerationItem, type Notification, type OwnerDocument, type PaymentTransaction, type Promotion, type PublicUser, type Review, type SavedTrip } from "../schemas/domain.ts";
@@ -40,7 +41,7 @@ async function loadDatabase(user?: PublicUser, includeTrips = true): Promise<Dat
 trips: trips.map((row): SavedTrip => ({ ...row, budget: Number(row.budget), currency: normalizeCurrency(row.currency), latitude: row.latitude == null ? undefined : Number(row.latitude), longitude: row.longitude == null ? undefined : Number(row.longitude), destinationCity: row.destinationCity ?? undefined, destinationRegion: row.destinationRegion ?? undefined, destinationCountry: row.destinationCountry ?? undefined, destinationCountryCode: row.destinationCountryCode ?? undefined, startDate: row.startDate.toISOString().slice(0, 10), endDate: row.endDate.toISOString().slice(0, 10), interests: stringArray(row.interests), archivedAt: row.archivedAt?.toISOString(), completedAt: row.completedAt?.toISOString(), createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() })),
     itineraryVersions: itineraryVersions.map((row): ItineraryVersion => ({ ...row, weather: row.weather ?? null, createdAt: row.createdAt.toISOString() })),
     itineraryGenerations: itineraryGenerations.map((row): ItineraryGenerationSummary => ({ id: row.id, userId: row.userId, destination: row.destination, status: row.status, errorCode: row.errorCode ?? undefined, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() })),
-    audit: audit.map((row): AuditEvent => ({ ...row, createdAt: row.createdAt.toISOString() })),
+    audit: audit.map((row): AuditEvent => ({ ...row, action: safeActivityCode(row.action), createdAt: row.createdAt.toISOString() })),
     blockedDates: blockedDates.map((row): ListingBlockedDate => ({ ...row, date: row.date.toISOString().slice(0, 10) })),
     promotions: promotions.map((row): Promotion => ({ ...row, startDate: row.startDate.toISOString().slice(0, 10), endDate: row.endDate.toISOString().slice(0, 10) })),
     reviews: reviews.map((row): Review => ({ ...row, createdAt: row.createdAt.toISOString() })),

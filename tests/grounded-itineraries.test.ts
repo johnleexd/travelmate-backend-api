@@ -40,7 +40,7 @@ for (const [index, anchor] of anchors.entries()) {
       assert.equal(evidence.categories.food, calculateExpense(evidence.foodDailyPerPerson, days, travelers, 'daily-per-person', currency));
       assert.equal(evidence.categories.accommodation, calculateExpense(evidence.accommodation.unitAmount, evidence.rooms * evidence.nights, travelers, 'per-room-night', currency));
       assert.equal(Math.round(evidence.categories.transportation * scale), Math.round(result.days.reduce((sum, day) => sum + day.rideFare!, 0) * scale));
-      assert.equal(result.days[0].activities[0].estimatedCost, calculateExpense(result.days[0].activities[0].unitCost!, 1, Math.min(2, travelers), 'per-person', currency));
+      assert.equal(result.days[0].activities[0].estimatedCost, calculateExpense(result.days[0].activities[0].unitCost!, 1, travelers, 'per-person', currency));
       assert.equal(result.days.at(-1)?.date, dateAt(start, days - 1));
       assert.equal(result.days[0].activities[0].place?.countryCode, anchor.countryCode);
       assert.ok(!result.days[0].theme.includes('Malicious'));
@@ -148,12 +148,12 @@ test('present-day membership ignores historical countries and administrative par
 
 test('AI cannot invent an attraction, repeat a place, supply prices, or omit geographic transfer time', async () => {
   const places = [place(anchors[1], 0), { ...place(anchors[1], 1), latitude: anchors[1].latitude + 0.04 }];
-  const fixture = { days: [{ day: 1, date: start, theme: 'Catalog route', visits: [{ placeId: 'Q200', startMinutes: 600, durationMinutes: 60, participants: 2 }] }] };
+  const fixture = { days: [{ day: 1, date: start, theme: 'Catalog route', visits: [{ placeId: 'Q200', startMinutes: 600, durationMinutes: 60, participants: 3 }] }] };
   assert.equal(validateGroundedSchedule(JSON.stringify(fixture), places, start, 1, 3).length, 1);
   assert.throws(() => validateGroundedSchedule(JSON.stringify({ ...fixture, estimatedCost: 42 }), places, start, 1, 3));
   const bad = structuredClone(fixture); bad.days[0].visits[0].placeId = 'Q999999';
   assert.throws(() => validateGroundedSchedule(JSON.stringify(bad), places, start, 1, 3), /unknown/);
-  const rushed = structuredClone(fixture); rushed.days[0].visits.push({ placeId: 'Q201', startMinutes: 661, durationMinutes: 60, participants: 2 });
+  const rushed = structuredClone(fixture); rushed.days[0].visits.push({ placeId: 'Q201', startMinutes: 661, durationMinutes: 60, participants: 3 });
   assert.throws(() => validateGroundedSchedule(JSON.stringify(rushed), places, start, 1, 3), /enough time/);
   let calls = 0;
   const provider = { name: 'openai' as const, generate: async () => JSON.stringify(++calls === 1 ? bad : fixture) };
@@ -223,7 +223,7 @@ test('matching committed attraction price is charged once and quote precision su
 test('even a server-signed plan cannot save inconsistent activity formulas or category totals', () => {
   for (const modify of [(value: ReturnType<typeof plan>) => { value.days[0].activities[0].priceEvidence!.unitAmount += 1; }, (value: ReturnType<typeof plan>) => { value.grounding!.categories.food += 1; }]) {
     const value = plan(); modify(value); value.groundingProof = signGroundedPlan(value);
-    assert.throws(() => parseSavedItinerary(value, { days: 3, budget: value.totalBudget, currency: 'EUR', travelers: 3, partyType: 'friends', startDate: start }), /inconsistent|price basis/);
+    assert.throws(() => parseSavedItinerary(value, { days: 3, budget: value.totalBudget, currency: 'EUR', travelers: 3, partyType: 'friends', startDate: start }), /inconsistent|price basis|item costs/);
   }
 });
 
